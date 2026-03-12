@@ -137,17 +137,20 @@ export default function Game() {
         ))}
       </div>
 
-      {/* MIDDLE ROW: Board (Deck, Discard, Active Effects, Log) */}
-      <div className="relative z-10 flex-1 flex flex-col md:flex-row gap-6 p-6 items-center justify-center">
-        
-        {/* Left: Game Log (hidden on small screens, drawer maybe?) */}
-        <div className="hidden lg:flex flex-col w-64 h-[300px] bg-card/80 backdrop-blur-md border border-border shadow-inner rounded-xl overflow-hidden self-end mb-8">
-          <div className="p-3 bg-muted/50 border-b border-border flex items-center gap-2 font-bold text-sm">
-            <History className="w-4 h-4" /> Activity Log
+      {/* MIDDLE ROW: Board — matches physical mat layout */}
+      <div className="relative z-10 flex-1 flex flex-row gap-4 px-4 py-2 items-stretch justify-center">
+
+        {/* Left: Activity Log */}
+        <div className="hidden lg:flex flex-col w-56 bg-card/80 backdrop-blur-md border border-border shadow-inner rounded-xl overflow-hidden self-center" style={{ maxHeight: 320 }}>
+          <div className="px-3 py-2 bg-muted/50 border-b border-border flex items-center gap-2 font-bold text-xs uppercase tracking-wider shrink-0">
+            <History className="w-3.5 h-3.5" /> Activity Log
           </div>
-          <div className="flex-1 p-3 overflow-y-auto flex flex-col gap-2 text-xs">
-            {gameState.log.slice(-15).map((entry, i) => (
-              <div key={i} className="py-1 border-b border-border/50 last:border-0 text-muted-foreground">
+          <div className="flex-1 p-2 overflow-y-auto flex flex-col gap-1 text-[11px]">
+            {gameState.log.slice(-20).reverse().map((entry, i) => (
+              <div key={i} className={cn(
+                "py-1 border-b border-border/30 last:border-0 leading-snug",
+                i === 0 ? "text-foreground font-medium" : "text-muted-foreground"
+              )}>
                 {entry}
               </div>
             ))}
@@ -157,38 +160,66 @@ export default function Game() {
           </div>
         </div>
 
-        {/* Center: Deck & Discard */}
-        <div className="flex flex-col items-center gap-4">
-          <div className="bg-card/90 backdrop-blur-md p-6 rounded-3xl border shadow-xl flex items-center gap-8 md:gap-12 relative">
-            
+        {/* Center: THE CHALLENGE + Draw/Discard */}
+        <div className="flex flex-col items-center gap-3 self-center">
+
+          {/* THE CHALLENGE zone */}
+          <div className="w-full max-w-sm">
+            <div className="bg-card/90 backdrop-blur-md rounded-2xl border shadow-xl overflow-hidden">
+              <div className="bg-gradient-to-r from-primary/20 via-primary/10 to-secondary/20 px-4 py-2 border-b border-border/50 flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <Sparkles className="w-4 h-4 text-primary" />
+                  <span className="font-display font-bold text-sm tracking-widest uppercase text-foreground">The Challenge</span>
+                </div>
+                <span className="text-[10px] text-muted-foreground font-bold uppercase">Ongoing Effects</span>
+              </div>
+              <div className="p-3 min-h-[56px] flex flex-wrap gap-2 items-center">
+                {gameState.activeModifiers.length === 0 ? (
+                  <p className="text-[11px] text-muted-foreground/50 italic w-full text-center py-2">No active ongoing cards</p>
+                ) : (
+                  gameState.activeModifiers.map((mod, i) => (
+                    <div key={i} className="bg-secondary/10 border border-secondary/20 rounded-lg px-2 py-1.5 text-[10px] shadow-sm max-w-[180px]">
+                      <div className="font-bold text-secondary-foreground">{mod.cardName}</div>
+                      <div className="text-muted-foreground leading-tight mt-0.5">{mod.effect}</div>
+                    </div>
+                  ))
+                )}
+              </div>
+            </div>
+          </div>
+
+          {/* Draw + Discard row */}
+          <div className="bg-card/90 backdrop-blur-md px-6 py-4 rounded-3xl border shadow-xl flex items-end gap-10">
+
             {/* Draw Pile */}
-            <div className="flex flex-col items-center gap-3">
-              <div className="relative group cursor-pointer" onClick={gameState.phase === 'draw' ? handleDrawCard : undefined}>
+            <div className="flex flex-col items-center gap-2">
+              <div className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground">Draw Pile</div>
+              <div className="relative group" onClick={gameState.phase === 'draw' && isMyTurn ? handleDrawCard : undefined}>
                 <div className={cn(
                   "absolute inset-0 bg-primary/20 blur-xl rounded-full transition-opacity",
                   gameState.phase === 'draw' && isMyTurn ? "opacity-100 animate-pulse" : "opacity-0"
                 )} />
-                <GameCard 
-                  card={gameState.deck[0]} // Pass anything, isFaceDown overrides
-                  isFaceDown 
+                <GameCard
+                  card={gameState.deck[0]}
+                  isFaceDown
                   hoverable={gameState.phase === 'draw' && isMyTurn}
                   className={cn(
-                    "ring-4 ring-transparent transition-all",
+                    "ring-4 ring-transparent transition-all cursor-pointer",
                     gameState.phase === 'draw' && isMyTurn && "ring-primary shadow-primary/30 shadow-lg -translate-y-2"
                   )}
                 />
-                {/* Deck thickness illusion */}
                 <div className="absolute top-1 left-1 w-full h-full bg-secondary/80 border-2 border-secondary-foreground/20 rounded-xl -z-10" />
                 <div className="absolute top-2 left-2 w-full h-full bg-secondary border-2 border-secondary-foreground/20 rounded-xl -z-20" />
               </div>
-              <div className="flex items-center gap-2 bg-background/80 px-3 py-1 rounded-full text-xs font-bold shadow-sm border">
+              <div className="flex items-center gap-1.5 bg-background/80 px-3 py-1 rounded-full text-xs font-bold shadow-sm border">
                 <Layers className="w-3 h-3 text-muted-foreground" />
-                <span>{gameState.deck.length} left</span>
+                {gameState.deck.length} left
               </div>
             </div>
 
             {/* Discard Pile */}
-            <div className="flex flex-col items-center gap-3">
+            <div className="flex flex-col items-center gap-2">
+              <div className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground">Discard Pile</div>
               <div className="relative">
                 {topCardInDiscard ? (
                   <motion.div initial={{ scale: 0.8, opacity: 0 }} animate={{ scale: 1, opacity: 1 }}>
@@ -197,42 +228,40 @@ export default function Game() {
                 ) : (
                   <div className="w-36 h-52 rounded-xl border-4 border-dashed border-muted-foreground/20 flex flex-col items-center justify-center text-muted-foreground/40 bg-black/5">
                     <RefreshCcw className="w-8 h-8 mb-2" />
-                    <span className="text-xs font-bold uppercase">Discard</span>
+                    <span className="text-xs font-bold uppercase">Empty</span>
                   </div>
                 )}
               </div>
-              <div className="flex items-center gap-2 bg-background/80 px-3 py-1 rounded-full text-xs font-bold shadow-sm border opacity-80">
-                <span>{gameState.discardPile.length} discarded</span>
+              <div className="bg-background/80 px-3 py-1 rounded-full text-xs font-bold shadow-sm border opacity-80">
+                {gameState.discardPile.length} discarded
               </div>
             </div>
-            
+
           </div>
-          
-          {/* Action Controls for Current Player */}
+
+          {/* Turn Controls */}
           {isMyTurn && gameState.phase !== "game_over" && (
-            <motion.div 
-              initial={{ y: 20, opacity: 0 }}
+            <motion.div
+              initial={{ y: 10, opacity: 0 }}
               animate={{ y: 0, opacity: 1 }}
-              className="bg-primary/10 border border-primary/20 p-2 rounded-2xl flex gap-3 shadow-lg backdrop-blur-md"
+              className="bg-primary/10 border border-primary/20 px-4 py-2.5 rounded-2xl flex items-center gap-3 shadow-lg backdrop-blur-md"
             >
               {gameState.phase === 'draw' && (
-                <Button size="lg" onClick={handleDrawCard} className="font-bold bg-primary hover:bg-primary/90 text-white rounded-xl shadow-md">
+                <Button size="lg" onClick={handleDrawCard} className="font-bold bg-primary hover:bg-primary/90 text-white rounded-xl shadow-md px-8">
                   Draw Card
                 </Button>
               )}
               {gameState.phase === 'play' && (
                 <>
-                  <div className="flex items-center px-4 font-bold text-primary">
-                    Play 1 card below (or skip)
-                  </div>
-                  <Button 
-                    size="lg" 
-                    variant="secondary" 
-                    onClick={handleEndTurn} 
+                  <span className="font-bold text-primary text-sm">Play a card or skip</span>
+                  <Button
+                    size="lg"
+                    variant="secondary"
+                    onClick={handleEndTurn}
                     disabled={actionMutation.isPending}
                     className="font-bold rounded-xl shadow-md"
                   >
-                    {actionMutation.isPending ? "..." : "End Turn"}
+                    {actionMutation.isPending ? <><Loader2 className="w-4 h-4 mr-2 animate-spin" />...</> : "End Turn"}
                   </Button>
                 </>
               )}
@@ -240,28 +269,39 @@ export default function Game() {
           )}
 
           {!isMyTurn && gameState.phase !== "game_over" && (
-            <div className="bg-muted/50 border border-border px-6 py-3 rounded-2xl text-muted-foreground font-bold flex items-center gap-2 backdrop-blur-md">
-              <Loader2 className="w-4 h-4 animate-spin" /> Waiting for {currentPlayer.name}...
+            <div className="bg-muted/50 border border-border px-5 py-2.5 rounded-2xl text-muted-foreground font-bold flex items-center gap-2 backdrop-blur-md text-sm">
+              <Loader2 className="w-4 h-4 animate-spin" /> Waiting for {currentPlayer.name}…
             </div>
           )}
         </div>
 
-        {/* Right: Active Effects */}
-        <div className="hidden lg:flex flex-col w-64 min-h-[300px] bg-card/80 backdrop-blur-md border border-border shadow-inner rounded-xl overflow-hidden self-end mb-8">
-          <div className="p-3 bg-secondary/10 border-b border-secondary/20 flex items-center gap-2 font-bold text-sm text-secondary-foreground">
-            <Sparkles className="w-4 h-4" /> Active Effects
+        {/* Right: Turn Reference (matches mat reference text) */}
+        <div className="hidden lg:flex flex-col w-56 self-center gap-3">
+          <div className="bg-card/80 backdrop-blur-md border border-border rounded-xl overflow-hidden shadow-sm">
+            <div className="px-3 py-2 bg-muted/50 border-b border-border font-bold text-xs uppercase tracking-wider">On Your Turn</div>
+            <div className="p-3 flex flex-col gap-2 text-xs text-muted-foreground">
+              <div className="flex items-start gap-2">
+                <span className="w-5 h-5 rounded-full bg-primary text-primary-foreground font-bold text-[10px] flex items-center justify-center shrink-0">1</span>
+                <span><strong className="text-foreground">Draw</strong> — take the top card from the draw pile</span>
+              </div>
+              <div className="flex items-start gap-2">
+                <span className="w-5 h-5 rounded-full bg-secondary text-secondary-foreground font-bold text-[10px] flex items-center justify-center shrink-0">2</span>
+                <span><strong className="text-foreground">Play</strong> — play 1 card from your hand, or skip</span>
+              </div>
+            </div>
           </div>
-          <div className="flex-1 p-3 overflow-y-auto flex flex-col gap-3">
-            {gameState.activeModifiers.length === 0 ? (
-              <div className="text-center text-muted-foreground/50 italic mt-4 text-xs">No active ongoing cards</div>
-            ) : (
-              gameState.activeModifiers.map((mod, i) => (
-                <div key={i} className="bg-background border rounded-lg p-2 text-xs shadow-sm">
-                  <div className="font-bold text-secondary-foreground mb-1">{mod.cardName}</div>
-                  <div className="text-muted-foreground leading-tight">{mod.effect}</div>
-                </div>
-              ))
-            )}
+          <div className="bg-card/80 backdrop-blur-md border border-border rounded-xl overflow-hidden shadow-sm">
+            <div className="px-3 py-2 bg-muted/50 border-b border-border font-bold text-xs uppercase tracking-wider">Card Effects</div>
+            <div className="p-3 flex flex-col gap-2 text-xs text-muted-foreground">
+              <div><strong className="text-foreground">Immediate</strong> — resolves right away when played</div>
+              <div><strong className="text-foreground">Ongoing</strong> — stays in play until end of game or removed</div>
+            </div>
+          </div>
+          <div className="bg-card/80 backdrop-blur-md border border-border rounded-xl overflow-hidden shadow-sm">
+            <div className="px-3 py-2 bg-muted/50 border-b border-border font-bold text-xs uppercase tracking-wider">Win Condition</div>
+            <div className="p-3 text-xs text-muted-foreground">
+              Collect <strong className="text-foreground">1 hero</strong> from each of the 5 categories in your compost pile.
+            </div>
           </div>
         </div>
 

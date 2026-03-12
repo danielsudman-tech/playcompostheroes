@@ -9,7 +9,7 @@ interface GameCardProps {
   isFaceDown?: boolean;
   onClick?: () => void;
   className?: string;
-  size?: "sm" | "md" | "lg";
+  size?: "xs" | "sm" | "md" | "lg";
   hoverable?: boolean;
 }
 
@@ -29,6 +29,7 @@ export function GameCard({
   const color = getFunctionColor(card.function || "Action");
   
   const sizeClasses = {
+    xs: "w-14 h-20 rounded-md border text-[8px]",
     sm: "w-24 h-36 rounded-lg border-2 text-[10px]",
     md: "w-36 h-52 rounded-xl border-[3px] text-xs",
     lg: "w-64 h-96 rounded-2xl border-[4px] text-base"
