@@ -307,8 +307,8 @@ export default function Game() {
 
       </div>
 
-      {/* BOTTOM ROW: Local Player */}
-      <div className="relative z-20">
+      {/* BOTTOM ROW: Local Player mat (category slots + header only) */}
+      <div className="relative z-20 pb-36">
         <PlayerMat 
           player={localPlayerFull} 
           isCurrentPlayer={isMyTurn}
@@ -316,6 +316,62 @@ export default function Game() {
           isActiveTurn={isMyTurn}
           onPlayCard={handlePlayCard}
         />
+      </div>
+
+      {/* HAND OVERLAY — fixed at screen bottom, always visible */}
+      <div className="fixed bottom-0 inset-x-0 z-30 pointer-events-none">
+        <div className="relative flex justify-center" style={{ height: 170 }}>
+          {localPlayerFull.hand.length === 0 && (
+            <div className="absolute bottom-4 text-muted-foreground/40 text-sm italic pointer-events-none">
+              No cards in hand
+            </div>
+          )}
+          {localPlayerFull.hand.map((card, idx) => {
+            const total = localPlayerFull.hand.length;
+            const centerIdx = (total - 1) / 2;
+            const offset = idx - centerIdx;
+            const rotate = offset * 5;
+            const arcY = Math.abs(offset) * 8;
+            const x = offset * 50;
+            const isPlayable = isMyTurn && gameState.phase === "play" && !gameState.pendingDecision;
+
+            return (
+              <motion.div
+                key={card.id}
+                className="absolute bottom-0 origin-bottom pointer-events-auto"
+                initial={{ y: 200, opacity: 0 }}
+                animate={{ x, y: arcY, rotate, opacity: 1, zIndex: idx + 1 }}
+                whileHover={isPlayable ? {
+                  y: -50,
+                  scale: 1.15,
+                  rotate: 0,
+                  zIndex: 60,
+                  transition: { duration: 0.15 }
+                } : {}}
+                style={{ transformOrigin: "bottom center" }}
+              >
+                <div className="relative group">
+                  <GameCard
+                    card={card}
+                    isFaceDown={false}
+                    hoverable={false}
+                    onClick={() => {
+                      if (isPlayable) handlePlayCard(card.id);
+                    }}
+                    className={cn(
+                      isPlayable && "cursor-pointer ring-2 ring-transparent hover:ring-primary ring-offset-1"
+                    )}
+                  />
+                  {isPlayable && (
+                    <div className="absolute -top-7 left-1/2 -translate-x-1/2 bg-primary text-primary-foreground text-[10px] font-bold px-2 py-0.5 rounded-full shadow-lg opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap pointer-events-none z-50">
+                      Play
+                    </div>
+                  )}
+                </div>
+              </motion.div>
+            );
+          })}
+        </div>
       </div>
 
       {/* DECISION MODAL OVERLAY */}

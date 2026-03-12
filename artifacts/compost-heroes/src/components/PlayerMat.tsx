@@ -230,60 +230,6 @@ export function PlayerMat({
         </div>
       </div>
 
-      {/* Hand — fanned cards */}
-      <div className="relative h-44 mx-4 mb-2">
-        <div className="absolute inset-x-0 bottom-0 flex justify-center">
-          {player.hand.length === 0 && (
-            <div className="text-muted-foreground/40 text-sm italic self-center">No cards in hand</div>
-          )}
-          {player.hand.map((card, idx) => {
-            const total = player.hand.length;
-            const centerIdx = (total - 1) / 2;
-            const offset = idx - centerIdx;
-            const rotate = offset * 5;
-            const y = Math.abs(offset) * 7;
-            const x = offset * 44;
-            const isPlayable = isActiveTurn && isLocalUser;
-
-            return (
-              <motion.div
-                key={card.id}
-                className="absolute origin-bottom"
-                initial={{ y: 200, opacity: 0 }}
-                animate={{ x, y, rotate, opacity: 1, zIndex: idx }}
-                whileHover={isPlayable ? {
-                  y: -36,
-                  scale: 1.12,
-                  rotate: 0,
-                  zIndex: 50,
-                  transition: { duration: 0.15 }
-                } : {}}
-                style={{ transformOrigin: "bottom center" }}
-              >
-                <div className="relative group">
-                  <GameCard
-                    card={card}
-                    isFaceDown={!isLocalUser}
-                    hoverable={false}
-                    onClick={() => {
-                      if (isPlayable && onPlayCard) onPlayCard(card.id);
-                    }}
-                    className={cn(
-                      isPlayable && "cursor-pointer",
-                      !isLocalUser && "opacity-80"
-                    )}
-                  />
-                  {isPlayable && (
-                    <div className="absolute -top-6 left-1/2 -translate-x-1/2 bg-primary text-primary-foreground text-[10px] font-bold px-2 py-0.5 rounded-full shadow-lg opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap pointer-events-none z-50">
-                      Click to Play
-                    </div>
-                  )}
-                </div>
-              </motion.div>
-            );
-          })}
-        </div>
-      </div>
     </div>
   );
 }
