@@ -1,0 +1,60 @@
+Card Name	Effect Type	Updated Effect Summary	Compost Fact	Function	Hero
+The Breezy Bandit	Instant	Swap 1 card from another player's compost pile with 1 from your compost pile.	Compost without enough air can turn anaerobic and smell like rotten eggs.	Airflow	Air
+Fresh-Air Friend	Instant	Discard 1 card from your hand to draw 2 new cards.	Turning the pile introduces fresh air, accelerating composting.	Airflow	Air
+Branch Buddy	Instant	Discard one card from your hand to draw 1 card.	Bulky materials like twigs and wood chips create air pockets.	Airflow	Air
+The Soggy Saver	Ongoing	Moisture cards can not be removed from your compost pile.	By maintaining structure, bulky materials ensure good airflow and prevent soggy, anaerobic conditions.	Airflow	Air
+Sir Stink-No-More	Ongoing	You are unaffected by the Stinky Pile Action card.	Black soldier fly larvae devour scraps before they have a chance to smell.	Airflow/Decomposer	Invertebrates
+The Wiggly Worker	Instant	Draw 1 extra card.	Red wigglers can eat half their weight daily.	Airflow/Decomposer	Invertebrates
+Biochar	Instant	Search the discard pile and add 1 Moisture card to add to your hand.	Biochar's porous structure acts like a sponge, helping soil retain water and nutrients.	Carbon	Leaf
+Major Brown	Ongoing	You are unaffected by the Soggy Pile Action card.	Shredded paper or cardboard are excellent "browns" for your compost.	Carbon	Leaf
+Brown Rogue	Instant	Take 1 Nitrogen card from any player’s compost pile and add it to your hand.	Carbon materials balance the C:N ratio to avoid odors.	Carbon	Leaf
+Stink Shield	Ongoing	You are unaffected by both the Soggy Pile and Stinky Pile Action cards.	Coarse "browns" like wood chips add air pockets & absorb moisture.	Carbon	Leaf
+Mycelial Alchemist:	Instant	All players must discard 1 Decomposer card from their compost pile, if they have one.	Fungi digest tough carbon while also storing precious nitrogen.	Carbon/Nitrogen	Mushroom
+The Under-Web	Instant	Swap 1 card from your hand with 1 card from the discard pile.	Mycelium are like nature’s internet moving nutrients throughout the soil.	Carbon/Nitrogen	Mushroom
+Actinomycetes	Instant	To play this card, draw 1 Hero card from the discard pile and play it immediately.	Bacteria = Initial Workhorses; Fungi = Heavy Lifters; Actinomycetes = Master Finishers.	Decomposer	Bacteria
+The Catalyst	Instant	If you have 2 Decomposer cards in your compost pile, take another turn.	The hotter the pile gets, the faster specialized 'heat-loving' bacteria work..	Decomposer	Fire
+The Hot Head	Ongoing	Each time you discard a Carbon card, draw 1 new card.	Heat is the energy released as microbes consume Carbon for fuel	Decomposer	Fire
+The Old Timer	Ongoing	Your maximum hand size is increased to 6 cards.	Time is the ultimate compost hero — given weeks or years, it will break everything down into rich soil.	Decomposer	Time
+Captain Nectar	Instant	Skip the next player’s turn.	Fruit and vegetable scraps are an excellent source of moisture for a compost pile.	Moisture	Water
+The Hydro-Hauler	Instant	All players draw 1 card.	Moisture spreads through compost, sustaining microbial activity.	Moisture	Water
+The Slumber-Soaker	Instant	If you have 1 Decomposer card in your compost pile, draw 1 card.	Compost should feel like a wrung‑out sponge for best microbe activity.	Moisture	Water
+The Microbial Marshal	Instant	If this is the first card in your compost pile, draw 2 cards.	A scoop of soil inoculates compost with microbes.	Nitrogen/Decomposer	Broccoli
+The Brown Bomber	Instant	If you have 1 Carbon card in your compost pile, draw 1 card.	Manure from herbivores like chickens can rapidly spike nitrogen levels.	Nitrogen	Broccoli
+The Anaerobic Tyrant	Instant	If you have 1 Decomposer or 1 Carbon card in your compost pile, draw 1 card.	Too many nitrogen-rich "greens" without enough carbon "browns" can lead to a slimy, smelly, anaerobic pile.	Nitrogen	Broccoli
+The Legion of Life	Instant	Discard the Ongoing Action Card if one is currently in play.	Just one teaspoon of healthy compost can contain over a billion beneficial bacteria.	Nitrogen/Decomposer/Moisture	Bacteria
+The Quencher	Ongoing	Whenever a Moisture card is played into your compost pile, draw 1 extra card.	Moisture activates dormant bacteria, jump-starting their activity and driving decomposition.	Nitrogen/Decomposer	Bacteria
+Card Name	Effect Type		Compost Fact		
+Anaerobic Pocket	Instant	"Discard 1 Airflow card from your compost pile. Then choose any opponent to skip their next turn.
+
+"	Lack of air creates dense, smelly anaerobic pockets that can dramatically slow down the composting process.		
+Carbon Sink	Instant	If you have 2 Carbon cards in your compost pile, you may take 1 Nitrogen card from an opponent's compost pile and add it to your own.	A compost pile that is too heavy in carbon can temporarily "lock up" nitrogen, slowing decomposition.		
+Critical Mass	Ongoing	If you have 2 cards of the same layer in your compost pile, you may draw 1 card.	Achieving a balanced ratio of ingredients fuels rapid decomposition.		
+Critter Raid	Instant	"Each player must discard 1 Nitrogen card from their hand.
+
+"	To deter pests and rodents, always cover freshly added food scraps with a layer of carbon-rich "browns."		
+Dry Spell	Ongoing	"If you don’t have a Moisture card in your compost pile, your maximum hand size is 3 cards.
+
+"	Without moisture, microbes become dormant and decomposition stops.		
+High Heat Gamble	Instant	Draw 3 cards. If none are Decomposers, skip your next turn.	High heat can either supercharge compost or kill key microbes.		
+Hot Pile Bonus	Ongoing	If you have 2 Decomposer cards in your compost pile, you may draw 1 extra card per turn.	A hot, active compost pile is a sign of a thriving ecosystem that is breaking down organic matter at maximum speed.		
+Nitrogen Boost	Ongoing	Discard 1 Nitrogen card from your hand to draw 2 cards.	Nitrogen-rich materials speed up compost breakdown.		
+Plastic Contamination	Ongoing	No player may add compost heroe cards to their compost pile.	Plastic contamination can ruin compost unless it's sorted out.		
+Rainstorm	Instant	Draw 2 cards. Any Moisture or Nitrogen cards drawn may be played into your compost pile immediately.	Moisture jump‑starts microbes.		
+Rot & Regrow	Ongoing	"You may discard 3 cards from your hand to take 1 card of your choice from the discard pile.
+
+"	Compost breaks down and creates fresh soil full of nutrients.		
+Soggy Pile	Instant	Each player must discard either 1 Moisture or 1 Nitrogen card from their compost pile.	Excess water fills air spaces, depriving microbes of the oxygen they need to break down organic matter.		
+Spread Nutrients	Instant	"Give 1 card from your hand to each player. Then draw the same number of cards.
+
+"	Nutrients spread through the ecosystem, benefiting everyone.		
+Stinky Pile	Instant	"Each player must discard 1 Nitrogen card from their compost pile.
+"	Stinky compost piles have too many "greens" (nitrogen) without enough "browns" (carbon) to balance them.		
+Time Warp	Instant	Take another full turn.	Ideal conditions speed compost.		
+Worm Party	Instant	"Each player must choose 1 card from their hand and pass it to the player on their left.
+
+"	Worms castings (poop) have 5 to 10 times more plant-available nutrients than the food they ate.		
+Pile Flip	Instant	"All players must pass their entire compost pile to the left.
+"	Turning a compost pile helps mix layers, distribute moisture and air, and speeds up decomposition.		
+Rot Roulette	Instant	Draw 5 cards. Discard 3 immediately. Keep 2. Play 1 of them right away.	"Not everything breaks down the same way—composting is part science, part surprise, depending on what you feed the pile.
+
+"		

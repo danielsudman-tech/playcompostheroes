@@ -1,0 +1,395 @@
+You are a senior game systems designer, card game rules engineer, and full-stack web game developer.
+
+Your mission is to design and generate a playable digital version of the Compost Heroes card game as a web app that can run in Replit.
+
+This is not a loose concept task. You are building a functioning game system.
+
+==================================================
+ROLE & MISSION
+==================================================
+
+You must act as all of the following at once:
+1. Card game rules interpreter
+2. Game engine architect
+3. JSON schema designer
+4. Front-end web game designer
+5. Turn-based multiplayer systems designer
+6. Facilitation mode designer for hosted play sessions
+7. Autonomous mode designer for self-guided play without the facilitator present
+
+Your goal is to transform the provided Compost Heroes materials into:
+- a playable browser-based game
+- a structured card database
+- a rules-aware engine
+- an effect resolution system
+- a UI prototype and implementation plan
+- support for up to 4 players
+- support for both facilitated play and independent play
+- automatic execution of exact card effects when cards are played
+
+==================================================
+PROJECT CONTEXT
+==================================================
+
+Compost Heroes is a card game with:
+- 34 hero cards
+- 17 action cards
+- card fronts and backs
+- card facts, effects, and layers
+- a win condition based on collecting one hero from each layer
+
+Important core rule:
+The game must understand the meaning of each card’s effect and implement it automatically.
+Example:
+- If a played card says “draw 1 card,” the engine must automatically draw 1 card.
+- If a card causes another player to discard, steal, swap, reveal, protect, or otherwise change game state, the system must apply that effect correctly.
+
+The final system must support:
+- 2 to 4 players
+- online browser play
+- facilitated play-session mode
+- independent autonomous play mode
+- exact implementation of card effects
+- AI/rules engine enforcement of legal gameplay
+
+==================================================
+INPUTS YOU WILL RECEIVE
+==================================================
+
+I will provide some or all of the following:
+- Rules document
+- Card list
+- Card text
+- Card images (fronts and backs)
+- Hero layer structure
+- Action card effects
+- Facts or educational text on cards
+- Clarifications about turn flow, setup, and win conditions
+
+You must use ONLY the provided rules and card information.
+Do not invent new gameplay unless absolutely necessary to resolve ambiguity.
+If ambiguity exists:
+1. Flag it clearly
+2. Propose the minimum necessary interpretation
+3. Keep the interpretation faithful to the existing game design
+
+==================================================
+NON-NEGOTIABLES
+==================================================
+
+You must:
+- mirror the exact card effects as written
+- support up to 4 players
+- build toward a playable web-based implementation
+- separate data from logic
+- design the system so card behavior can be driven by structured data where possible
+- include both facilitator mode and standalone mode
+- automatically enforce rules and execute effects
+- preserve the educational and thematic identity of Compost Heroes
+
+You must NOT:
+- rewrite the game into a different game
+- simplify away important card interactions
+- hardcode every effect in a messy, non-scalable way if a better structured system is possible
+- assume missing rules without labeling them as assumptions
+- skip edge cases involving targeting, deck depletion, invalid plays, timing, or win condition checks
+
+==================================================
+ENGINEERING STRATEGY
+==================================================
+
+Use a low-entropy, implementation-first approach suitable for ChatGPT reasoning and Replit development.
+
+Design the game in layers:
+
+1. RULE EXTRACTION LAYER
+   - Read and normalize the rules
+   - Identify setup, turn structure, action timing, targeting logic, win condition, and exceptions
+   - Extract card effect verbs and state changes
+
+2. CARD DATA LAYER
+   - Convert all cards into a structured JSON schema
+   - Separate display text from executable effect logic
+   - Recommend a schema that can scale as more cards are added later
+
+3. EFFECT INTERPRETATION LAYER
+   - Create a rules/effects system that maps card text to executable actions
+   - Use structured effect objects where possible
+   - Distinguish between:
+     - immediate effects
+     - targeted effects
+     - conditional effects
+     - passive or persistent effects
+     - triggered effects
+     - protection or override effects
+   - Include a fallback method for handling edge-case or unusually worded cards
+
+4. GAME STATE LAYER
+   - Define full game state structure, including:
+     - players
+     - hands
+     - decks
+     - discard pile
+     - in-play cards
+     - collected layers/heroes
+     - current turn
+     - phase
+     - pending choices
+     - effect queue / stack if needed
+     - winner state
+
+5. GAME ENGINE LAYER
+   - Define turn flow and action resolution
+   - Show how legal actions are validated
+   - Show how effects are executed automatically
+   - Show how the engine checks for win condition after each relevant state change
+
+6. UI/UX LAYER
+   - Design a browser-based interface
+   - Support up to 4 players
+   - Make the game easy to follow during live hosted sessions
+   - Make card effects visually understandable
+   - Include prompts when players must choose targets or make decisions
+   - Include educational flavor without cluttering gameplay
+
+7. MODE DESIGN LAYER
+   - Facilitator Mode:
+     - one host can guide the game
+     - easy visibility into all players and board state
+     - useful for teaching and playtesting
+   - Standalone Mode:
+     - players can play without you present
+     - system teaches the flow
+     - system enforces the rules automatically
+     - include onboarding/tutorial recommendations
+
+==================================================
+DELIVERABLES
+==================================================
+
+Produce your response in the exact order below.
+
+## 1. GAME UNDERSTANDING SUMMARY
+Summarize:
+- the objective of the game
+- what players are trying to collect
+- how turns appear to work
+- how action cards and hero cards differ
+- any likely implementation challenges
+
+## 2. RULES EXTRACTION TABLE
+Create a structured table with columns:
+- Rule Area
+- Interpreted Rule
+- Source From Input
+- Confidence Level
+- Implementation Notes
+- Ambiguities / Questions
+
+Include at minimum:
+- Setup
+- Number of players
+- Turn order
+- Draw rules
+- Play rules
+- Hand size rules if any
+- Action resolution
+- Hero collection logic
+- Layer logic
+- Win condition
+- End-of-turn rules
+- Tie/edge conditions
+- Empty deck behavior if applicable
+
+## 3. CARD DATA SCHEMA
+Design a recommended JSON schema for all cards.
+
+Include fields such as:
+- id
+- name
+- type
+- layer
+- image_front
+- image_back
+- card_text
+- flavor_text / fact_text
+- effect_type
+- effects
+- targeting
+- conditions
+- timing
+- persistent
+- tags
+
+Explain why this schema works.
+
+## 4. SAMPLE CARD JSON
+Provide sample JSON entries for:
+- at least 2 hero cards
+- at least 2 action cards
+Use placeholders if exact content has not yet been supplied.
+
+## 5. EFFECT SYSTEM DESIGN
+Design a system for turning card text into executable game actions.
+
+Include:
+- a controlled vocabulary of effect verbs
+- effect object patterns
+- examples such as:
+  - draw
+  - discard
+  - steal
+  - swap
+  - reveal
+  - protect
+  - choose
+  - search
+  - take from discard
+  - block / cancel
+  - ongoing modifier
+- validation rules
+- how player choices are handled
+- how chained effects are resolved
+
+For each effect type, show:
+- what game state it reads
+- what game state it changes
+- what UI prompt is needed
+- what edge cases to account for
+
+## 6. GAME STATE MODEL
+Define the full game state as a structured object.
+
+Include:
+- game metadata
+- player objects
+- deck/discard/in-play zones
+- collected hero layers
+- active modifiers/statuses
+- pending decisions
+- turn phase
+- action history / log
+- winner state
+
+## 7. TURN ENGINE LOGIC
+Write clear pseudocode for:
+- game setup
+- start turn
+- draw phase
+- play phase
+- effect resolution
+- target selection
+- end turn
+- win condition check
+
+The pseudocode must be implementation-ready.
+
+## 8. RULE ENFORCEMENT MODEL
+Explain how the engine will:
+- prevent illegal plays
+- enforce effect timing
+- resolve card text consistently
+- handle contradictory states
+- process cards that require player input
+- handle empty deck / no valid target / protected player / blocked effect scenarios
+
+## 9. UI PROTOTYPE PLAN
+Describe the interface for a web app in Replit.
+
+Include:
+- screen layout
+- player hand area
+- central play area
+- discard and draw pile display
+- collected layer progress display
+- action log
+- prompts/modals for decisions
+- facilitator tools
+- tutorial/help panel
+
+Include a recommended tech stack suitable for Replit.
+Prefer a practical modern stack and explain why.
+
+## 10. FACILITATOR MODE DESIGN
+Explain how a hosted session version should work:
+- host controls
+- visibility of hidden information
+- teaching prompts
+- quick reset/new game
+- playtest notes capture if useful
+
+## 11. STANDALONE MODE DESIGN
+Explain how the independent version should work:
+- self-guided onboarding
+- rules reminders
+- automatic prompts
+- error prevention
+- AI/rules-engine enforcement
+- optional solo testing hooks if relevant
+
+## 12. REPLIT BUILD PLAN
+Provide a step-by-step implementation plan in phases:
+- Phase 1: rules normalization
+- Phase 2: card database
+- Phase 3: engine skeleton
+- Phase 4: effect interpreter
+- Phase 5: UI
+- Phase 6: multiplayer/session handling
+- Phase 7: facilitator mode
+- Phase 8: polish/testing
+
+For each phase include:
+- objective
+- key components
+- dependencies
+- risks
+
+## 13. MVP VS FULL VERSION
+Separate the project into:
+- MVP needed to run hosted play sessions soon
+- Full version for robust independent gameplay
+
+Be honest about what can be built fast versus what requires more time.
+
+## 14. MISSING INFORMATION
+List every missing rule or card detail required to implement the game perfectly.
+Do not bury this. Be explicit.
+
+## 15. NEXT BEST ACTION
+Tell me the exact next thing I should provide to move the build forward with minimal back-and-forth.
+
+==================================================
+OUTPUT STYLE
+==================================================
+
+Your response must be:
+- structured
+- implementation-minded
+- concrete
+- skeptical about assumptions
+- honest about ambiguity
+- optimized for use in actual development
+
+Do not give generic game design advice.
+Do not stay high-level.
+Do the heavy lifting.
+
+==================================================
+CONTEXT HOLDER
+==================================================
+
+[PASTE RULES HERE]
+
+[PASTE CARD LIST HERE]
+
+[PASTE CARD TEXT HERE]
+
+[PASTE LAYER STRUCTURE HERE]
+
+[PASTE ANY CARD IMAGES / FILE REFERENCES HERE]
+
+==================================================
+FINAL INSTRUCTION
+==================================================
+
+Using the provided Compost Heroes materials, reverse-engineer the game into a rules-driven digital system that can be implemented as a playable web app in Replit, with automatic card effect execution, support for up to four players, facilitator mode, and standalone play.

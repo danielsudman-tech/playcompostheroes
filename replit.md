@@ -94,3 +94,29 @@ Generated React Query hooks and fetch client from the OpenAPI spec (e.g. `useHea
 ### `scripts` (`@workspace/scripts`)
 
 Utility scripts package. Each script is a `.ts` file in `src/` with a corresponding npm script in `package.json`. Run scripts via `pnpm --filter @workspace/scripts run <script>`. Scripts can import any workspace package (e.g., `@workspace/db`) by adding it as a dependency in `scripts/package.json`.
+
+## Compost Heroes Game
+
+**Artifact**: `artifacts/compost-heroes` (React + Vite, previewPath `/`)
+
+A browser-based digital card game for 2–4 players. Players collect hero cards from 5 compost function categories into their pile. First to have 1 hero from each category wins.
+
+### Game Architecture
+
+- **Frontend**: React + Vite, with React Query for polling (1.5s) and mutations
+- **Backend**: In-memory game state in `artifacts/api-server/src/lib/gameStore.ts`
+- **Game Engine**: `artifacts/api-server/src/lib/gameEngine.ts` — complete card/turn logic
+- **Cards**: 51 cards defined in `artifacts/api-server/src/lib/cards.ts` (34 hero + 17 action)
+- **API**: POST /api/games, GET /api/games/:id, POST /api/games/:id/action
+
+### Key Game Rules
+
+- Win: collect 1 hero from each of 5 functions: Airflow, Carbon, Moisture, Nitrogen, Decomposer
+- Turn flow: `draw` phase → draw card → `play` phase → play or skip → end turn → next player
+- Action cards trigger `pendingDecision` which must be resolved before ending turn
+- Modes: Pass & Play (local, turn-based), Facilitator (host controls view)
+
+### Important Bugs Fixed
+
+- `enforceHandSize`: infinite loop because `player` reference was stale inside while loop — fixed to refresh from state on each iteration
+- `choose_rot_roulette_keep`: second step (play 1 of kept cards) now properly calls `playCard()` after clearing pending decision

@@ -1,0 +1,16 @@
+packages:
+  "framer-motion": "For smooth card shuffling, playing, and drawing animations"
+  "canvas-confetti": "For game over celebration effects"
+  "@types/canvas-confetti": "Type definitions for canvas-confetti"
+
+images:
+  - path: "artifacts/compost-heroes/public/images/wood-bg.png"
+    description: "Seamless subtle light wood grain texture for a tabletop game board background"
+    aspect_ratio: "16:9"
+  - path: "artifacts/compost-heroes/public/images/lobby-hero.png"
+    description: "Beautiful illustration of a vibrant, magical compost pile with friendly bugs, glowing mushrooms, and green leaves in a warm, earthy fantasy style"
+    aspect_ratio: "16:9"
+
+notes:
+  - Assumes backend API from @workspace/api-client-react is fully functional based on the provided schema.
+  - Game state uses polling (refetchInterval) on the /api/games/:gameId endpoint for multiplayer synchronization.

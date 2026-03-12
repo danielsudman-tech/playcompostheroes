@@ -1,15 +1,16 @@
 openapi: 3.1.0
 info:
-  # Do not change the title, if the title changes, the import paths will be broken
   title: Api
   version: 0.1.0
-  description: API specification
+  description: Compost Heroes Game API
 servers:
   - url: /api
     description: Base API path
 tags:
   - name: health
     description: Health operations
+  - name: game
+    description: Game session operations
 paths:
   /healthz:
     get:
@@ -24,6 +25,88 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/HealthStatus"
+
+  /games:
+    post:
+      operationId: createGame
+      tags: [game]
+      summary: Create a new game session
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateGameRequest"
+      responses:
+        "201":
+          description: Game created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/GameState"
+
+  /games/{gameId}:
+    get:
+      operationId: getGame
+      tags: [game]
+      summary: Get game state
+      parameters:
+        - name: gameId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Game state
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/GameState"
+        "404":
+          description: Game not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /games/{gameId}/action:
+    post:
+      operationId: performAction
+      tags: [game]
+      summary: Perform a game action
+      parameters:
+        - name: gameId
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/GameAction"
+      responses:
+        "200":
+          description: Updated game state
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/GameState"
+        "400":
+          description: Invalid action
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "404":
+          description: Game not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
 components:
   schemas:
     HealthStatus:
@@ -34,3 +117,216 @@ components:
       required:
         - status
 
+    ErrorResponse:
+      type: object
+      properties:
+        error:
+          type: string
+      required:
+        - error
+
+    CreateGameRequest:
+      type: object
+      properties:
+        playerNames:
+          type: array
+          items:
+            type: string
+          minItems: 2
+          maxItems: 4
+        mode:
+          type: string
+          enum: [facilitator, standalone]
+      required:
+        - playerNames
+        - mode
+
+    Card:
+      type: object
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        type:
+          type: string
+          enum: [hero, action]
+        layer:
+          type: string
+          nullable: true
+        effectType:
+          type: string
+          enum: [instant, ongoing]
+        cardText:
+          type: string
+        factText:
+          type: string
+        function:
+          type: string
+        imageKey:
+          type: string
+          nullable: true
+      required:
+        - id
+        - name
+        - type
+        - layer
+        - effectType
+        - cardText
+        - factText
+        - function
+        - imageKey
+
+    PlayerState:
+      type: object
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        hand:
+          type: array
+          items:
+            $ref: "#/components/schemas/Card"
+        compostPile:
+          type: array
+          items:
+            $ref: "#/components/schemas/Card"
+        skipsNextTurn:
+          type: boolean
+        maxHandSize:
+          type: integer
+        drawsExtraCard:
+          type: boolean
+      required:
+        - id
+        - name
+        - hand
+        - compostPile
+        - skipsNextTurn
+        - maxHandSize
+        - drawsExtraCard
+
+    ActiveModifier:
+      type: object
+      properties:
+        cardId:
+          type: string
+        cardName:
+          type: string
+        effect:
+          type: string
+        appliedByPlayerId:
+          type: string
+      required:
+        - cardId
+        - cardName
+        - effect
+        - appliedByPlayerId
+
+    PendingDecision:
+      type: object
+      properties:
+        type:
+          type: string
+        playerId:
+          type: string
+        cardId:
+          type: string
+        options:
+          type: array
+          items:
+            type: object
+            additionalProperties: true
+        prompt:
+          type: string
+      required:
+        - type
+        - playerId
+        - cardId
+        - prompt
+
+    GameState:
+      type: object
+      properties:
+        gameId:
+          type: string
+        mode:
+          type: string
+          enum: [facilitator, standalone]
+        phase:
+          type: string
+          enum: [setup, draw, play, effect_resolution, end_turn, game_over]
+        currentPlayerIndex:
+          type: integer
+        players:
+          type: array
+          items:
+            $ref: "#/components/schemas/PlayerState"
+        deck:
+          type: array
+          items:
+            $ref: "#/components/schemas/Card"
+        discardPile:
+          type: array
+          items:
+            $ref: "#/components/schemas/Card"
+        activeModifiers:
+          type: array
+          items:
+            $ref: "#/components/schemas/ActiveModifier"
+        pendingDecision:
+          $ref: "#/components/schemas/PendingDecision"
+          nullable: true
+        log:
+          type: array
+          items:
+            type: string
+        winner:
+          type: string
+          nullable: true
+        turnNumber:
+          type: integer
+      required:
+        - gameId
+        - mode
+        - phase
+        - currentPlayerIndex
+        - players
+        - deck
+        - discardPile
+        - activeModifiers
+        - pendingDecision
+        - log
+        - winner
+        - turnNumber
+
+    GameAction:
+      type: object
+      properties:
+        type:
+          type: string
+          enum:
+            - draw_card
+            - play_card
+            - end_turn
+            - resolve_decision
+            - reset_game
+        playerId:
+          type: string
+        cardId:
+          type: string
+          nullable: true
+        targetPlayerId:
+          type: string
+          nullable: true
+        targetCardId:
+          type: string
+          nullable: true
+        decisionData:
+          type: object
+          nullable: true
+          additionalProperties: true
+      required:
+        - type
+        - playerId
