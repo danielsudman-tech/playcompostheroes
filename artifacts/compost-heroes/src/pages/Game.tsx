@@ -413,6 +413,7 @@ export default function Game() {
           isLocalUser={true}
           isActiveTurn={isMyTurn}
           onPlayCard={handlePlayCard}
+          onMoveLayer={(cardId) => actionMutation.mutate({ type: "move_card_layer" as any, playerId: localPlayerId!, cardId })}
         />
       </div>
 

@@ -1,9 +1,10 @@
-import { useState } from "react";
+import { useState, useRef } from "react";
+import { createPortal } from "react-dom";
 import { motion, AnimatePresence } from "framer-motion";
 import { GameCard } from "./GameCard";
 import type { PlayerState, CardState } from "@workspace/api-client-react";
 import { cn } from "@/lib/utils";
-import { Wind, Leaf, Droplets, Sprout, Worm, User } from "lucide-react";
+import { Wind, Leaf, Droplets, Sprout, Worm, User, MoveRight } from "lucide-react";
 
 interface PlayerMatProps {
   player: PlayerState;
@@ -12,6 +13,7 @@ interface PlayerMatProps {
   isActiveTurn: boolean;
   onPlayCard?: (cardId: string) => void;
   onViewPile?: () => void;
+  onMoveLayer?: (cardId: string) => void;
   className?: string;
   compact?: boolean;
 }
@@ -75,21 +77,44 @@ const CATEGORIES = [
   },
 ];
 
+function getEffectiveFn(card: CardState): string {
+  return (card as any).chosenFunction ?? card.function ?? "";
+}
+
 function getCategoryCards(pile: CardState[], matchFn: (fn: string) => boolean) {
-  return pile.filter((c) => matchFn(c.function || ""));
+  return pile.filter((c) => matchFn(getEffectiveFn(c)));
 }
 
 const BASE = import.meta.env.BASE_URL as string;
 
-function HoverableCard({ card }: { card: CardState }) {
+function HoverableCard({ card, canMove, onMoveLayer }: { card: CardState; canMove?: boolean; onMoveLayer?: () => void }) {
   const [hovered, setHovered] = useState(false);
+  const [popupPos, setPopupPos] = useState<{ x: number; y: number } | null>(null);
+  const containerRef = useRef<HTMLDivElement>(null);
   const imageSrc = card.imageKey ? `${BASE}assets/${card.imageKey}` : null;
+
+  const handleMouseEnter = () => {
+    if (containerRef.current) {
+      const rect = containerRef.current.getBoundingClientRect();
+      setPopupPos({
+        x: rect.left + rect.width / 2,
+        y: rect.top,
+      });
+    }
+    setHovered(true);
+  };
+
+  const handleMouseLeave = () => {
+    setHovered(false);
+    setPopupPos(null);
+  };
 
   return (
     <div
-      className="relative flex items-center justify-center"
-      onMouseEnter={() => setHovered(true)}
-      onMouseLeave={() => setHovered(false)}
+      ref={containerRef}
+      className="relative w-full h-full flex items-center justify-center"
+      onMouseEnter={handleMouseEnter}
+      onMouseLeave={handleMouseLeave}
     >
       {imageSrc ? (
         <img
@@ -102,14 +127,32 @@ function HoverableCard({ card }: { card: CardState }) {
         <GameCard card={card} size="xs" hoverable={false} />
       )}
 
-      <AnimatePresence>
-        {hovered && (
+      {canMove && onMoveLayer && (
+        <button
+          onClick={(e) => { e.stopPropagation(); onMoveLayer(); }}
+          className="absolute -bottom-1 -right-1 z-10 bg-primary text-white rounded-full p-0.5 shadow-md hover:bg-primary/80 transition-colors"
+          title="Move to another slot"
+        >
+          <MoveRight className="w-2.5 h-2.5" />
+        </button>
+      )}
+
+      {hovered && popupPos && createPortal(
+        <div
+          className="pointer-events-none"
+          style={{
+            position: "fixed",
+            left: popupPos.x,
+            bottom: window.innerHeight - popupPos.y + 8,
+            transform: "translateX(-50%)",
+            zIndex: 99999,
+          }}
+        >
           <motion.div
-            initial={{ opacity: 0, scale: 0.7, y: 0 }}
-            animate={{ opacity: 1, scale: 1, y: -20 }}
-            exit={{ opacity: 0, scale: 0.7, y: 0 }}
+            initial={{ opacity: 0, scale: 0.7 }}
+            animate={{ opacity: 1, scale: 1 }}
+            exit={{ opacity: 0, scale: 0.7 }}
             transition={{ duration: 0.15 }}
-            className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 z-50 pointer-events-none"
             style={{ transformOrigin: "bottom center" }}
           >
             <div className="shadow-2xl rounded-xl overflow-hidden border-2 border-white/40">
@@ -124,8 +167,9 @@ function HoverableCard({ card }: { card: CardState }) {
               )}
             </div>
           </motion.div>
-        )}
-      </AnimatePresence>
+        </div>,
+        document.body
+      )}
     </div>
   );
 }
@@ -136,6 +180,7 @@ export function PlayerMat({
   isLocalUser,
   isActiveTurn,
   onViewPile,
+  onMoveLayer,
   className,
   compact = false,
 }: PlayerMatProps) {
@@ -336,7 +381,11 @@ export function PlayerMat({
                         transition={{ type: "spring", duration: 0.3 }}
                         className="absolute inset-1"
                       >
-                        <HoverableCard card={topCard} />
+                        <HoverableCard
+                          card={topCard}
+                          canMove={isActiveTurn && isLocalUser && !!((topCard as any).alternateFunctions?.length)}
+                          onMoveLayer={onMoveLayer ? () => onMoveLayer(topCard.id) : undefined}
+                        />
                       </motion.div>
                     ) : (
                       <div className="absolute inset-0 flex flex-col items-center justify-center gap-1 text-muted-foreground/25">

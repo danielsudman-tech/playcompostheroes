@@ -3,8 +3,16 @@ import { motion, AnimatePresence } from "framer-motion";
 import type { PendingDecision, GameState } from "@workspace/api-client-react";
 import { Button } from "@/components/ui/button";
 import { GameCard } from "./GameCard";
-import { User, CheckSquare } from "lucide-react";
+import { User, CheckSquare, Wind, Leaf, Droplets, Sprout, Worm } from "lucide-react";
 import { cn } from "@/lib/utils";
+
+const FUNCTION_META: Record<string, { label: string; Icon: React.ElementType; color: string; bg: string }> = {
+  Airflow:    { label: "Airflow",    Icon: Wind,     color: "text-cyan-700",  bg: "bg-cyan-50 border-cyan-400" },
+  Carbon:     { label: "Carbon",     Icon: Leaf,     color: "text-amber-700", bg: "bg-amber-50 border-amber-400" },
+  Moisture:   { label: "Moisture",   Icon: Droplets, color: "text-blue-700",  bg: "bg-blue-50 border-blue-400" },
+  Nitrogen:   { label: "Nitrogen",   Icon: Sprout,   color: "text-lime-700",  bg: "bg-lime-50 border-lime-400" },
+  Decomposer: { label: "Decomposer", Icon: Worm,     color: "text-orange-700",bg: "bg-orange-50 border-orange-400" },
+};
 
 interface DecisionModalProps {
   decision: PendingDecision | null;
@@ -28,6 +36,11 @@ const CARD_SELECTION_TYPES = new Set([
 const PLAYER_SELECTION_TYPES = new Set([
   "choose_target_player",
   "choose_opponent_for_steal",
+]);
+
+const FUNCTION_SELECTION_TYPES = new Set([
+  "choose_function",
+  "choose_move_function",
 ]);
 
 type MultiSelectMode =
@@ -66,6 +79,7 @@ export function DecisionModal({ decision, gameState, onResolve }: DecisionModalP
 
   const isPlayerSelection = PLAYER_SELECTION_TYPES.has(type);
   const isCardSelection = CARD_SELECTION_TYPES.has(type);
+  const isFunctionSelection = FUNCTION_SELECTION_TYPES.has(type);
 
   const toggleCard = (cardId: string) => {
     setSelectedIds(prev => {
@@ -88,7 +102,15 @@ export function DecisionModal({ decision, gameState, onResolve }: DecisionModalP
 
   const handleSingleOption = (opt: any) => {
     setSelectedIds([]);
-    onResolve(opt);
+    if (isPlayerSelection) {
+      // Backend always expects targetPlayerId — remap from opt.playerId if needed
+      onResolve({
+        targetPlayerId: opt.targetPlayerId ?? opt.playerId,
+        targetCardId: opt.targetCardId,
+      });
+    } else {
+      onResolve(opt);
+    }
   };
 
   const handleSkip = () => {
@@ -199,7 +221,30 @@ export function DecisionModal({ decision, gameState, onResolve }: DecisionModalP
               </div>
             )}
 
-            {!isCardSelection && !isPlayerSelection && (
+            {isFunctionSelection && (
+              <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+                {options.map((opt: any, i: number) => {
+                  const fn = opt.function as string;
+                  const meta = FUNCTION_META[fn] ?? { label: fn, Icon: Leaf, color: "text-muted-foreground", bg: "bg-muted border-border" };
+                  const { Icon } = meta;
+                  return (
+                    <button
+                      key={i}
+                      onClick={() => onResolve({ function: fn })}
+                      className={cn(
+                        "flex flex-col items-center justify-center gap-2 p-5 rounded-xl border-2 font-bold text-lg transition-all hover:scale-105 hover:shadow-lg",
+                        meta.bg, meta.color
+                      )}
+                    >
+                      <Icon className="w-8 h-8" />
+                      {meta.label}
+                    </button>
+                  );
+                })}
+              </div>
+            )}
+
+            {!isCardSelection && !isPlayerSelection && !isFunctionSelection && (
               <div className="flex flex-wrap justify-center gap-4">
                 {options.map((opt: any, i: number) => (
                   <Button key={i} size="lg" onClick={() => handleSingleOption(opt)} className="font-bold text-lg px-8">

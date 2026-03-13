@@ -125,3 +125,16 @@ A browser-based digital card game for 2–4 players. Players collect hero cards 
 - `choose_discard_for_spread`: now uses fixed-count multi-select (N = number of other players); sends `{ cardIds: string[] }` payload
 - `choose_nitrogen_boost_discard`: backend now handles `{ skip: true }` gracefully; frontend shows Skip button
 - `useGameAction`: added `GameActionCallbacks` with `onError(message)` callback; Game.tsx wires up destructive toast for action errors
+- `targetPlayerId` mismatch: `handleSingleOption` in DecisionModal now remaps `opt.playerId` → `targetPlayerId` for player-selection decisions so backend `choose_target_player` handler receives the correct field
+- `HoverableCard` hover clipping: rewrote to use `useRef` + `getBoundingClientRect()` + `createPortal` with `position: fixed` so the preview card renders at the correct screen position regardless of z-index stacking contexts
+
+### Multi-Layer Hero Card Feature
+
+Hero cards can now fill multiple compost function slots:
+
+- **Card interface**: `Card.alternateFunctions?: string[]` lists additional slots a hero can fill; `Card.chosenFunction?: string` stores the player's choice (set on card when in compost pile)
+- **`choose_function` decision**: when a hero with `alternateFunctions` is played, backend sets a pending decision showing all possible function slots as colored icon buttons
+- **`choose_move_function` decision**: triggered by `move_card_layer` action — shows available alternate slots for a placed card; only offers unfilled slots
+- **`move_card_layer` action**: new action type in GameAction; backend handler in `moveCardLayer()` validates the card has alternates and the target slot is empty; PlayerMat renders a small move button on multi-layer cards when it's the local player's turn
+- **Win condition**: `getHasFunction()` and `getCountFunction()` use `chosenFunction ?? function` so chosen slot counts for win check
+- **UI**: DecisionModal `FUNCTION_SELECTION_TYPES` set + `isFunctionSelection` renders a grid of colored function buttons with icons; `getCategoryCards` in PlayerMat uses `getEffectiveFn(card)` = `chosenFunction ?? function` so placed cards display in the correct slot; `CardState` type alias added to `api.schemas.ts`

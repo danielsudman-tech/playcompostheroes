@@ -16,6 +16,8 @@ export interface Card {
   cardText: string;
   factText: string;
   function: string;
+  alternateFunctions?: string[];
+  chosenFunction?: string;
   imageKey: string | null;
 }
 

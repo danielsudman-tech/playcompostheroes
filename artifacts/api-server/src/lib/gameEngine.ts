@@ -37,7 +37,9 @@ export type DecisionType =
   | "choose_under_web_hand_card"
   | "choose_under_web_discard_card"
   | "choose_rot_regrow_discard"
-  | "choose_nitrogen_boost_discard";
+  | "choose_nitrogen_boost_discard"
+  | "choose_function"
+  | "choose_move_function";
 
 export interface PendingDecision {
   type: DecisionType;
@@ -165,12 +167,16 @@ function enforceHandSize(state: GameState): GameState {
   return s;
 }
 
+function getEffectiveFunction(card: Card): string {
+  return card.chosenFunction ?? card.function;
+}
+
 function getHasFunction(player: PlayerState, fn: string): boolean {
-  return player.compostPile.some((c) => c.function === fn);
+  return player.compostPile.some((c) => getEffectiveFunction(c) === fn);
 }
 
 function getCountFunction(player: PlayerState, fn: string): number {
-  return player.compostPile.filter((c) => c.function === fn).length;
+  return player.compostPile.filter((c) => getEffectiveFunction(c) === fn).length;
 }
 
 function checkWinCondition(state: GameState): string | null {
@@ -954,6 +960,28 @@ export function playCard(
   if (cardInHand.type === "hero") {
     // Mark hero as played this turn
     s = { ...s, heroPlayedThisTurn: true };
+
+    // If card has multiple possible functions, ask player to choose which slot
+    const allFunctions = cardInHand.alternateFunctions?.length
+      ? [cardInHand.function, ...cardInHand.alternateFunctions]
+      : [];
+    if (allFunctions.length > 1) {
+      addLog(s, `${player.name} played ${cardInHand.name} — choose which function slot to fill.`);
+      s = {
+        ...s,
+        pendingDecision: {
+          type: "choose_function",
+          playerId: player.id,
+          cardId: cardInHand.id,
+          prompt: `${player.name}: Choose which function slot to fill with ${cardInHand.name}.`,
+          options: allFunctions.map((fn) => ({ function: fn })),
+          meta: { pendingCard: cardInHand as unknown as Record<string, unknown> },
+        },
+      };
+      s = updatePlayer(s, updatedPlayer);
+      return { state: s };
+    }
+
     // Add to compost pile
     updatedPlayer = {
       ...updatedPlayer,
@@ -1450,6 +1478,73 @@ export function resolveDecision(
       return { state: s };
     }
 
+    // Player chooses which function slot a multi-layer hero fills
+    case "choose_function": {
+      const chosenFn = decisionData.function as string;
+      const pendingCard = decision.meta?.pendingCard as Card | undefined;
+      if (!pendingCard) return { state, error: "No pending card to place" };
+      const allFns = [pendingCard.function, ...(pendingCard.alternateFunctions ?? [])];
+      if (!allFns.includes(chosenFn)) return { state, error: "Invalid function choice" };
+
+      const cardWithChoice: Card = { ...pendingCard, chosenFunction: chosenFn };
+      const updatedPlayer = {
+        ...player,
+        compostPile: [...player.compostPile, cardWithChoice],
+      };
+      s = updatePlayer(s, updatedPlayer);
+      addLog(s, `${player.name} placed ${pendingCard.name} into the ${chosenFn} slot.`);
+
+      if (cardWithChoice.effectType === "ongoing") {
+        s = recomputeAllModifiers(s);
+        addLog(s, `${cardWithChoice.name} ongoing effect is now active for ${player.name}.`);
+      } else {
+        s = resolveHeroInstantEffect(s, getPlayer(s, playerId)!, cardWithChoice);
+      }
+
+      // Check win
+      const winner = checkWinCondition(s);
+      if (winner) {
+        s = { ...s, phase: "game_over", winner };
+        const winnerPlayer = getPlayer(s, winner)!;
+        addLog(s, `🎉 ${winnerPlayer.name} wins! They collected one hero from each function!`);
+      }
+      return { state: s };
+    }
+
+    // Player moves a multi-layer hero card already in compost to a different slot
+    case "choose_move_function": {
+      const chosenFn = decisionData.function as string;
+      const moveCardId = decision.meta?.moveCardId as string | undefined;
+      if (!moveCardId) return { state, error: "No card to move" };
+
+      const cardIdx = player.compostPile.findIndex((c) => c.id === moveCardId);
+      if (cardIdx < 0) return { state, error: "Card not found in compost pile" };
+
+      const cardToMove = player.compostPile[cardIdx];
+      const allFns = [cardToMove.function, ...(cardToMove.alternateFunctions ?? [])];
+      if (!allFns.includes(chosenFn)) return { state, error: "Invalid function choice" };
+
+      // Ensure the target slot is currently empty (or the same card is there)
+      const currentOccupant = player.compostPile.find(
+        (c, i) => i !== cardIdx && getEffectiveFunction(c) === chosenFn
+      );
+      if (currentOccupant) return { state, error: `The ${chosenFn} slot is already filled` };
+
+      const movedCard: Card = { ...cardToMove, chosenFunction: chosenFn };
+      const newPile = player.compostPile.map((c, i) => (i === cardIdx ? movedCard : c));
+      const updatedPlayer = { ...player, compostPile: newPile };
+      s = updatePlayer(s, updatedPlayer);
+      addLog(s, `${player.name} moved ${cardToMove.name} to the ${chosenFn} slot.`);
+
+      const winner = checkWinCondition(s);
+      if (winner) {
+        s = { ...s, phase: "game_over", winner };
+        const winnerPlayer = getPlayer(s, winner)!;
+        addLog(s, `🎉 ${winnerPlayer.name} wins! They collected one hero from each function!`);
+      }
+      return { state: s };
+    }
+
     default:
       return { state, error: `Unknown decision type: ${decision.type}` };
   }
@@ -1619,4 +1714,46 @@ export function createGameState(
   addLog(state, `--- ${state.players[0].name}'s turn begins ---`);
 
   return state;
+}
+
+// ─────────────────────────────────────────────
+// MOVE CARD LAYER (action)
+// Initiates the choose_move_function decision for a multi-layer hero already in compost.
+// ─────────────────────────────────────────────
+export function moveCardLayer(
+  state: GameState,
+  playerId: string,
+  cardId: string
+): { state: GameState; error?: string } {
+  const player = getPlayer(state, playerId);
+  if (!player) return { state, error: "Player not found" };
+  if (state.pendingDecision) return { state, error: "Must resolve pending decision first" };
+
+  const card = player.compostPile.find((c) => c.id === cardId);
+  if (!card) return { state, error: "Card not found in compost pile" };
+
+  const allFns = [card.function, ...(card.alternateFunctions ?? [])];
+  if (allFns.length <= 1) return { state, error: "This card has only one function and cannot be moved" };
+
+  // Only offer slots that are not already filled by another card
+  const currentFn = getEffectiveFunction(card);
+  const availableTargets = allFns.filter((fn) => {
+    if (fn === currentFn) return false; // skip current slot
+    return !getHasFunction(player, fn) || player.compostPile.some((c) => c.id === cardId && getEffectiveFunction(c) === fn);
+  });
+
+  if (availableTargets.length === 0) return { state, error: "No available slots to move this card to" };
+
+  let s = {
+    ...state,
+    pendingDecision: {
+      type: "choose_move_function" as const,
+      playerId,
+      cardId,
+      prompt: `${player.name}: Choose a new function slot for ${card.name}.`,
+      options: availableTargets.map((fn) => ({ function: fn })),
+      meta: { moveCardId: cardId },
+    },
+  };
+  return { state: s };
 }

@@ -3,6 +3,7 @@ import {
   createGameState,
   drawCardAction,
   endTurn,
+  moveCardLayer,
   playCard,
   resolveDecision,
 } from "../lib/gameEngine.js";
@@ -100,6 +101,14 @@ router.post("/games/:gameId/action", (req, res) => {
       if (targetCardId) data.targetCardId = targetCardId;
       if (cardId) data.cardId = cardId;
       result = resolveDecision(state, playerId, data);
+      break;
+    }
+    case "move_card_layer": {
+      if (!cardId) {
+        res.status(400).json({ error: "cardId required for move_card_layer" });
+        return;
+      }
+      result = moveCardLayer(state, playerId, cardId);
       break;
     }
     case "reset_game": {
