@@ -116,6 +116,8 @@ export interface GameState {
   log: string[];
   winner: string | null;
   turnNumber: number;
+  heroPlayedThisTurn: boolean;
+  ongoingActionCard: Card | null;
 }
 
 export type GameActionType =

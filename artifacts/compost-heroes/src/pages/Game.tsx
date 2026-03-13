@@ -9,7 +9,7 @@ import { DecisionModal } from "@/components/DecisionModal";
 import { OpponentPileModal } from "@/components/OpponentPileModal";
 import { Button } from "@/components/ui/button";
 import { useToast } from "@/hooks/use-toast";
-import type { PlayerState } from "@workspace/api-client-react";
+import type { PlayerState, Card } from "@workspace/api-client-react";
 import { 
   Layers, 
   RefreshCcw, 
@@ -17,7 +17,11 @@ import {
   AlertCircle, 
   Trophy,
   Loader2,
-  Sparkles
+  Sparkles,
+  Zap,
+  CircleDot,
+  Leaf,
+  X
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -34,6 +38,9 @@ export default function Game() {
 
   // State for viewing an opponent's compost pile
   const [viewingOpponent, setViewingOpponent] = useState<PlayerState | null>(null);
+
+  // State for card play confirmation modal
+  const [confirmCard, setConfirmCard] = useState<Card | null>(null);
 
   useEffect(() => {
     if (gameState?.phase === "game_over" && gameState.winner) {
@@ -102,7 +109,18 @@ export default function Game() {
 
   const handlePlayCard = (cardId: string) => {
     if (!isMyTurn || !localPlayerId) return;
+    setConfirmCard(null);
     actionMutation.mutate({ type: "play_card", playerId: localPlayerId, cardId });
+  };
+
+  const handleCardClick = (card: Card) => {
+    if (!isMyTurn || gameState?.phase !== "play" || gameState?.pendingDecision) return;
+    // Block second hero immediately with a toast
+    if (card.type === "hero" && gameState?.heroPlayedThisTurn) {
+      toast({ title: "One hero per turn", description: "You've already played a hero card this turn.", variant: "destructive" });
+      return;
+    }
+    setConfirmCard(card);
   };
 
   const handleResolveDecision = (decisionData: any) => {
@@ -167,29 +185,65 @@ export default function Game() {
         {/* Center: THE CHALLENGE + Draw/Discard */}
         <div className="flex flex-col items-center gap-3 self-center">
 
-          {/* THE CHALLENGE zone */}
-          <div className="w-full max-w-sm">
+          {/* THE CHALLENGE zone — Ongoing Action Card + Hero Effects */}
+          <div className="w-full max-w-sm space-y-2">
+
+            {/* Ongoing Action Card Slot */}
             <div className="bg-card/90 backdrop-blur-md rounded-2xl border shadow-xl overflow-hidden">
-              <div className="bg-gradient-to-r from-primary/20 via-primary/10 to-secondary/20 px-4 py-2 border-b border-border/50 flex items-center justify-between">
+              <div className="bg-gradient-to-r from-orange-500/20 via-orange-400/10 to-yellow-400/10 px-4 py-2 border-b border-border/50 flex items-center justify-between">
                 <div className="flex items-center gap-2">
-                  <Sparkles className="w-4 h-4 text-primary" />
-                  <span className="font-display font-bold text-sm tracking-widest uppercase text-foreground">The Challenge</span>
+                  <CircleDot className="w-4 h-4 text-orange-500" />
+                  <span className="font-display font-bold text-sm tracking-widest uppercase text-foreground">Ongoing Action</span>
                 </div>
-                <span className="text-[10px] text-muted-foreground font-bold uppercase">Ongoing Effects</span>
+                <span className="text-[10px] text-muted-foreground font-bold uppercase">Active Until Replaced</span>
               </div>
-              <div className="p-3 min-h-[56px] flex flex-wrap gap-2 items-center">
-                {gameState.activeModifiers.length === 0 ? (
-                  <p className="text-[11px] text-muted-foreground/50 italic w-full text-center py-2">No active ongoing cards</p>
-                ) : (
-                  gameState.activeModifiers.map((mod, i) => (
-                    <div key={i} className="bg-secondary/10 border border-secondary/20 rounded-lg px-2 py-1.5 text-[10px] shadow-sm max-w-[180px]">
-                      <div className="font-bold text-secondary-foreground">{mod.cardName}</div>
-                      <div className="text-muted-foreground leading-tight mt-0.5">{mod.effect}</div>
+              <div className="p-3 flex items-center gap-3 min-h-[72px]">
+                {gameState.ongoingActionCard ? (
+                  <>
+                    {gameState.ongoingActionCard.imageKey ? (
+                      <div className="w-12 h-16 rounded-lg overflow-hidden border-2 border-orange-400/40 shrink-0 shadow-md">
+                        <img
+                          src={`${import.meta.env.BASE_URL}assets/${gameState.ongoingActionCard.imageKey}`}
+                          alt={gameState.ongoingActionCard.name}
+                          className="w-full h-full object-cover"
+                        />
+                      </div>
+                    ) : (
+                      <div className="w-12 h-16 rounded-lg border-2 border-orange-400/40 bg-orange-50 flex items-center justify-center shrink-0 shadow-md">
+                        <CircleDot className="w-5 h-5 text-orange-400" />
+                      </div>
+                    )}
+                    <div className="flex-1 min-w-0">
+                      <div className="font-bold text-sm text-foreground leading-tight">{gameState.ongoingActionCard.name}</div>
+                      <div className="text-[11px] text-muted-foreground leading-snug mt-1">{gameState.ongoingActionCard.cardText}</div>
                     </div>
-                  ))
+                  </>
+                ) : (
+                  <p className="text-[11px] text-muted-foreground/50 italic w-full text-center py-1">No ongoing action card in play</p>
                 )}
               </div>
             </div>
+
+            {/* Active Hero Modifiers */}
+            {gameState.activeModifiers.filter(m => !gameState.ongoingActionCard || m.cardId !== gameState.ongoingActionCard.id).length > 0 && (
+              <div className="bg-card/90 backdrop-blur-md rounded-2xl border shadow-xl overflow-hidden">
+                <div className="bg-gradient-to-r from-primary/20 via-primary/10 to-secondary/20 px-4 py-2 border-b border-border/50 flex items-center gap-2">
+                  <Sparkles className="w-4 h-4 text-primary" />
+                  <span className="font-display font-bold text-sm tracking-widest uppercase text-foreground">Hero Effects</span>
+                </div>
+                <div className="p-3 flex flex-wrap gap-2 items-start">
+                  {gameState.activeModifiers
+                    .filter(m => !gameState.ongoingActionCard || m.cardId !== gameState.ongoingActionCard.id)
+                    .map((mod, i) => (
+                      <div key={i} className="bg-secondary/10 border border-secondary/20 rounded-lg px-2 py-1.5 text-[10px] shadow-sm max-w-[180px]">
+                        <div className="font-bold text-secondary-foreground">{mod.cardName}</div>
+                        <div className="text-muted-foreground leading-tight mt-0.5">{mod.effect}</div>
+                      </div>
+                    ))}
+                </div>
+              </div>
+            )}
+
           </div>
 
           {/* Draw + Discard row */}
@@ -337,7 +391,9 @@ export default function Game() {
             const rotate = offset * 5;
             const arcY = Math.abs(offset) * 8;
             const x = offset * 50;
-            const isPlayable = isMyTurn && gameState.phase === "play" && !gameState.pendingDecision;
+            const isPlayPhase = isMyTurn && gameState.phase === "play" && !gameState.pendingDecision;
+            const heroBlocked = card.type === "hero" && gameState.heroPlayedThisTurn;
+            const isPlayable = isPlayPhase && !heroBlocked;
             const imageSrc = card.imageKey
               ? `${import.meta.env.BASE_URL}assets/${card.imageKey}`
               : null;
@@ -347,8 +403,8 @@ export default function Game() {
                 key={card.id}
                 className="absolute bottom-0 origin-bottom pointer-events-auto"
                 initial={{ y: 200, opacity: 0 }}
-                animate={{ x, y: arcY, rotate, opacity: 1, zIndex: idx + 1 }}
-                whileHover={isPlayable ? {
+                animate={{ x, y: arcY, rotate, opacity: heroBlocked ? 0.45 : 1, zIndex: idx + 1 }}
+                whileHover={isPlayPhase ? {
                   y: -50,
                   scale: 1.15,
                   rotate: 0,
@@ -359,28 +415,25 @@ export default function Game() {
               >
                 <div className="relative group">
                   {imageSrc ? (
-                    /* Full-bleed uploaded card image */
                     <div
-                      onClick={() => { if (isPlayable) handlePlayCard(card.id); }}
+                      onClick={() => handleCardClick(card)}
                       className={cn(
                         "w-36 h-52 rounded-xl overflow-hidden shadow-xl border-2 border-white/30",
-                        isPlayable && "cursor-pointer hover:ring-2 hover:ring-primary ring-offset-1"
+                        isPlayable && "cursor-pointer hover:ring-2 hover:ring-primary ring-offset-1",
+                        heroBlocked && "cursor-not-allowed"
                       )}
                     >
-                      <img
-                        src={imageSrc}
-                        alt={card.name}
-                        className="w-full h-full object-cover"
-                      />
+                      <img src={imageSrc} alt={card.name} className="w-full h-full object-cover" />
                     </div>
                   ) : (
                     <GameCard
                       card={card}
                       isFaceDown={false}
                       hoverable={false}
-                      onClick={() => { if (isPlayable) handlePlayCard(card.id); }}
+                      onClick={() => handleCardClick(card)}
                       className={cn(
-                        isPlayable && "cursor-pointer ring-2 ring-transparent hover:ring-primary ring-offset-1"
+                        isPlayable && "cursor-pointer ring-2 ring-transparent hover:ring-primary ring-offset-1",
+                        heroBlocked && "cursor-not-allowed"
                       )}
                     />
                   )}
@@ -389,12 +442,144 @@ export default function Game() {
                       Play
                     </div>
                   )}
+                  {heroBlocked && (
+                    <div className="absolute -top-7 left-1/2 -translate-x-1/2 bg-destructive text-destructive-foreground text-[10px] font-bold px-2 py-0.5 rounded-full shadow-lg opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap pointer-events-none z-50">
+                      1 hero/turn
+                    </div>
+                  )}
                 </div>
               </motion.div>
             );
           })}
         </div>
       </div>
+
+      {/* PLAY CARD CONFIRMATION MODAL */}
+      <AnimatePresence>
+        {confirmCard && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm"
+            onClick={() => setConfirmCard(null)}
+          >
+            <motion.div
+              initial={{ scale: 0.85, y: 40 }}
+              animate={{ scale: 1, y: 0 }}
+              exit={{ scale: 0.85, y: 40 }}
+              transition={{ type: "spring", bounce: 0.35 }}
+              onClick={(e) => e.stopPropagation()}
+              className="bg-card rounded-3xl shadow-2xl w-full max-w-md overflow-hidden relative"
+            >
+              {/* Header */}
+              <div className={cn(
+                "px-6 py-4 border-b border-border flex items-center justify-between",
+                confirmCard.type === "hero"
+                  ? "bg-gradient-to-r from-green-600/20 via-green-500/10 to-emerald-400/10"
+                  : confirmCard.effectType === "ongoing"
+                    ? "bg-gradient-to-r from-orange-500/20 via-orange-400/10 to-yellow-400/10"
+                    : "bg-gradient-to-r from-blue-500/20 via-blue-400/10 to-cyan-400/10"
+              )}>
+                <div className="flex items-center gap-3">
+                  {confirmCard.type === "hero" ? (
+                    <Leaf className="w-5 h-5 text-green-600" />
+                  ) : confirmCard.effectType === "ongoing" ? (
+                    <CircleDot className="w-5 h-5 text-orange-500" />
+                  ) : (
+                    <Zap className="w-5 h-5 text-blue-500" />
+                  )}
+                  <div>
+                    <div className="font-display font-bold text-lg text-foreground leading-tight">{confirmCard.name}</div>
+                    <div className="flex items-center gap-2 mt-0.5">
+                      <span className={cn(
+                        "text-[10px] font-bold uppercase px-2 py-0.5 rounded-full",
+                        confirmCard.type === "hero"
+                          ? "bg-green-100 text-green-800"
+                          : "bg-blue-100 text-blue-800"
+                      )}>
+                        {confirmCard.type === "hero" ? "Hero" : "Action"}
+                      </span>
+                      <span className={cn(
+                        "text-[10px] font-bold uppercase px-2 py-0.5 rounded-full",
+                        confirmCard.effectType === "ongoing"
+                          ? "bg-orange-100 text-orange-800"
+                          : "bg-slate-100 text-slate-700"
+                      )}>
+                        {confirmCard.effectType === "ongoing" ? "⬤ Ongoing" : "⚡ Instant"}
+                      </span>
+                      {confirmCard.function && (
+                        <span className="text-[10px] font-bold uppercase px-2 py-0.5 rounded-full bg-secondary/20 text-secondary-foreground">
+                          {confirmCard.function}
+                        </span>
+                      )}
+                    </div>
+                  </div>
+                </div>
+                <button onClick={() => setConfirmCard(null)} className="text-muted-foreground hover:text-foreground transition-colors">
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+
+              {/* Card preview + effect */}
+              <div className="p-6 flex gap-5 items-start">
+                {/* Card image or placeholder */}
+                <div className="shrink-0">
+                  {confirmCard.imageKey ? (
+                    <div className="w-24 h-36 rounded-xl overflow-hidden shadow-lg border-2 border-border">
+                      <img
+                        src={`${import.meta.env.BASE_URL}assets/${confirmCard.imageKey}`}
+                        alt={confirmCard.name}
+                        className="w-full h-full object-cover"
+                      />
+                    </div>
+                  ) : (
+                    <GameCard card={confirmCard} size="sm" hoverable={false} />
+                  )}
+                </div>
+
+                {/* Effect text */}
+                <div className="flex-1 min-w-0">
+                  <div className="text-xs font-bold uppercase tracking-wider text-muted-foreground mb-2">Effect</div>
+                  <div className="bg-yellow-50 dark:bg-yellow-950/30 border border-yellow-200 dark:border-yellow-800/40 rounded-xl p-3 text-sm text-foreground leading-relaxed font-medium">
+                    {confirmCard.cardText}
+                  </div>
+                  {confirmCard.type === "hero" && (
+                    <div className="mt-3 text-xs text-muted-foreground bg-green-50 dark:bg-green-950/20 border border-green-200/50 rounded-lg p-2">
+                      This hero will be placed in your <strong>{confirmCard.function}</strong> slot.
+                    </div>
+                  )}
+                  {confirmCard.type === "action" && confirmCard.effectType === "ongoing" && (
+                    <div className="mt-3 text-xs text-muted-foreground bg-orange-50 dark:bg-orange-950/20 border border-orange-200/50 rounded-lg p-2">
+                      This card will occupy the <strong>Ongoing Action</strong> slot and stay in effect until replaced or removed.
+                    </div>
+                  )}
+                  {confirmCard.type === "action" && confirmCard.effectType === "instant" && (
+                    <div className="mt-3 text-xs text-muted-foreground bg-blue-50 dark:bg-blue-950/20 border border-blue-200/50 rounded-lg p-2">
+                      This card resolves immediately, then goes to the discard pile.
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              {/* Actions */}
+              <div className="px-6 pb-6 flex gap-3">
+                <Button
+                  className="flex-1 font-bold text-base"
+                  onClick={() => handlePlayCard(confirmCard.id)}
+                  disabled={actionMutation.isPending}
+                >
+                  {actionMutation.isPending ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : null}
+                  Play Card
+                </Button>
+                <Button variant="outline" className="flex-1 font-bold text-base" onClick={() => setConfirmCard(null)}>
+                  Cancel
+                </Button>
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
 
       {/* OPPONENT PILE MODAL */}
       {viewingOpponent && (

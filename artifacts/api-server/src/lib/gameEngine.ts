@@ -68,6 +68,8 @@ export interface GameState {
   winner: string | null;
   turnNumber: integer;
   extraTurn: boolean;
+  heroPlayedThisTurn: boolean;
+  ongoingActionCard: Card | null;
 }
 
 type integer = number;
@@ -552,6 +554,10 @@ function resolveHeroInstantEffect(
           activeModifiers: s.activeModifiers.filter(
             (m) => m.cardId !== toRemove.cardId
           ),
+          ongoingActionCard:
+            s.ongoingActionCard?.id === toRemove.cardId
+              ? null
+              : s.ongoingActionCard,
         };
         addLog(s, `${p.name} used Legion of Life to remove ${toRemove.cardName}.`);
       }
@@ -927,6 +933,13 @@ export function playCard(
         error: "Plastic Contamination is active — no hero cards can be added to compost!",
       };
     }
+    // Enforce 1 hero card per turn
+    if (state.heroPlayedThisTurn) {
+      return {
+        state,
+        error: "You can only play one hero card per turn.",
+      };
+    }
   }
 
   // Remove card from hand
@@ -937,6 +950,8 @@ export function playCard(
   let s = updatePlayer(state, updatedPlayer);
 
   if (cardInHand.type === "hero") {
+    // Mark hero as played this turn
+    s = { ...s, heroPlayedThisTurn: true };
     // Add to compost pile
     updatedPlayer = {
       ...updatedPlayer,
@@ -957,11 +972,16 @@ export function playCard(
   } else {
     // Action card
     if (cardInHand.effectType === "ongoing") {
-      // Add to active modifiers
+      // Move old ongoing action card to discard if one was active
+      const prevOngoing = s.ongoingActionCard;
       s = applyOngoingModifier(s, cardInHand, player.id);
       s = {
         ...s,
-        discardPile: [cardInHand, ...s.discardPile],
+        ongoingActionCard: cardInHand,
+        activeModifiers: prevOngoing
+          ? s.activeModifiers.filter((m) => m.cardId !== prevOngoing.id)
+          : s.activeModifiers,
+        discardPile: prevOngoing ? [prevOngoing, ...s.discardPile] : s.discardPile,
       };
       s = recomputeAllModifiers(s);
       addLog(s, `${player.name} played ${cardInHand.name} (ongoing effect now active).`);
@@ -1541,6 +1561,7 @@ export function endTurn(
     currentPlayerIndex: nextIdx,
     phase: "draw",
     turnNumber: s.turnNumber + 1,
+    heroPlayedThisTurn: false,
   };
   addLog(s, `--- ${s.players[nextIdx].name}'s turn begins ---`);
   return { state: s };
@@ -1579,11 +1600,13 @@ export function createGameState(
     winner: null,
     turnNumber: 1,
     extraTurn: false,
+    heroPlayedThisTurn: false,
+    ongoingActionCard: null,
   };
 
-  // Deal 5 cards to each player
+  // Deal 3 cards to each player
   for (const player of state.players) {
-    state = drawCard(state, getPlayer(state, player.id)!, 5);
+    state = drawCard(state, getPlayer(state, player.id)!, 3);
   }
 
   addLog(state, `Game started! ${playerNames.join(", ")} are playing.`);
