@@ -6,8 +6,10 @@ import { useGameState, useGameAction } from "@/hooks/use-game";
 import { PlayerMat } from "@/components/PlayerMat";
 import { GameCard } from "@/components/GameCard";
 import { DecisionModal } from "@/components/DecisionModal";
+import { OpponentPileModal } from "@/components/OpponentPileModal";
 import { Button } from "@/components/ui/button";
 import { useToast } from "@/hooks/use-toast";
+import type { PlayerState } from "@workspace/api-client-react";
 import { 
   Layers, 
   RefreshCcw, 
@@ -28,9 +30,10 @@ export default function Game() {
   const actionMutation = useGameAction(gameId || "");
 
   // Local state for identifying "who I am" in Pass & Play mode
-  // In Pass & Play, we assume the user looking at the screen is the current player
-  // In a real networked version, this would be tied to session/auth
   const localPlayerId = gameState?.players[gameState.currentPlayerIndex]?.id;
+
+  // State for viewing an opponent's compost pile
+  const [viewingOpponent, setViewingOpponent] = useState<PlayerState | null>(null);
 
   useEffect(() => {
     if (gameState?.phase === "game_over" && gameState.winner) {
@@ -131,6 +134,7 @@ export default function Game() {
             isCurrentPlayer={opp.id === currentPlayer.id}
             isLocalUser={false}
             isActiveTurn={opp.id === currentPlayer.id}
+            onViewPile={() => setViewingOpponent(opp)}
             compact
             className="w-full max-w-[300px] shrink-0"
           />
@@ -223,12 +227,12 @@ export default function Game() {
               <div className="relative">
                 {topCardInDiscard ? (
                   <motion.div initial={{ scale: 0.8, opacity: 0 }} animate={{ scale: 1, opacity: 1 }}>
-                    <GameCard card={topCardInDiscard} hoverable={false} />
+                    <GameCard card={topCardInDiscard} size="lg" hoverable={false} />
                   </motion.div>
                 ) : (
-                  <div className="w-36 h-52 rounded-xl border-4 border-dashed border-muted-foreground/20 flex flex-col items-center justify-center text-muted-foreground/40 bg-black/5">
-                    <RefreshCcw className="w-8 h-8 mb-2" />
-                    <span className="text-xs font-bold uppercase">Empty</span>
+                  <div className="w-48 h-72 rounded-2xl border-4 border-dashed border-muted-foreground/20 flex flex-col items-center justify-center text-muted-foreground/40 bg-black/5">
+                    <RefreshCcw className="w-10 h-10 mb-2" />
+                    <span className="text-sm font-bold uppercase">Empty</span>
                   </div>
                 )}
               </div>
@@ -334,6 +338,9 @@ export default function Game() {
             const arcY = Math.abs(offset) * 8;
             const x = offset * 50;
             const isPlayable = isMyTurn && gameState.phase === "play" && !gameState.pendingDecision;
+            const imageSrc = card.imageKey
+              ? `${import.meta.env.BASE_URL}assets/${card.imageKey}`
+              : null;
 
             return (
               <motion.div
@@ -351,17 +358,32 @@ export default function Game() {
                 style={{ transformOrigin: "bottom center" }}
               >
                 <div className="relative group">
-                  <GameCard
-                    card={card}
-                    isFaceDown={false}
-                    hoverable={false}
-                    onClick={() => {
-                      if (isPlayable) handlePlayCard(card.id);
-                    }}
-                    className={cn(
-                      isPlayable && "cursor-pointer ring-2 ring-transparent hover:ring-primary ring-offset-1"
-                    )}
-                  />
+                  {imageSrc ? (
+                    /* Full-bleed uploaded card image */
+                    <div
+                      onClick={() => { if (isPlayable) handlePlayCard(card.id); }}
+                      className={cn(
+                        "w-36 h-52 rounded-xl overflow-hidden shadow-xl border-2 border-white/30",
+                        isPlayable && "cursor-pointer hover:ring-2 hover:ring-primary ring-offset-1"
+                      )}
+                    >
+                      <img
+                        src={imageSrc}
+                        alt={card.name}
+                        className="w-full h-full object-cover"
+                      />
+                    </div>
+                  ) : (
+                    <GameCard
+                      card={card}
+                      isFaceDown={false}
+                      hoverable={false}
+                      onClick={() => { if (isPlayable) handlePlayCard(card.id); }}
+                      className={cn(
+                        isPlayable && "cursor-pointer ring-2 ring-transparent hover:ring-primary ring-offset-1"
+                      )}
+                    />
+                  )}
                   {isPlayable && (
                     <div className="absolute -top-7 left-1/2 -translate-x-1/2 bg-primary text-primary-foreground text-[10px] font-bold px-2 py-0.5 rounded-full shadow-lg opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap pointer-events-none z-50">
                       Play
@@ -373,6 +395,14 @@ export default function Game() {
           })}
         </div>
       </div>
+
+      {/* OPPONENT PILE MODAL */}
+      {viewingOpponent && (
+        <OpponentPileModal
+          player={viewingOpponent}
+          onClose={() => setViewingOpponent(null)}
+        />
+      )}
 
       {/* DECISION MODAL OVERLAY */}
       {isMyTurn && gameState.pendingDecision && (

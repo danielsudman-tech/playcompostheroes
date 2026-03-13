@@ -10,6 +10,7 @@ interface PlayerMatProps {
   isLocalUser: boolean;
   isActiveTurn: boolean;
   onPlayCard?: (cardId: string) => void;
+  onViewPile?: () => void;
   className?: string;
   compact?: boolean;
 }
@@ -82,6 +83,7 @@ export function PlayerMat({
   isLocalUser,
   isActiveTurn,
   onPlayCard,
+  onViewPile,
   className,
   compact = false,
 }: PlayerMatProps) {
@@ -129,9 +131,12 @@ export function PlayerMat({
           })}
         </div>
 
-        <div className="mt-2 text-center text-[10px] text-muted-foreground font-bold">
-          {collectedCount}/5 categories
-        </div>
+        <button
+          onClick={onViewPile}
+          className="mt-2 w-full text-[10px] font-bold text-primary hover:text-primary/80 transition-colors py-1 rounded-lg hover:bg-primary/5 border border-primary/20 hover:border-primary/40"
+        >
+          View Pile ({player.compostPile.length} cards)
+        </button>
       </div>
     );
   }
