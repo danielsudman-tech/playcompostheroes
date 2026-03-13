@@ -1,5 +1,6 @@
 import { Router, type IRouter } from "express";
 import {
+  activateOngoing,
   createGameState,
   drawCardAction,
   endTurn,
@@ -101,6 +102,10 @@ router.post("/games/:gameId/action", (req, res) => {
       if (targetCardId) data.targetCardId = targetCardId;
       if (cardId) data.cardId = cardId;
       result = resolveDecision(state, playerId, data);
+      break;
+    }
+    case "activate_ongoing": {
+      result = activateOngoing(state, playerId);
       break;
     }
     case "move_card_layer": {

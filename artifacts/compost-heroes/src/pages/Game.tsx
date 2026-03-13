@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 import { useParams, useLocation } from "wouter";
 import { motion, AnimatePresence } from "framer-motion";
 import confetti from "canvas-confetti";
@@ -47,10 +47,65 @@ export default function Game() {
   // State for browsing the discard pile
   const [viewingDiscard, setViewingDiscard] = useState(false);
 
+  // On-screen effect announcement banner
+  const [announcement, setAnnouncement] = useState<string | null>(null);
+  const announcementTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const prevLogLength = useRef(0);
+
   // Pass Device screen — shown in Pass & Play when the current player changes
   const [passScreen, setPassScreen] = useState<{ name: string; cardCount: number } | null>(null);
   const prevPlayerIndexRef = useRef<number | null>(null);
   const isFirstRender = useRef(true);
+
+  // Sound effect utility (Web Audio API — no external files needed)
+  const playSound = useCallback((type: "draw" | "play_action" | "play_hero" | "error") => {
+    try {
+      const ctx = new (window.AudioContext || (window as any).webkitAudioContext)();
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.connect(gain);
+      gain.connect(ctx.destination);
+
+      switch (type) {
+        case "draw":
+          osc.type = "sine";
+          osc.frequency.setValueAtTime(330, ctx.currentTime);
+          osc.frequency.linearRampToValueAtTime(520, ctx.currentTime + 0.12);
+          gain.gain.setValueAtTime(0.18, ctx.currentTime);
+          gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.22);
+          osc.start(); osc.stop(ctx.currentTime + 0.22);
+          break;
+        case "play_action":
+          osc.type = "triangle";
+          osc.frequency.setValueAtTime(440, ctx.currentTime);
+          osc.frequency.linearRampToValueAtTime(660, ctx.currentTime + 0.15);
+          gain.gain.setValueAtTime(0.22, ctx.currentTime);
+          gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.28);
+          osc.start(); osc.stop(ctx.currentTime + 0.28);
+          break;
+        case "play_hero":
+          osc.type = "sine";
+          osc.frequency.setValueAtTime(523, ctx.currentTime);
+          osc.frequency.setValueAtTime(659, ctx.currentTime + 0.1);
+          osc.frequency.setValueAtTime(784, ctx.currentTime + 0.22);
+          gain.gain.setValueAtTime(0.2, ctx.currentTime);
+          gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.45);
+          osc.start(); osc.stop(ctx.currentTime + 0.45);
+          break;
+        case "error":
+          osc.type = "sawtooth";
+          osc.frequency.setValueAtTime(220, ctx.currentTime);
+          osc.frequency.linearRampToValueAtTime(110, ctx.currentTime + 0.18);
+          gain.gain.setValueAtTime(0.18, ctx.currentTime);
+          gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.22);
+          osc.start(); osc.stop(ctx.currentTime + 0.22);
+          break;
+      }
+      setTimeout(() => ctx.close(), 1000);
+    } catch (_) {
+      // Audio not available in this environment
+    }
+  }, []);
 
   useEffect(() => {
     if (!gameState || gameState.phase === "game_over") return;
@@ -66,6 +121,19 @@ export default function Game() {
     }
     prevPlayerIndexRef.current = idx;
   }, [gameState?.currentPlayerIndex]);
+
+  // Announce new log entries as on-screen banners
+  useEffect(() => {
+    if (!gameState?.log) return;
+    const logLen = gameState.log.length;
+    if (logLen > prevLogLength.current) {
+      const latest = gameState.log[logLen - 1];
+      prevLogLength.current = logLen;
+      setAnnouncement(latest);
+      if (announcementTimer.current) clearTimeout(announcementTimer.current);
+      announcementTimer.current = setTimeout(() => setAnnouncement(null), 3500);
+    }
+  }, [gameState?.log?.length]);
 
   useEffect(() => {
     if (gameState?.phase === "game_over" && gameState.winner) {
@@ -123,6 +191,7 @@ export default function Game() {
 
   const handleDrawCard = () => {
     if (!isMyTurn || !localPlayerId) return;
+    playSound("draw");
     actionMutation.mutate({ type: "draw_card", playerId: localPlayerId });
   };
 
@@ -134,8 +203,22 @@ export default function Game() {
 
   const handlePlayCard = (cardId: string) => {
     if (!isMyTurn || !localPlayerId) return;
+    if (actionMutation.isPending) return;
+    // Verify the card is still in hand before dispatching
+    const card = localPlayerFull.hand.find(c => c.id === cardId);
+    if (!card) {
+      setConfirmCard(null);
+      toast({ title: "Card no longer available", description: "That card is not in your hand.", variant: "destructive" });
+      return;
+    }
+    playSound(card.type === "hero" ? "play_hero" : "play_action");
     setConfirmCard(null);
     actionMutation.mutate({ type: "play_card", playerId: localPlayerId, cardId });
+  };
+
+  const handleActivateOngoing = () => {
+    if (!isMyTurn || !localPlayerId || actionMutation.isPending) return;
+    actionMutation.mutate({ type: "activate_ongoing", playerId: localPlayerId });
   };
 
   const handleCardClick = (card: Card) => {
@@ -167,6 +250,25 @@ export default function Game() {
       <div className="fixed inset-0 pointer-events-none opacity-[0.03] z-0 mix-blend-multiply">
          <img src={`${import.meta.env.BASE_URL}images/wood-bg.png`} className="w-full h-full object-cover" alt="" />
       </div>
+
+      {/* EFFECT ANNOUNCEMENT BANNER */}
+      <AnimatePresence>
+        {announcement && (
+          <motion.div
+            key={announcement}
+            initial={{ opacity: 0, y: -40, scale: 0.92 }}
+            animate={{ opacity: 1, y: 0, scale: 1 }}
+            exit={{ opacity: 0, y: -20, scale: 0.95 }}
+            transition={{ type: "spring", bounce: 0.35, duration: 0.4 }}
+            className="fixed top-4 left-1/2 -translate-x-1/2 z-[80] pointer-events-none max-w-[90vw]"
+          >
+            <div className="bg-card/95 backdrop-blur-md border border-border shadow-2xl rounded-2xl px-5 py-3 flex items-center gap-3">
+              <Sparkles className="w-4 h-4 text-primary shrink-0" />
+              <span className="text-sm font-semibold text-foreground leading-snug text-center">{announcement}</span>
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
 
       {/* TOP ROW: Opponents */}
       <div className="relative z-10 flex-none p-4 pb-0 flex justify-center gap-4 overflow-x-auto">
@@ -241,6 +343,19 @@ export default function Game() {
                     <div className="flex-1 min-w-0">
                       <div className="font-bold text-sm text-foreground leading-tight">{gameState.ongoingActionCard.name}</div>
                       <div className="text-[11px] text-muted-foreground leading-snug mt-1">{gameState.ongoingActionCard.cardText}</div>
+                      {isMyTurn && gameState.phase === "play" && !gameState.pendingDecision && gameState.ongoingActionCard.id === "rot_regrow" && (
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          className="mt-2 w-full text-xs font-bold border-orange-400/60 text-orange-700 hover:bg-orange-50 dark:hover:bg-orange-950/30 h-7"
+                          onClick={handleActivateOngoing}
+                          disabled={actionMutation.isPending || localPlayerFull.hand.length < 3}
+                          title={localPlayerFull.hand.length < 3 ? "Need at least 3 cards in hand" : "Activate Rot & Regrow"}
+                        >
+                          <Zap className="w-3 h-3 mr-1" />
+                          Activate Effect
+                        </Button>
+                      )}
                     </div>
                   </>
                 ) : (
@@ -406,7 +521,7 @@ export default function Game() {
       </div>
 
       {/* BOTTOM ROW: Local Player mat (category slots + header only) */}
-      <div className="relative z-20 pb-36">
+      <div className="relative z-20 pb-52">
         <PlayerMat 
           player={localPlayerFull} 
           isCurrentPlayer={isMyTurn}
@@ -429,9 +544,10 @@ export default function Game() {
             const total = localPlayerFull.hand.length;
             const centerIdx = (total - 1) / 2;
             const offset = idx - centerIdx;
-            const rotate = offset * 5;
+            const spread = total <= 3 ? 52 : total <= 5 ? 68 : 80;
+            const rotate = offset * (total <= 3 ? 6 : 4);
             const arcY = Math.abs(offset) * 8;
-            const x = offset * 50;
+            const x = offset * spread;
             const isPlayPhase = isMyTurn && gameState.phase === "play" && !gameState.pendingDecision;
             const heroBlocked = card.type === "hero" && gameState.heroPlayedThisTurn;
             const isPlayable = isPlayPhase && !heroBlocked;
@@ -441,7 +557,7 @@ export default function Game() {
 
             return (
               <motion.div
-                key={card.id}
+                key={`${card.id}-${idx}`}
                 className="absolute bottom-0 origin-bottom pointer-events-auto"
                 initial={{ y: 200, opacity: 0 }}
                 animate={{ x, y: arcY, rotate, opacity: heroBlocked ? 0.45 : 1, zIndex: idx + 1 }}

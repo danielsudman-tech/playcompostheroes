@@ -133,6 +133,7 @@ export const GameActionType = {
   end_turn: "end_turn",
   resolve_decision: "resolve_decision",
   move_card_layer: "move_card_layer",
+  activate_ongoing: "activate_ongoing",
   reset_game: "reset_game",
 } as const;
 

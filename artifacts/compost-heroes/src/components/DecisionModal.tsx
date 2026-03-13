@@ -31,6 +31,8 @@ const CARD_SELECTION_TYPES = new Set([
   "choose_under_web_hand_card",
   "choose_under_web_discard_card",
   "choose_nitrogen_boost_discard",
+  "choose_rot_regrow_discard",
+  "choose_rot_regrow_take",
 ]);
 
 const PLAYER_SELECTION_TYPES = new Set([
@@ -57,6 +59,9 @@ function getMultiSelectMode(decision: PendingDecision): MultiSelectMode {
   }
   if (type === "choose_discard_for_spread") {
     return { mode: "fixed", count: meta.count ?? 1, resolveKey: "cardIds" };
+  }
+  if (type === "choose_rot_regrow_discard") {
+    return { mode: "fixed", count: 3, resolveKey: "cardIds" };
   }
   if (type === "choose_rainstorm_play") {
     return { mode: "optional" };

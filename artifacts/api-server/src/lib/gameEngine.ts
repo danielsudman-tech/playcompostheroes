@@ -39,7 +39,8 @@ export type DecisionType =
   | "choose_rot_regrow_discard"
   | "choose_nitrogen_boost_discard"
   | "choose_function"
-  | "choose_move_function";
+  | "choose_move_function"
+  | "choose_rot_regrow_take";
 
 export interface PendingDecision {
   type: DecisionType;
@@ -1478,6 +1479,52 @@ export function resolveDecision(
       return { state: s };
     }
 
+    // Rot & Regrow ongoing: player discards 3 cards then picks 1 from discard
+    case "choose_rot_regrow_discard": {
+      const cardIds = decisionData.cardIds as string[] | undefined;
+      if (!cardIds || cardIds.length !== 3) return { state, error: "Must discard exactly 3 cards" };
+      const toDiscard = cardIds.map((id) => player.hand.find((c) => c.id === id)).filter(Boolean) as Card[];
+      if (toDiscard.length !== 3) return { state, error: "One or more cards not found in hand" };
+
+      const updatedPlayer = {
+        ...player,
+        hand: player.hand.filter((c) => !cardIds.includes(c.id)),
+      };
+      s = { ...s, discardPile: [...toDiscard, ...s.discardPile] };
+      s = updatePlayer(s, updatedPlayer);
+      addLog(s, `${player.name} discarded 3 cards for Rot & Regrow.`);
+
+      if (s.discardPile.length === 0) {
+        addLog(s, "Discard pile is empty — nothing to take.");
+        return { state: s };
+      }
+
+      s = {
+        ...s,
+        pendingDecision: {
+          type: "choose_rot_regrow_take",
+          playerId,
+          cardId: "rot_regrow",
+          prompt: `${player.name}: Choose 1 card to take from the discard pile.`,
+          options: s.discardPile.map((c) => ({ cardId: c.id, cardName: c.name })),
+        },
+      };
+      return { state: s };
+    }
+
+    // Rot & Regrow ongoing: player takes 1 card from discard pile into hand
+    case "choose_rot_regrow_take": {
+      const chosenId = decisionData.cardId as string;
+      const card = s.discardPile.find((c) => c.id === chosenId);
+      if (!card) return { state, error: "Card not found in discard pile" };
+
+      const updatedPlayer = { ...player, hand: [...player.hand, card] };
+      s = { ...s, discardPile: s.discardPile.filter((c) => c.id !== chosenId) };
+      s = updatePlayer(s, updatedPlayer);
+      addLog(s, `${player.name} took ${card.name} from discard pile (Rot & Regrow).`);
+      return { state: s };
+    }
+
     // Player chooses which function slot a multi-layer hero fills
     case "choose_function": {
       const chosenFn = decisionData.function as string;
@@ -1714,6 +1761,48 @@ export function createGameState(
   addLog(state, `--- ${state.players[0].name}'s turn begins ---`);
 
   return state;
+}
+
+// ─────────────────────────────────────────────
+// ACTIVATE ONGOING ACTION CARD
+// ─────────────────────────────────────────────
+export function activateOngoing(
+  state: GameState,
+  playerId: string
+): { state: GameState; error?: string } {
+  const player = getPlayer(state, playerId);
+  if (!player) return { state, error: "Player not found" };
+  if (state.pendingDecision) return { state, error: "Must resolve pending decision first" };
+
+  const currentPlayer = state.players[state.currentPlayerIndex];
+  if (currentPlayer.id !== playerId) return { state, error: "It's not your turn" };
+  if (state.phase !== "play") return { state, error: "Can only activate during play phase" };
+
+  const ongoing = state.ongoingActionCard;
+  if (!ongoing) return { state, error: "No ongoing action card is active" };
+
+  switch (ongoing.id) {
+    case "rot_regrow": {
+      if (player.hand.length < 3) {
+        return { state, error: "Need at least 3 cards in hand to activate Rot & Regrow" };
+      }
+      const s = {
+        ...state,
+        pendingDecision: {
+          type: "choose_rot_regrow_discard" as const,
+          playerId,
+          cardId: "rot_regrow",
+          prompt: `${player.name}: Rot & Regrow — select 3 cards from your hand to discard.`,
+          options: player.hand.map((c) => ({ cardId: c.id, cardName: c.name })),
+          meta: { count: 3 },
+        },
+      };
+      return { state: s };
+    }
+
+    default:
+      return { state, error: `${ongoing.name} has no activatable effect` };
+  }
 }
 
 // ─────────────────────────────────────────────

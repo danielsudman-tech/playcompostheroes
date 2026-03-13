@@ -20,15 +20,15 @@ interface PlayerMatProps {
 
 const CATEGORIES = [
   {
-    key: "airflow",
-    label: "Airflow",
-    Icon: Wind,
-    borderClass: "border-cyan-400",
-    bgClass: "bg-cyan-50 dark:bg-cyan-950/30",
-    headerClass: "bg-cyan-100 text-cyan-800",
-    emptyDotClass: "bg-cyan-200",
-    iconClass: "text-cyan-500",
-    match: (fn: string) => fn.toLowerCase().includes("air"),
+    key: "moisture",
+    label: "Moisture",
+    Icon: Droplets,
+    borderClass: "border-blue-400",
+    bgClass: "bg-blue-50 dark:bg-blue-950/30",
+    headerClass: "bg-blue-100 text-blue-800",
+    emptyDotClass: "bg-blue-200",
+    iconClass: "text-blue-500",
+    match: (fn: string) => fn.toLowerCase().includes("moisture"),
   },
   {
     key: "carbon",
@@ -42,15 +42,16 @@ const CATEGORIES = [
     match: (fn: string) => fn.toLowerCase().includes("carbon"),
   },
   {
-    key: "moisture",
-    label: "Moisture",
-    Icon: Droplets,
-    borderClass: "border-blue-400",
-    bgClass: "bg-blue-50 dark:bg-blue-950/30",
-    headerClass: "bg-blue-100 text-blue-800",
-    emptyDotClass: "bg-blue-200",
-    iconClass: "text-blue-500",
-    match: (fn: string) => fn.toLowerCase().includes("moisture"),
+    key: "decomposer",
+    label: "Decomposer",
+    Icon: Worm,
+    borderClass: "border-orange-400",
+    bgClass: "bg-orange-50 dark:bg-orange-950/30",
+    headerClass: "bg-orange-100 text-orange-800",
+    emptyDotClass: "bg-orange-200",
+    iconClass: "text-orange-500",
+    match: (fn: string) =>
+      fn.toLowerCase().includes("decomp") || fn.toLowerCase().includes("fire"),
   },
   {
     key: "nitrogen",
@@ -64,16 +65,15 @@ const CATEGORIES = [
     match: (fn: string) => fn.toLowerCase().includes("nitrogen"),
   },
   {
-    key: "decomposer",
-    label: "Decomposer",
-    Icon: Worm,
-    borderClass: "border-orange-400",
-    bgClass: "bg-orange-50 dark:bg-orange-950/30",
-    headerClass: "bg-orange-100 text-orange-800",
-    emptyDotClass: "bg-orange-200",
-    iconClass: "text-orange-500",
-    match: (fn: string) =>
-      fn.toLowerCase().includes("decomp") || fn.toLowerCase().includes("fire"),
+    key: "airflow",
+    label: "Airflow",
+    Icon: Wind,
+    borderClass: "border-cyan-400",
+    bgClass: "bg-cyan-50 dark:bg-cyan-950/30",
+    headerClass: "bg-cyan-100 text-cyan-800",
+    emptyDotClass: "bg-cyan-200",
+    iconClass: "text-cyan-500",
+    match: (fn: string) => fn.toLowerCase().includes("air"),
   },
 ];
 
@@ -370,8 +370,8 @@ export function PlayerMat({
                   )}
                 </div>
 
-                {/* Card image area — hover to enlarge */}
-                <div className="relative w-full" style={{ height: 90 }}>
+                {/* Full card display — no hover needed, always visible */}
+                <div className="relative w-full" style={{ aspectRatio: "2/3", minHeight: 64 }}>
                   <AnimatePresence>
                     {topCard ? (
                       <motion.div
@@ -379,7 +379,7 @@ export function PlayerMat({
                         initial={{ scale: 0.8, opacity: 0 }}
                         animate={{ scale: 1, opacity: 1 }}
                         transition={{ type: "spring", duration: 0.3 }}
-                        className="absolute inset-1"
+                        className="absolute inset-0.5"
                       >
                         <HoverableCard
                           card={topCard}
