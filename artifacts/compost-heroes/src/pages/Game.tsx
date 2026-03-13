@@ -343,19 +343,29 @@ export default function Game() {
                     <div className="flex-1 min-w-0">
                       <div className="font-bold text-sm text-foreground leading-tight">{gameState.ongoingActionCard.name}</div>
                       <div className="text-[11px] text-muted-foreground leading-snug mt-1">{gameState.ongoingActionCard.cardText}</div>
-                      {isMyTurn && gameState.phase === "play" && !gameState.pendingDecision && gameState.ongoingActionCard.id === "rot_regrow" && (
-                        <Button
-                          size="sm"
-                          variant="outline"
-                          className="mt-2 w-full text-xs font-bold border-orange-400/60 text-orange-700 hover:bg-orange-50 dark:hover:bg-orange-950/30 h-7"
-                          onClick={handleActivateOngoing}
-                          disabled={actionMutation.isPending || localPlayerFull.hand.length < 3}
-                          title={localPlayerFull.hand.length < 3 ? "Need at least 3 cards in hand" : "Activate Rot & Regrow"}
-                        >
-                          <Zap className="w-3 h-3 mr-1" />
-                          Activate Effect
-                        </Button>
-                      )}
+                      {isMyTurn && gameState.phase === "play" && !gameState.pendingDecision &&
+                        (gameState.ongoingActionCard.id === "rot_regrow" || gameState.ongoingActionCard.id === "nitrogen_boost") && (() => {
+                          const oid = gameState.ongoingActionCard!.id;
+                          const canActivate = oid === "rot_regrow"
+                            ? localPlayerFull.hand.length >= 3
+                            : localPlayerFull.hand.some(c => (c as any).function === "Nitrogen");
+                          const hint = oid === "rot_regrow"
+                            ? (canActivate ? "Discard 3 cards then take 1 from discard" : "Need at least 3 cards in hand")
+                            : (canActivate ? "Discard 1 Nitrogen card to draw 2" : "Need a Nitrogen card in hand");
+                          return (
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              className="mt-2 w-full text-xs font-bold border-orange-400/60 text-orange-700 hover:bg-orange-50 dark:hover:bg-orange-950/30 h-7"
+                              onClick={handleActivateOngoing}
+                              disabled={actionMutation.isPending || !canActivate}
+                              title={hint}
+                            >
+                              <Zap className="w-3 h-3 mr-1" />
+                              Activate Effect
+                            </Button>
+                          );
+                        })()}
                     </div>
                   </>
                 ) : (

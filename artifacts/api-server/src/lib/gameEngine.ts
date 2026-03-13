@@ -40,7 +40,8 @@ export type DecisionType =
   | "choose_nitrogen_boost_discard"
   | "choose_function"
   | "choose_move_function"
-  | "choose_rot_regrow_take";
+  | "choose_rot_regrow_take"
+  | "choose_discard_to_limit";
 
 export interface PendingDecision {
   type: DecisionType;
@@ -1525,6 +1526,26 @@ export function resolveDecision(
       return { state: s };
     }
 
+    // End-of-turn discard to hand limit — chosen by player
+    case "choose_discard_to_limit": {
+      const cardIds = decisionData.cardIds as string[] | undefined;
+      const required = (decision as any).meta?.count ?? 1;
+      if (!cardIds || cardIds.length !== required) {
+        return { state, error: `Must discard exactly ${required} card(s)` };
+      }
+      const toDiscard = cardIds.map((id) => player.hand.find((c) => c.id === id)).filter(Boolean) as Card[];
+      if (toDiscard.length !== required) return { state, error: "One or more cards not found in hand" };
+
+      const updatedPlayer = { ...player, hand: player.hand.filter((c) => !cardIds.includes(c.id)) };
+      s = { ...s, discardPile: [...toDiscard, ...s.discardPile] };
+      s = updatePlayer(s, updatedPlayer);
+      addLog(s, `${player.name} discarded ${toDiscard.map((c) => c.name).join(", ")} to meet hand limit.`);
+
+      // Now advance the turn
+      s = advanceTurnState(s);
+      return { state: s };
+    }
+
     // Player chooses which function slot a multi-layer hero fills
     case "choose_function": {
       const chosenFn = decisionData.function as string;
@@ -1668,32 +1689,15 @@ export function drawCardAction(
 // ─────────────────────────────────────────────
 // END TURN
 // ─────────────────────────────────────────────
-export function endTurn(
-  state: GameState,
-  playerId: string
-): { state: GameState; error?: string } {
-  const currentPlayer = state.players[state.currentPlayerIndex];
-  if (currentPlayer.id !== playerId) {
-    return { state, error: "It's not your turn" };
-  }
-  if (state.pendingDecision) {
-    return { state, error: "Must resolve pending decision first" };
-  }
-
-  let s = enforceHandSize(state);
-  s = recomputeAllModifiers(s);
-
+function advanceTurnState(s: GameState): GameState {
   if (s.extraTurn) {
-    s = { ...s, extraTurn: false, phase: "draw" };
-    addLog(s, `${currentPlayer.name} takes another turn!`);
-    return { state: s };
+    const cp = s.players[s.currentPlayerIndex];
+    addLog(s, `${cp.name} takes another turn!`);
+    return { ...s, extraTurn: false, phase: "draw" };
   }
 
-  // Advance to next player
   let nextIdx = nextPlayerIndex(s);
   let nextPlayer = s.players[nextIdx];
-
-  // Skip players who are flagged
   let skipsChecked = 0;
   while (nextPlayer.skipsNextTurn && skipsChecked < s.players.length) {
     addLog(s, `${nextPlayer.name} skips their turn!`);
@@ -1712,7 +1716,41 @@ export function endTurn(
     heroPlayedThisTurn: false,
   };
   addLog(s, `--- ${s.players[nextIdx].name}'s turn begins ---`);
-  return { state: s };
+  return s;
+}
+
+export function endTurn(
+  state: GameState,
+  playerId: string
+): { state: GameState; error?: string } {
+  const currentPlayer = state.players[state.currentPlayerIndex];
+  if (currentPlayer.id !== playerId) {
+    return { state, error: "It's not your turn" };
+  }
+  if (state.pendingDecision) {
+    return { state, error: "Must resolve pending decision first" };
+  }
+
+  let s = recomputeAllModifiers(state);
+  const player = getPlayer(s, playerId)!;
+
+  // Player must choose which cards to discard if hand exceeds limit
+  if (player.hand.length > player.maxHandSize) {
+    const discardCount = player.hand.length - player.maxHandSize;
+    s = {
+      ...s,
+      pendingDecision: {
+        type: "choose_discard_to_limit",
+        playerId,
+        prompt: `${player.name}: Too many cards! Discard ${discardCount} card${discardCount !== 1 ? "s" : ""} (max hand: ${player.maxHandSize}).`,
+        options: player.hand.map((c) => ({ cardId: c.id, cardName: c.name })),
+        meta: { count: discardCount },
+      },
+    };
+    return { state: s };
+  }
+
+  return { state: advanceTurnState(s) };
 }
 
 // ─────────────────────────────────────────────
@@ -1795,6 +1833,25 @@ export function activateOngoing(
           prompt: `${player.name}: Rot & Regrow — select 3 cards from your hand to discard.`,
           options: player.hand.map((c) => ({ cardId: c.id, cardName: c.name })),
           meta: { count: 3 },
+        },
+      };
+      return { state: s };
+    }
+
+    case "nitrogen_boost": {
+      const nitrogenCards = player.hand.filter((c) => c.function === "Nitrogen");
+      if (nitrogenCards.length === 0) {
+        return { state, error: "No Nitrogen cards in hand to discard for Nitrogen Boost" };
+      }
+      const s = {
+        ...state,
+        pendingDecision: {
+          type: "choose_nitrogen_boost_discard" as const,
+          playerId,
+          cardId: "nitrogen_boost",
+          prompt: `${player.name}: Nitrogen Boost — discard 1 Nitrogen card from your hand to draw 2 cards.`,
+          options: nitrogenCards.map((c) => ({ cardId: c.id, cardName: c.name })),
+          meta: { optional: true },
         },
       };
       return { state: s };

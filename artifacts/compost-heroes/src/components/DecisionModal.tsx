@@ -33,6 +33,7 @@ const CARD_SELECTION_TYPES = new Set([
   "choose_nitrogen_boost_discard",
   "choose_rot_regrow_discard",
   "choose_rot_regrow_take",
+  "choose_discard_to_limit",
 ]);
 
 const PLAYER_SELECTION_TYPES = new Set([
@@ -62,6 +63,9 @@ function getMultiSelectMode(decision: PendingDecision): MultiSelectMode {
   }
   if (type === "choose_rot_regrow_discard") {
     return { mode: "fixed", count: 3, resolveKey: "cardIds" };
+  }
+  if (type === "choose_discard_to_limit") {
+    return { mode: "fixed", count: meta.count ?? 1, resolveKey: "cardIds" };
   }
   if (type === "choose_rainstorm_play") {
     return { mode: "optional" };
@@ -182,7 +186,7 @@ export function DecisionModal({ decision, gameState, onResolve }: DecisionModalP
             )}
 
             {isCardSelection && !isPlayerSelection && (
-              <div className="flex flex-wrap justify-center gap-4">
+              <div className="flex flex-wrap justify-center gap-3">
                 {options.map((opt: any, i: number) => {
                   const cardId = opt.cardId;
                   const card = opt.card 
@@ -191,35 +195,50 @@ export function DecisionModal({ decision, gameState, onResolve }: DecisionModalP
                   
                   const isSelected = selectedIds.includes(cardId);
                   const isAnyMulti = isFixedMulti || isOptionalMulti;
+                  const imageSrc = card?.imageKey
+                    ? `${import.meta.env.BASE_URL}assets/${card.imageKey}`
+                    : null;
 
                   return (
-                    <div key={`${i}-${cardId}`} className="flex flex-col items-center gap-2">
-                      {card ? (
-                        <div className="relative">
-                          <GameCard 
-                            card={card} 
-                            size="md" 
-                            onClick={() => isAnyMulti ? toggleCard(cardId) : handleSingleOption(opt)}
-                            className={cn(
-                              "ring-4 ring-transparent cursor-pointer transition-all",
-                              isSelected ? "ring-primary scale-105 shadow-lg shadow-primary/30" : "hover:ring-primary/50"
-                            )}
+                    <div key={`${i}-${cardId}`} className="flex flex-col items-center gap-1">
+                      <div
+                        role="button"
+                        onClick={() => isAnyMulti ? toggleCard(cardId) : handleSingleOption(opt)}
+                        className={cn(
+                          "relative rounded-xl overflow-hidden cursor-pointer transition-all shadow-md",
+                          "w-28 aspect-[2/3]",
+                          isSelected
+                            ? "ring-4 ring-primary scale-105 shadow-lg shadow-primary/30"
+                            : "hover:ring-2 hover:ring-primary/60 hover:scale-[1.02]"
+                        )}
+                      >
+                        {imageSrc ? (
+                          <img
+                            src={imageSrc}
+                            alt={card?.name ?? opt.cardName}
+                            className="w-full h-full object-cover"
                           />
-                          {isSelected && (
-                            <div className="absolute top-2 right-2 bg-primary rounded-full p-1 shadow-md">
-                              <CheckSquare className="w-4 h-4 text-white" />
-                            </div>
-                          )}
-                        </div>
-                      ) : (
-                        <Button
-                          onClick={() => isAnyMulti ? toggleCard(cardId) : handleSingleOption(opt)}
-                          variant={isSelected ? "default" : "outline"}
-                          className={cn("h-32 w-24", isSelected && "border-primary bg-primary/10")}
-                        >
-                          {opt.cardName || opt.cardId}
-                        </Button>
-                      )}
+                        ) : card ? (
+                          <GameCard
+                            card={card}
+                            size="sm"
+                            hoverable={false}
+                            className="w-full h-full"
+                          />
+                        ) : (
+                          <div className="w-full h-full bg-muted flex flex-col items-center justify-center p-2 text-center gap-1">
+                            <span className="font-bold text-xs text-foreground leading-tight">{opt.cardName || opt.cardId}</span>
+                          </div>
+                        )}
+                        {isSelected && (
+                          <div className="absolute top-1.5 right-1.5 bg-primary rounded-full p-0.5 shadow-md">
+                            <CheckSquare className="w-3.5 h-3.5 text-white" />
+                          </div>
+                        )}
+                      </div>
+                      <span className="text-[10px] font-semibold text-muted-foreground text-center max-w-[7rem] leading-tight line-clamp-2">
+                        {card?.name ?? opt.cardName ?? opt.cardId}
+                      </span>
                     </div>
                   );
                 })}

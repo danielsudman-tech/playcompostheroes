@@ -4,7 +4,7 @@ import { motion, AnimatePresence } from "framer-motion";
 import { GameCard } from "./GameCard";
 import type { PlayerState, CardState } from "@workspace/api-client-react";
 import { cn } from "@/lib/utils";
-import { Wind, Leaf, Droplets, Sprout, Worm, User, MoveRight } from "lucide-react";
+import { Wind, Leaf, Droplets, Sprout, Worm, User, MoveRight, ChevronLeft, ChevronRight } from "lucide-react";
 
 interface PlayerMatProps {
   player: PlayerState;
@@ -188,6 +188,9 @@ export function PlayerMat({
     (cat) => getCategoryCards(player.compostPile, cat.match).length > 0
   ).length;
 
+  // Tracks which card is currently shown for each slot when there are multiple
+  const [slotActiveIdx, setSlotActiveIdx] = useState<Record<string, number>>({});
+
   if (compact) {
     return (
       <div
@@ -341,8 +344,19 @@ export function PlayerMat({
         <div className="grid grid-cols-5 gap-2">
           {CATEGORIES.map((cat) => {
             const cards = getCategoryCards(player.compostPile, cat.match);
-            const topCard = cards[cards.length - 1] ?? null;
-            const has = topCard !== null;
+            const activeIdx = Math.min(slotActiveIdx[cat.key] ?? 0, Math.max(0, cards.length - 1));
+            const activeCard = cards[activeIdx] ?? null;
+            const has = cards.length > 0;
+            const multi = cards.length > 1;
+
+            const goNext = (e: React.MouseEvent) => {
+              e.stopPropagation();
+              setSlotActiveIdx(prev => ({ ...prev, [cat.key]: (activeIdx + 1) % cards.length }));
+            };
+            const goPrev = (e: React.MouseEvent) => {
+              e.stopPropagation();
+              setSlotActiveIdx(prev => ({ ...prev, [cat.key]: (activeIdx - 1 + cards.length) % cards.length }));
+            };
 
             return (
               <div
@@ -357,7 +371,7 @@ export function PlayerMat({
                 {/* Slim category label */}
                 <div
                   className={cn(
-                    "flex items-center gap-1 w-full px-1.5 py-1 text-[9px] font-bold uppercase tracking-wider rounded-t-lg border-b",
+                    "flex items-center gap-0.5 w-full px-1 py-1 text-[9px] font-bold uppercase tracking-wider rounded-t-lg border-b",
                     has
                       ? cat.headerClass + " border-current/20"
                       : "bg-transparent text-muted-foreground/40 border-transparent"
@@ -365,37 +379,54 @@ export function PlayerMat({
                 >
                   <cat.Icon className="w-2.5 h-2.5 shrink-0" />
                   <span className="truncate">{cat.label}</span>
-                  {cards.length > 1 && (
-                    <span className="ml-auto font-bold">×{cards.length}</span>
+                  {multi && (
+                    <span className="ml-auto font-bold text-[8px]">{activeIdx + 1}/{cards.length}</span>
                   )}
                 </div>
 
-                {/* Full card display — no hover needed, always visible */}
+                {/* Full card display — navigable when multiple cards in slot */}
                 <div className="relative w-full" style={{ aspectRatio: "2/3", minHeight: 64 }}>
-                  <AnimatePresence>
-                    {topCard ? (
+                  <AnimatePresence mode="wait">
+                    {activeCard ? (
                       <motion.div
-                        key={topCard.id}
-                        initial={{ scale: 0.8, opacity: 0 }}
+                        key={activeCard.id}
+                        initial={{ scale: 0.85, opacity: 0 }}
                         animate={{ scale: 1, opacity: 1 }}
-                        transition={{ type: "spring", duration: 0.3 }}
+                        exit={{ scale: 0.85, opacity: 0 }}
+                        transition={{ type: "spring", duration: 0.25 }}
                         className="absolute inset-0.5"
                       >
                         <HoverableCard
-                          card={topCard}
-                          canMove={isActiveTurn && isLocalUser && !!((topCard as any).alternateFunctions?.length)}
-                          onMoveLayer={onMoveLayer ? () => onMoveLayer(topCard.id) : undefined}
+                          card={activeCard}
+                          canMove={isActiveTurn && isLocalUser && !!((activeCard as any).alternateFunctions?.length)}
+                          onMoveLayer={onMoveLayer ? () => onMoveLayer(activeCard.id) : undefined}
                         />
                       </motion.div>
                     ) : (
                       <div className="absolute inset-0 flex flex-col items-center justify-center gap-1 text-muted-foreground/25">
                         <cat.Icon className="w-6 h-6" />
-                        <span className="text-[8px] font-bold uppercase">
-                          Empty
-                        </span>
+                        <span className="text-[8px] font-bold uppercase">Empty</span>
                       </div>
                     )}
                   </AnimatePresence>
+
+                  {/* Navigation arrows — only when multiple cards */}
+                  {multi && (
+                    <>
+                      <button
+                        onClick={goPrev}
+                        className="absolute left-0 top-1/2 -translate-y-1/2 -translate-x-1/2 z-20 w-5 h-5 bg-card/90 border border-border rounded-full flex items-center justify-center shadow-md hover:bg-primary hover:text-primary-foreground transition-colors"
+                      >
+                        <ChevronLeft className="w-3 h-3" />
+                      </button>
+                      <button
+                        onClick={goNext}
+                        className="absolute right-0 top-1/2 -translate-y-1/2 translate-x-1/2 z-20 w-5 h-5 bg-card/90 border border-border rounded-full flex items-center justify-center shadow-md hover:bg-primary hover:text-primary-foreground transition-colors"
+                      >
+                        <ChevronRight className="w-3 h-3" />
+                      </button>
+                    </>
+                  )}
                 </div>
               </div>
             );
