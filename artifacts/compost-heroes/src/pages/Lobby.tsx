@@ -172,6 +172,9 @@ export default function Lobby() {
           <p className="text-sm text-muted-foreground">
             Collect 1 Hero from each of the 5 layers to win!
           </p>
+          <a href={`${import.meta.env.BASE_URL}admin`} className="text-xs text-muted-foreground/40 hover:text-muted-foreground transition-colors mt-3 inline-block">
+            Card Image Admin
+          </a>
         </div>
       </motion.div>
     </div>

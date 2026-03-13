@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useParams, useLocation } from "wouter";
 import { motion, AnimatePresence } from "framer-motion";
 import confetti from "canvas-confetti";
@@ -43,6 +43,29 @@ export default function Game() {
 
   // State for card play confirmation modal
   const [confirmCard, setConfirmCard] = useState<Card | null>(null);
+
+  // State for browsing the discard pile
+  const [viewingDiscard, setViewingDiscard] = useState(false);
+
+  // Pass Device screen — shown in Pass & Play when the current player changes
+  const [passScreen, setPassScreen] = useState<{ name: string; cardCount: number } | null>(null);
+  const prevPlayerIndexRef = useRef<number | null>(null);
+  const isFirstRender = useRef(true);
+
+  useEffect(() => {
+    if (!gameState || gameState.phase === "game_over") return;
+    const idx = gameState.currentPlayerIndex;
+    if (isFirstRender.current) {
+      isFirstRender.current = false;
+      prevPlayerIndexRef.current = idx;
+      return;
+    }
+    if (prevPlayerIndexRef.current !== null && prevPlayerIndexRef.current !== idx) {
+      const newPlayer = gameState.players[idx];
+      setPassScreen({ name: newPlayer.name, cardCount: newPlayer.hand.length });
+    }
+    prevPlayerIndexRef.current = idx;
+  }, [gameState?.currentPlayerIndex]);
 
   useEffect(() => {
     if (gameState?.phase === "game_over" && gameState.winner) {
@@ -280,10 +303,21 @@ export default function Game() {
             {/* Discard Pile */}
             <div className="flex flex-col items-center gap-2">
               <div className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground">Discard Pile</div>
-              <div className="relative">
+              <div
+                className={cn("relative group", gameState.discardPile.length > 0 && "cursor-pointer")}
+                onClick={gameState.discardPile.length > 0 ? () => setViewingDiscard(true) : undefined}
+                title={gameState.discardPile.length > 0 ? "Click to browse discard pile" : undefined}
+              >
                 {topCardInDiscard ? (
-                  <motion.div initial={{ scale: 0.8, opacity: 0 }} animate={{ scale: 1, opacity: 1 }}>
-                    <GameCard card={topCardInDiscard} size="lg" hoverable={false} />
+                  <motion.div initial={{ scale: 0.8, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} className="relative">
+                    <GameCard card={topCardInDiscard} size="lg" hoverable={gameState.discardPile.length > 0} />
+                    {gameState.discardPile.length > 0 && (
+                      <div className="absolute inset-0 rounded-2xl bg-black/0 group-hover:bg-black/20 transition-colors flex items-center justify-center">
+                        <div className="opacity-0 group-hover:opacity-100 transition-opacity bg-black/70 text-white text-xs font-bold px-2 py-1 rounded-full flex items-center gap-1">
+                          <History className="w-3 h-3" /> Browse
+                        </div>
+                      </div>
+                    )}
                   </motion.div>
                 ) : (
                   <div className="w-48 h-72 rounded-2xl border-4 border-dashed border-muted-foreground/20 flex flex-col items-center justify-center text-muted-foreground/40 bg-black/5">
@@ -292,9 +326,13 @@ export default function Game() {
                   </div>
                 )}
               </div>
-              <div className="bg-background/80 px-3 py-1 rounded-full text-xs font-bold shadow-sm border opacity-80">
+              <button
+                onClick={gameState.discardPile.length > 0 ? () => setViewingDiscard(true) : undefined}
+                disabled={gameState.discardPile.length === 0}
+                className="bg-background/80 px-3 py-1 rounded-full text-xs font-bold shadow-sm border opacity-80 hover:opacity-100 disabled:cursor-default hover:bg-muted transition-colors"
+              >
                 {gameState.discardPile.length} discarded
-              </div>
+              </button>
             </div>
 
           </div>
@@ -599,6 +637,120 @@ export default function Game() {
           onResolve={handleResolveDecision}
         />
       )}
+
+      {/* PASS DEVICE OVERLAY — shown when the current player changes in Pass & Play */}
+      <AnimatePresence>
+        {passScreen && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-[60] flex items-center justify-center bg-black/90 backdrop-blur-md"
+          >
+            <motion.div
+              initial={{ scale: 0.85, y: 30 }}
+              animate={{ scale: 1, y: 0 }}
+              exit={{ scale: 0.9, opacity: 0 }}
+              transition={{ type: "spring", bounce: 0.4 }}
+              className="bg-card w-full max-w-sm mx-4 rounded-3xl shadow-2xl p-8 text-center border border-border"
+            >
+              <div className="w-20 h-20 rounded-full bg-primary/10 border-4 border-primary/30 flex items-center justify-center mx-auto mb-5">
+                <Leaf className="w-10 h-10 text-primary" />
+              </div>
+              <p className="text-sm font-bold uppercase tracking-widest text-muted-foreground mb-1">Pass the device to</p>
+              <h2 className="text-4xl font-display font-bold text-foreground mb-3">{passScreen.name}</h2>
+              <p className="text-muted-foreground text-sm mb-7">
+                You have <strong className="text-foreground">{passScreen.cardCount}</strong> card{passScreen.cardCount !== 1 ? "s" : ""} from your last turn — they're waiting for you!
+              </p>
+              <Button
+                size="lg"
+                className="w-full font-bold text-lg rounded-2xl"
+                onClick={() => setPassScreen(null)}
+              >
+                Reveal My Hand
+              </Button>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* DISCARD PILE MODAL */}
+      <AnimatePresence>
+        {viewingDiscard && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-[55] flex items-end sm:items-center justify-center bg-black/70 backdrop-blur-sm p-4"
+            onClick={() => setViewingDiscard(false)}
+          >
+            <motion.div
+              initial={{ y: 60, opacity: 0 }}
+              animate={{ y: 0, opacity: 1 }}
+              exit={{ y: 60, opacity: 0 }}
+              transition={{ type: "spring", bounce: 0.25 }}
+              className="bg-card w-full max-w-2xl rounded-3xl shadow-2xl border border-border overflow-hidden max-h-[85vh] flex flex-col"
+              onClick={(e) => e.stopPropagation()}
+            >
+              {/* Header */}
+              <div className="flex items-center justify-between px-6 py-4 border-b border-border shrink-0">
+                <div>
+                  <h3 className="font-display font-bold text-xl text-foreground">Discard Pile</h3>
+                  <p className="text-xs text-muted-foreground mt-0.5">{gameState.discardPile.length} card{gameState.discardPile.length !== 1 ? "s" : ""} — most recent first</p>
+                </div>
+                <button onClick={() => setViewingDiscard(false)} className="text-muted-foreground hover:text-foreground transition-colors p-1">
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+
+              {/* Scrollable card grid */}
+              <div className="overflow-y-auto p-5 flex-1">
+                {gameState.discardPile.length === 0 ? (
+                  <div className="flex flex-col items-center justify-center py-12 text-muted-foreground/40">
+                    <RefreshCcw className="w-12 h-12 mb-3" />
+                    <p className="font-bold">Discard pile is empty</p>
+                  </div>
+                ) : (
+                  <div className="grid grid-cols-2 sm:grid-cols-3 gap-4">
+                    {[...gameState.discardPile].reverse().map((card, idx) => {
+                      const imageSrc = card.imageKey
+                        ? `${import.meta.env.BASE_URL}assets/${card.imageKey}`
+                        : null;
+                      return (
+                        <div key={`${card.id}-${idx}`} className="flex flex-col gap-2 items-center">
+                          {imageSrc ? (
+                            <div className="w-full aspect-[2/3] rounded-xl overflow-hidden border-2 border-border shadow-sm">
+                              <img src={imageSrc} alt={card.name} className="w-full h-full object-cover" />
+                            </div>
+                          ) : (
+                            <GameCard card={card} size="sm" hoverable={false} />
+                          )}
+                          <div className="text-center">
+                            <div className="font-bold text-xs text-foreground leading-tight">{card.name}</div>
+                            <div className="flex items-center justify-center gap-1 mt-0.5 flex-wrap">
+                              <span className={cn(
+                                "text-[9px] font-bold uppercase px-1.5 py-0.5 rounded-full",
+                                card.type === "hero" ? "bg-green-100 text-green-800" : "bg-blue-100 text-blue-800"
+                              )}>
+                                {card.type}
+                              </span>
+                              {card.function && (
+                                <span className="text-[9px] font-bold uppercase px-1.5 py-0.5 rounded-full bg-secondary/20 text-secondary-foreground">
+                                  {card.function}
+                                </span>
+                              )}
+                            </div>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
 
       {/* GAME OVER OVERLAY */}
       <AnimatePresence>

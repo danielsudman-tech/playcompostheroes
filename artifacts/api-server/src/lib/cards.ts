@@ -535,18 +535,21 @@ const ALL_CARDS: Card[] = [
   },
 ];
 
-export function getAllCards(): Card[] {
-  return ALL_CARDS;
-}
-
 export function getCardById(id: string): Card | undefined {
   return ALL_CARDS.find((c) => c.id === id);
 }
 
+export function getAllCards(): Card[] {
+  return ALL_CARDS;
+}
+
 // Build deck: heroes appear once each (34), actions appear once each (17)
-export function buildDeck(): Card[] {
-  const deck = [...ALL_CARDS];
-  return deck;
+// Image key overrides are merged at game creation time via imageKeyStore.
+export function buildDeck(imageOverrides: Record<string, string> = {}): Card[] {
+  return ALL_CARDS.map((c) => ({
+    ...c,
+    imageKey: imageOverrides[c.id] ?? c.imageKey,
+  }));
 }
 
 export const WIN_FUNCTIONS: CardFunction[] = [
