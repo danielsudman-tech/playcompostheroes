@@ -22,7 +22,9 @@ import {
   CircleDot,
   Leaf,
   X,
-  Wifi
+  Wifi,
+  ChevronLeft,
+  ChevronRight
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -65,6 +67,10 @@ export default function Game() {
 
   // State for browsing the discard pile
   const [viewingDiscard, setViewingDiscard] = useState(false);
+
+  // Mobile hand navigation
+  const [handFocusIdx, setHandFocusIdx] = useState(0);
+  const [isMobileView, setIsMobileView] = useState(() => window.innerWidth < 640);
 
   // On-screen effect announcement banner
   const [announcement, setAnnouncement] = useState<string | null>(null);
@@ -141,6 +147,20 @@ export default function Game() {
     }
     prevPlayerIndexRef.current = idx;
   }, [gameState?.currentPlayerIndex, isOnline]);
+
+  // Mobile resize detection
+  useEffect(() => {
+    const handler = () => setIsMobileView(window.innerWidth < 640);
+    window.addEventListener("resize", handler);
+    return () => window.removeEventListener("resize", handler);
+  }, []);
+
+  // Clamp handFocusIdx when hand size changes
+  useEffect(() => {
+    if (!gameState) return;
+    const len = gameState.players.find(p => p.id === localPlayerId)?.hand.length ?? 0;
+    setHandFocusIdx(prev => Math.max(0, Math.min(prev, len - 1)));
+  }, [gameState?.players, localPlayerId]);
 
   // Announce new log entries as on-screen banners
   useEffect(() => {
@@ -466,9 +486,9 @@ export default function Game() {
               >
                 {topCardInDiscard ? (
                   <motion.div initial={{ scale: 0.8, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} className="relative">
-                    <GameCard card={topCardInDiscard} size="lg" hoverable={gameState.discardPile.length > 0} />
+                    <GameCard card={topCardInDiscard} hoverable={gameState.discardPile.length > 0} />
                     {gameState.discardPile.length > 0 && (
-                      <div className="absolute inset-0 rounded-2xl bg-black/0 group-hover:bg-black/20 transition-colors flex items-center justify-center">
+                      <div className="absolute inset-0 rounded-xl bg-black/0 group-hover:bg-black/20 transition-colors flex items-center justify-center">
                         <div className="opacity-0 group-hover:opacity-100 transition-opacity bg-black/70 text-white text-xs font-bold px-2 py-1 rounded-full flex items-center gap-1">
                           <History className="w-3 h-3" /> Browse
                         </div>
@@ -476,9 +496,9 @@ export default function Game() {
                     )}
                   </motion.div>
                 ) : (
-                  <div className="w-48 h-72 rounded-2xl border-4 border-dashed border-muted-foreground/20 flex flex-col items-center justify-center text-muted-foreground/40 bg-black/5">
-                    <RefreshCcw className="w-10 h-10 mb-2" />
-                    <span className="text-sm font-bold uppercase">Empty</span>
+                  <div className="w-36 h-52 rounded-xl border-4 border-dashed border-muted-foreground/20 flex flex-col items-center justify-center text-muted-foreground/40 bg-black/5">
+                    <RefreshCcw className="w-8 h-8 mb-2" />
+                    <span className="text-xs font-bold uppercase">Empty</span>
                   </div>
                 )}
               </div>
@@ -573,22 +593,17 @@ export default function Game() {
         />
       </div>
 
-      {/* HAND OVERLAY — fixed at screen bottom, always visible */}
-      <div className="fixed bottom-0 inset-x-0 z-30 pointer-events-none">
-        <div className="relative flex justify-center" style={{ height: 170 }}>
-          {localPlayerFull.hand.length === 0 && (
-            <div className="absolute bottom-4 text-muted-foreground/40 text-sm italic pointer-events-none">
+      {/* HAND OVERLAY — fixed at screen bottom */}
+      {isMobileView ? (
+        /* ── Mobile: single-card navigator with prev/next arrows ── */
+        <div className="fixed bottom-0 inset-x-0 z-30 bg-card/95 backdrop-blur-md border-t border-border">
+          {localPlayerFull.hand.length === 0 ? (
+            <div className="flex items-center justify-center h-16 text-muted-foreground/50 text-sm italic">
               No cards in hand
             </div>
-          )}
-          {localPlayerFull.hand.map((card, idx) => {
-            const total = localPlayerFull.hand.length;
-            const centerIdx = (total - 1) / 2;
-            const offset = idx - centerIdx;
-            const spread = total <= 3 ? 52 : total <= 5 ? 68 : 80;
-            const rotate = offset * (total <= 3 ? 6 : 4);
-            const arcY = Math.abs(offset) * 8;
-            const x = offset * spread;
+          ) : (() => {
+            const card = localPlayerFull.hand[handFocusIdx];
+            if (!card) return null;
             const isPlayPhase = isMyTurn && gameState.phase === "play" && !gameState.pendingDecision;
             const heroBlocked = card.type === "hero" && gameState.heroPlayedThisTurn;
             const isPlayable = isPlayPhase && !heroBlocked;
@@ -597,60 +612,164 @@ export default function Game() {
               : null;
 
             return (
-              <motion.div
-                key={`${card.id}-${idx}`}
-                className="absolute bottom-0 origin-bottom pointer-events-auto"
-                initial={{ y: 200, opacity: 0 }}
-                animate={{ x, y: arcY, rotate, opacity: heroBlocked ? 0.45 : 1, zIndex: idx + 1 }}
-                whileHover={isPlayPhase ? {
-                  y: -50,
-                  scale: 1.15,
-                  rotate: 0,
-                  zIndex: 60,
-                  transition: { duration: 0.15 }
-                } : {}}
-                style={{ transformOrigin: "bottom center" }}
-              >
-                <div className="relative group">
-                  {imageSrc ? (
-                    <div
-                      onClick={() => handleCardClick(card)}
-                      className={cn(
-                        "w-36 h-52 rounded-xl overflow-hidden shadow-xl border-2 border-white/30",
-                        isPlayable && "cursor-pointer hover:ring-2 hover:ring-primary ring-offset-1",
-                        heroBlocked && "cursor-not-allowed"
-                      )}
-                    >
-                      <img src={imageSrc} alt={card.name} className="w-full h-full object-cover" />
+              <div className="flex items-center gap-2 px-3 py-2">
+                {/* Prev arrow */}
+                <button
+                  className="shrink-0 w-9 h-9 rounded-full bg-background/80 border border-border flex items-center justify-center disabled:opacity-30 active:scale-95 transition-transform"
+                  disabled={handFocusIdx === 0}
+                  onClick={() => setHandFocusIdx(i => i - 1)}
+                >
+                  <ChevronLeft className="w-5 h-5" />
+                </button>
+
+                {/* Card + info */}
+                <div className="flex-1 flex items-center gap-3 min-w-0">
+                  {/* Card thumbnail */}
+                  <div
+                    className={cn(
+                      "shrink-0 w-14 h-20 rounded-lg overflow-hidden shadow-lg border-2",
+                      isPlayable ? "border-primary cursor-pointer" : "border-white/30",
+                      heroBlocked && "opacity-50 cursor-not-allowed"
+                    )}
+                    onClick={isPlayable || (!isPlayPhase) ? () => handleCardClick(card) : undefined}
+                  >
+                    {imageSrc
+                      ? <img src={imageSrc} alt={card.name} className="w-full h-full object-cover" />
+                      : <div className="w-full h-full bg-card flex items-center justify-center text-[8px] font-bold text-center px-1 leading-tight">{card.name}</div>
+                    }
+                  </div>
+
+                  {/* Card name + text */}
+                  <div className="flex-1 min-w-0">
+                    <div className="font-bold text-sm text-foreground truncate">{card.name}</div>
+                    <div className="text-[11px] text-muted-foreground leading-snug line-clamp-2">{card.cardText}</div>
+                    <div className="flex items-center gap-2 mt-1">
+                      <span className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground/60">{card.function}</span>
+                      {heroBlocked && <span className="text-[10px] text-destructive font-bold">1 hero/turn</span>}
                     </div>
-                  ) : (
-                    <GameCard
-                      card={card}
-                      isFaceDown={false}
-                      hoverable={false}
-                      onClick={() => handleCardClick(card)}
-                      className={cn(
-                        isPlayable && "cursor-pointer ring-2 ring-transparent hover:ring-primary ring-offset-1",
-                        heroBlocked && "cursor-not-allowed"
-                      )}
-                    />
-                  )}
+                  </div>
+
+                  {/* Play button */}
                   {isPlayable && (
-                    <div className="absolute -top-7 left-1/2 -translate-x-1/2 bg-primary text-primary-foreground text-[10px] font-bold px-2 py-0.5 rounded-full shadow-lg opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap pointer-events-none z-50">
+                    <Button
+                      size="sm"
+                      className="shrink-0 h-9 px-3 font-bold"
+                      onClick={() => handleCardClick(card)}
+                    >
                       Play
-                    </div>
-                  )}
-                  {heroBlocked && (
-                    <div className="absolute -top-7 left-1/2 -translate-x-1/2 bg-destructive text-destructive-foreground text-[10px] font-bold px-2 py-0.5 rounded-full shadow-lg opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap pointer-events-none z-50">
-                      1 hero/turn
-                    </div>
+                    </Button>
                   )}
                 </div>
-              </motion.div>
+
+                {/* Next arrow */}
+                <button
+                  className="shrink-0 w-9 h-9 rounded-full bg-background/80 border border-border flex items-center justify-center disabled:opacity-30 active:scale-95 transition-transform"
+                  disabled={handFocusIdx >= localPlayerFull.hand.length - 1}
+                  onClick={() => setHandFocusIdx(i => i + 1)}
+                >
+                  <ChevronRight className="w-5 h-5" />
+                </button>
+              </div>
             );
-          })}
+          })()}
+
+          {/* Dot indicators */}
+          {localPlayerFull.hand.length > 1 && (
+            <div className="flex justify-center gap-1 pb-2">
+              {localPlayerFull.hand.map((_, i) => (
+                <button
+                  key={i}
+                  className={cn(
+                    "w-1.5 h-1.5 rounded-full transition-colors",
+                    i === handFocusIdx ? "bg-primary" : "bg-muted-foreground/30"
+                  )}
+                  onClick={() => setHandFocusIdx(i)}
+                />
+              ))}
+              <span className="ml-2 text-[10px] text-muted-foreground/50 font-mono">{handFocusIdx + 1}/{localPlayerFull.hand.length}</span>
+            </div>
+          )}
         </div>
-      </div>
+      ) : (
+        /* ── Desktop: fan spread ── */
+        <div className="fixed bottom-0 inset-x-0 z-30 pointer-events-none">
+          <div className="relative flex justify-center" style={{ height: 170 }}>
+            {localPlayerFull.hand.length === 0 && (
+              <div className="absolute bottom-4 text-muted-foreground/40 text-sm italic pointer-events-none">
+                No cards in hand
+              </div>
+            )}
+            {localPlayerFull.hand.map((card, idx) => {
+              const total = localPlayerFull.hand.length;
+              const centerIdx = (total - 1) / 2;
+              const offset = idx - centerIdx;
+              const spread = total <= 3 ? 52 : total <= 5 ? 68 : 80;
+              const rotate = offset * (total <= 3 ? 6 : 4);
+              const arcY = Math.abs(offset) * 8;
+              const x = offset * spread;
+              const isPlayPhase = isMyTurn && gameState.phase === "play" && !gameState.pendingDecision;
+              const heroBlocked = card.type === "hero" && gameState.heroPlayedThisTurn;
+              const isPlayable = isPlayPhase && !heroBlocked;
+              const imageSrc = card.imageKey
+                ? `${import.meta.env.BASE_URL}assets/${card.imageKey}`
+                : null;
+
+              return (
+                <motion.div
+                  key={`${card.id}-${idx}`}
+                  className="absolute bottom-0 origin-bottom pointer-events-auto"
+                  initial={{ y: 200, opacity: 0 }}
+                  animate={{ x, y: arcY, rotate, opacity: heroBlocked ? 0.45 : 1, zIndex: idx + 1 }}
+                  whileHover={isPlayPhase ? {
+                    y: -50,
+                    scale: 1.15,
+                    rotate: 0,
+                    zIndex: 60,
+                    transition: { duration: 0.15 }
+                  } : {}}
+                  style={{ transformOrigin: "bottom center" }}
+                >
+                  <div className="relative group">
+                    {imageSrc ? (
+                      <div
+                        onClick={() => handleCardClick(card)}
+                        className={cn(
+                          "w-36 h-52 rounded-xl overflow-hidden shadow-xl border-2 border-white/30",
+                          isPlayable && "cursor-pointer hover:ring-2 hover:ring-primary ring-offset-1",
+                          heroBlocked && "cursor-not-allowed"
+                        )}
+                      >
+                        <img src={imageSrc} alt={card.name} className="w-full h-full object-cover" />
+                      </div>
+                    ) : (
+                      <GameCard
+                        card={card}
+                        isFaceDown={false}
+                        hoverable={false}
+                        onClick={() => handleCardClick(card)}
+                        className={cn(
+                          isPlayable && "cursor-pointer ring-2 ring-transparent hover:ring-primary ring-offset-1",
+                          heroBlocked && "cursor-not-allowed"
+                        )}
+                      />
+                    )}
+                    {isPlayable && (
+                      <div className="absolute -top-7 left-1/2 -translate-x-1/2 bg-primary text-primary-foreground text-[10px] font-bold px-2 py-0.5 rounded-full shadow-lg opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap pointer-events-none z-50">
+                        Play
+                      </div>
+                    )}
+                    {heroBlocked && (
+                      <div className="absolute -top-7 left-1/2 -translate-x-1/2 bg-destructive text-destructive-foreground text-[10px] font-bold px-2 py-0.5 rounded-full shadow-lg opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap pointer-events-none z-50">
+                        1 hero/turn
+                      </div>
+                    )}
+                  </div>
+                </motion.div>
+              );
+            })}
+          </div>
+        </div>
+      )}
 
       {/* PLAY CARD CONFIRMATION MODAL */}
       <AnimatePresence>

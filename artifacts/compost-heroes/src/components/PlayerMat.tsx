@@ -398,7 +398,7 @@ export function PlayerMat({
                       >
                         <HoverableCard
                           card={activeCard}
-                          canMove={isActiveTurn && isLocalUser}
+                          canMove={isActiveTurn && isLocalUser && !!((activeCard as any).alternateFunctions?.length)}
                           onMoveLayer={onMoveLayer ? () => onMoveLayer(activeCard.id) : undefined}
                         />
                       </motion.div>

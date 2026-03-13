@@ -1878,12 +1878,12 @@ export function moveCardLayer(
   const card = player.compostPile.find((c) => c.id === cardId);
   if (!card) return { state, error: "Card not found in compost pile" };
 
-  // Any hero card can be moved to any of the 5 function slots
-  const ALL_FUNCTIONS = ["Moisture", "Carbon", "Decomposer", "Nitrogen", "Airflow"] as const;
-  const currentFn = getEffectiveFunction(card);
+  // Only cards with defined alternate functions can be moved
+  const allFns = [card.function, ...(card.alternateFunctions ?? [])];
+  if (allFns.length <= 1) return { state, error: "This card can only go in one function slot and cannot be moved" };
 
-  // Offer all slots except the card's current one
-  const availableTargets = ALL_FUNCTIONS.filter((fn) => fn !== currentFn) as string[];
+  const currentFn = getEffectiveFunction(card);
+  const availableTargets = allFns.filter((fn) => fn !== currentFn) as string[];
 
   if (availableTargets.length === 0) return { state, error: "No available slots to move this card to" };
 
