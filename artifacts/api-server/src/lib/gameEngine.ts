@@ -1066,9 +1066,9 @@ export function resolveDecision(
       if (!card) return { state, error: "Card not in hand" };
 
       // Special case: Rot Roulette play — play card as if playing from hand
+      // Bypass heroPlayedThisTurn restriction since Rot Roulette forces this play
       if (decision.meta?.rotRoulettePlay) {
-        // Clear the pending decision first, then use playCard logic
-        s = { ...s, pendingDecision: null };
+        s = { ...s, pendingDecision: null, heroPlayedThisTurn: false };
         const playResult = playCard(s, playerId, chosenCardId);
         return playResult;
       }
@@ -1693,7 +1693,7 @@ function advanceTurnState(s: GameState): GameState {
   if (s.extraTurn) {
     const cp = s.players[s.currentPlayerIndex];
     addLog(s, `${cp.name} takes another turn!`);
-    return { ...s, extraTurn: false, phase: "draw" };
+    return { ...s, extraTurn: false, phase: "draw", heroPlayedThisTurn: false };
   }
 
   let nextIdx = nextPlayerIndex(s);
@@ -1878,15 +1878,12 @@ export function moveCardLayer(
   const card = player.compostPile.find((c) => c.id === cardId);
   if (!card) return { state, error: "Card not found in compost pile" };
 
-  const allFns = [card.function, ...(card.alternateFunctions ?? [])];
-  if (allFns.length <= 1) return { state, error: "This card has only one function and cannot be moved" };
-
-  // Only offer slots that are not already filled by another card
+  // Any hero card can be moved to any of the 5 function slots
+  const ALL_FUNCTIONS = ["Moisture", "Carbon", "Decomposer", "Nitrogen", "Airflow"] as const;
   const currentFn = getEffectiveFunction(card);
-  const availableTargets = allFns.filter((fn) => {
-    if (fn === currentFn) return false; // skip current slot
-    return !getHasFunction(player, fn) || player.compostPile.some((c) => c.id === cardId && getEffectiveFunction(c) === fn);
-  });
+
+  // Offer all slots except the card's current one
+  const availableTargets = ALL_FUNCTIONS.filter((fn) => fn !== currentFn) as string[];
 
   if (availableTargets.length === 0) return { state, error: "No available slots to move this card to" };
 
