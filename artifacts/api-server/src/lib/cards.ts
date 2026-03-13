@@ -543,13 +543,21 @@ export function getAllCards(): Card[] {
   return ALL_CARDS;
 }
 
-// Build deck: heroes appear once each (34), actions appear once each (17)
-// Image key overrides are merged at game creation time via imageKeyStore.
-export function buildDeck(imageOverrides: Record<string, string> = {}): Card[] {
-  return ALL_CARDS.map((c) => ({
-    ...c,
-    imageKey: imageOverrides[c.id] ?? c.imageKey,
-  }));
+// Build deck with image overrides and copies counts.
+// copiesOverrides: cardId → how many copies appear in the deck (default 1, 0 = excluded).
+export function buildDeck(
+  imageOverrides: Record<string, string> = {},
+  copiesOverrides: Record<string, number> = {}
+): Card[] {
+  const deck: Card[] = [];
+  for (const c of ALL_CARDS) {
+    const copies = copiesOverrides[c.id] ?? 1;
+    const card: Card = { ...c, imageKey: imageOverrides[c.id] ?? c.imageKey };
+    for (let i = 0; i < copies; i++) {
+      deck.push(card);
+    }
+  }
+  return deck;
 }
 
 export const WIN_FUNCTIONS: CardFunction[] = [

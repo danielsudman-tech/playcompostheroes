@@ -1,5 +1,6 @@
 import { Card, buildDeck, WIN_FUNCTIONS, getAllCards } from "./cards.js";
 import { getAllOverrides } from "./imageKeyStore.js";
+import { getAllCopies } from "./cardCopiesStore.js";
 
 export interface PlayerState {
   id: string;
@@ -1580,7 +1581,7 @@ export function createGameState(
   playerNames: string[],
   mode: "facilitator" | "standalone"
 ): GameState {
-  const deck = shuffle(buildDeck(getAllOverrides()));
+  const deck = shuffle(buildDeck(getAllOverrides(), getAllCopies()));
   const players: PlayerState[] = playerNames.map((name, i) => ({
     id: `player_${i}`,
     name,

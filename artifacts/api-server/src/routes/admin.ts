@@ -4,6 +4,7 @@ import { join, dirname } from "path";
 import { fileURLToPath } from "url";
 import { getAllCards } from "../lib/cards.js";
 import { getAllOverrides, setImageKeyOverride, removeImageKeyOverride } from "../lib/imageKeyStore.js";
+import { getAllCopies, getCardCopies, setCardCopies } from "../lib/cardCopiesStore.js";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
@@ -12,20 +13,40 @@ const ASSETS_DIR = join(__dirname, "../../../compost-heroes/public/assets");
 
 const router = Router();
 
-// GET /api/admin/cards — list all cards with current image keys
+// GET /api/admin/cards — list all cards with current image keys and copy counts
 router.get("/admin/cards", (_req, res) => {
   const cards = getAllCards();
-  const overrides = getAllOverrides();
+  const imageOverrides = getAllOverrides();
+  const copiesMap = getAllCopies();
   const result = cards.map((c) => ({
     id: c.id,
     name: c.name,
     type: c.type,
     function: c.function,
-    imageKey: overrides[c.id] ?? c.imageKey,
+    imageKey: imageOverrides[c.id] ?? c.imageKey,
     hasHardcodedImage: !!c.imageKey,
-    hasOverrideImage: !!overrides[c.id],
+    hasOverrideImage: !!imageOverrides[c.id],
+    copies: copiesMap[c.id] ?? 1,
   }));
   res.json(result);
+});
+
+// PUT /api/admin/cards/:cardId/copies — set the number of copies in the deck
+router.put("/admin/cards/:cardId/copies", (req, res) => {
+  const { cardId } = req.params;
+  const { copies } = req.body as { copies: number };
+
+  if (typeof copies !== "number" || !Number.isInteger(copies) || copies < 0) {
+    return res.status(400).json({ error: "copies must be a non-negative integer" });
+  }
+
+  const cards = getAllCards();
+  if (!cards.find((c) => c.id === cardId)) {
+    return res.status(404).json({ error: "Card not found" });
+  }
+
+  setCardCopies(cardId, copies);
+  res.json({ success: true, cardId, copies });
 });
 
 // POST /api/admin/cards/:cardId/image — upload image as base64

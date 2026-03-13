@@ -11,6 +11,8 @@ import {
   ArrowLeft,
   Trash2,
   ImageIcon,
+  Plus,
+  Minus,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -22,6 +24,7 @@ interface AdminCard {
   imageKey: string | null;
   hasHardcodedImage: boolean;
   hasOverrideImage: boolean;
+  copies: number;
 }
 
 function useAdminCards() {
@@ -44,6 +47,23 @@ function CardAdminRow({ card }: { card: AdminCard }) {
   const imageSrc = card.imageKey
     ? `${import.meta.env.BASE_URL}assets/${card.imageKey}`
     : null;
+
+  const copiesMutation = useMutation({
+    mutationFn: async (copies: number) => {
+      const res = await fetch(`/api/admin/cards/${card.id}/copies`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ copies }),
+      });
+      if (!res.ok) throw new Error("Failed to update copies");
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["admin-cards"] });
+    },
+    onError: () => {
+      toast({ title: "Failed to update copies", variant: "destructive" });
+    },
+  });
 
   const removeMutation = useMutation({
     mutationFn: async () => {
@@ -80,11 +100,7 @@ function CardAdminRow({ card }: { card: AdminCard }) {
       const res = await fetch(`/api/admin/cards/${card.id}/image`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          imageData: base64,
-          mimeType: file.type,
-          filename: file.name,
-        }),
+        body: JSON.stringify({ imageData: base64, mimeType: file.type, filename: file.name }),
       });
 
       if (!res.ok) {
@@ -107,13 +123,16 @@ function CardAdminRow({ card }: { card: AdminCard }) {
   }
 
   return (
-    <div className="flex items-center gap-4 p-4 border border-border rounded-xl bg-card hover:bg-muted/30 transition-colors">
+    <div className={cn(
+      "flex items-center gap-4 p-4 border rounded-xl bg-card hover:bg-muted/20 transition-colors",
+      card.copies === 0 ? "border-muted opacity-60" : "border-border"
+    )}>
       {/* Image preview */}
-      <div className="shrink-0 w-16 h-24 rounded-lg overflow-hidden border-2 border-border bg-muted flex items-center justify-center">
+      <div className="shrink-0 w-14 h-20 rounded-lg overflow-hidden border-2 border-border bg-muted flex items-center justify-center">
         {imageSrc ? (
           <img src={imageSrc} alt={card.name} className="w-full h-full object-cover" />
         ) : (
-          <ImageIcon className="w-6 h-6 text-muted-foreground/40" />
+          <ImageIcon className="w-5 h-5 text-muted-foreground/40" />
         )}
       </div>
 
@@ -128,27 +147,61 @@ function CardAdminRow({ card }: { card: AdminCard }) {
             {card.type}
           </span>
           <span className="text-[10px] text-muted-foreground">{card.function}</span>
+          {card.copies === 0 && (
+            <span className="text-[10px] font-bold uppercase px-2 py-0.5 rounded-full bg-red-100 text-red-700">
+              Excluded
+            </span>
+          )}
         </div>
         <div className="mt-1 flex items-center gap-1 text-[10px]">
           {card.imageKey ? (
             <>
-              <CheckCircle className="w-3 h-3 text-green-600" />
-              <span className="text-green-700 font-medium truncate max-w-[200px]">{card.imageKey}</span>
+              <CheckCircle className="w-3 h-3 text-green-600 shrink-0" />
+              <span className="text-green-700 font-medium truncate max-w-[180px]">{card.imageKey}</span>
               {card.hasOverrideImage && (
-                <span className="bg-orange-100 text-orange-700 px-1.5 py-0.5 rounded-full font-bold ml-1">override</span>
+                <span className="bg-orange-100 text-orange-700 px-1.5 py-0.5 rounded-full font-bold ml-1 shrink-0">override</span>
               )}
             </>
           ) : (
             <>
-              <AlertCircle className="w-3 h-3 text-muted-foreground/50" />
+              <AlertCircle className="w-3 h-3 text-muted-foreground/50 shrink-0" />
               <span className="text-muted-foreground/50">No image</span>
             </>
           )}
         </div>
       </div>
 
-      {/* Actions */}
-      <div className="shrink-0 flex items-center gap-2">
+      {/* Copies stepper */}
+      <div className="shrink-0 flex flex-col items-center gap-1">
+        <span className="text-[9px] font-bold uppercase tracking-wider text-muted-foreground">Copies</span>
+        <div className="flex items-center gap-1">
+          <button
+            className="w-6 h-6 rounded-md border border-border bg-background hover:bg-muted flex items-center justify-center transition-colors disabled:opacity-40"
+            onClick={() => copiesMutation.mutate(Math.max(0, card.copies - 1))}
+            disabled={copiesMutation.isPending || card.copies === 0}
+            title="Remove one copy"
+          >
+            <Minus className="w-3 h-3" />
+          </button>
+          <span className={cn(
+            "w-7 text-center font-bold text-sm tabular-nums",
+            card.copies === 0 ? "text-muted-foreground/50" : "text-foreground"
+          )}>
+            {copiesMutation.isPending ? <Loader2 className="w-3 h-3 animate-spin mx-auto" /> : card.copies}
+          </span>
+          <button
+            className="w-6 h-6 rounded-md border border-border bg-background hover:bg-muted flex items-center justify-center transition-colors disabled:opacity-40"
+            onClick={() => copiesMutation.mutate(card.copies + 1)}
+            disabled={copiesMutation.isPending}
+            title="Add one copy"
+          >
+            <Plus className="w-3 h-3" />
+          </button>
+        </div>
+      </div>
+
+      {/* Image actions */}
+      <div className="shrink-0 flex flex-col items-stretch gap-1.5">
         <input
           ref={fileRef}
           type="file"
@@ -161,12 +214,12 @@ function CardAdminRow({ card }: { card: AdminCard }) {
           variant="outline"
           onClick={() => fileRef.current?.click()}
           disabled={uploading}
-          className="text-xs font-bold"
+          className="text-xs font-bold h-7 px-2"
         >
           {uploading ? (
-            <><Loader2 className="w-3 h-3 mr-1 animate-spin" /> Uploading…</>
+            <><Loader2 className="w-3 h-3 mr-1 animate-spin" />Uploading…</>
           ) : (
-            <><Upload className="w-3 h-3 mr-1" /> {card.imageKey ? "Replace" : "Upload"}</>
+            <><Upload className="w-3 h-3 mr-1" />{card.imageKey ? "Replace" : "Upload"}</>
           )}
         </Button>
         {card.hasOverrideImage && (
@@ -175,10 +228,10 @@ function CardAdminRow({ card }: { card: AdminCard }) {
             variant="ghost"
             onClick={() => removeMutation.mutate()}
             disabled={removeMutation.isPending}
-            className="text-destructive hover:text-destructive text-xs"
+            className="text-destructive hover:text-destructive text-xs h-7 px-2"
             title="Remove override image"
           >
-            <Trash2 className="w-3 h-3" />
+            <Trash2 className="w-3 h-3 mr-1" />Clear
           </Button>
         )}
       </div>
@@ -201,6 +254,7 @@ export default function Admin() {
 
   const doneCount = (cards ?? []).filter((c) => c.imageKey).length;
   const total = (cards ?? []).length;
+  const totalCopies = (cards ?? []).reduce((sum, c) => sum + c.copies, 0);
 
   return (
     <div className="min-h-screen bg-background text-foreground">
@@ -216,11 +270,11 @@ export default function Admin() {
           <div className="flex-1">
             <h1 className="font-display font-bold text-xl text-foreground">Card Image Admin</h1>
             <p className="text-xs text-muted-foreground">
-              {doneCount}/{total} cards have images
+              {doneCount}/{total} cards have images &nbsp;·&nbsp; {totalCopies} total cards in deck
             </p>
           </div>
           {/* Progress bar */}
-          <div className="w-32 h-2 bg-muted rounded-full overflow-hidden">
+          <div className="w-28 h-2 bg-muted rounded-full overflow-hidden">
             <div
               className="h-full bg-primary rounded-full transition-all"
               style={{ width: `${total > 0 ? (doneCount / total) * 100 : 0}%` }}
@@ -278,15 +332,22 @@ export default function Admin() {
         )}
 
         {cards && (
-          <div className="flex flex-col gap-3">
-            {filtered.length === 0 ? (
-              <div className="text-center py-12 text-muted-foreground">
-                No cards match this filter.
-              </div>
-            ) : (
-              filtered.map((card) => <CardAdminRow key={card.id} card={card} />)
-            )}
-          </div>
+          <>
+            <div className="mb-4 bg-muted/40 border border-border rounded-xl px-4 py-3 text-xs text-muted-foreground">
+              <strong className="text-foreground">Deck size: {totalCopies} cards.</strong> Use the
+              &nbsp;<span className="font-bold">− / +</span>&nbsp; buttons to set how many copies of each card go in the deck.
+              Set to <strong>0</strong> to exclude a card entirely. Changes take effect on new games.
+            </div>
+            <div className="flex flex-col gap-3">
+              {filtered.length === 0 ? (
+                <div className="text-center py-12 text-muted-foreground">
+                  No cards match this filter.
+                </div>
+              ) : (
+                filtered.map((card) => <CardAdminRow key={card.id} card={card} />)
+              )}
+            </div>
+          </>
         )}
       </div>
     </div>
