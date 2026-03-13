@@ -7,7 +7,6 @@ import {
 } from "@workspace/api-client-react";
 import type { CreateGameRequest, GameAction } from "@workspace/api-client-react";
 
-// Hook to poll the game state so players see updates in real-time
 export function useGameState(gameId: string | null) {
   return useQuery({
     queryKey: gameId ? getGetGameQueryKey(gameId) : [],
@@ -16,12 +15,11 @@ export function useGameState(gameId: string | null) {
       return getGame(gameId);
     },
     enabled: !!gameId,
-    refetchInterval: 1500, // Poll every 1.5s for snappy multiplayer feel
+    refetchInterval: 1500,
     staleTime: 1000,
   });
 }
 
-// Hook to create a new game
 export function useCreateNewGame() {
   const queryClient = useQueryClient();
   return useMutation({
@@ -34,8 +32,12 @@ export function useCreateNewGame() {
   });
 }
 
-// Hook to perform an action (draw, play, end turn)
-export function useGameAction(gameId: string) {
+export interface GameActionCallbacks {
+  onError?: (message: string) => void;
+  onSuccess?: (logEntry: string) => void;
+}
+
+export function useGameAction(gameId: string, callbacks?: GameActionCallbacks) {
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: async (action: GameAction) => {
@@ -43,9 +45,17 @@ export function useGameAction(gameId: string) {
     },
     onSuccess: (data) => {
       queryClient.setQueryData(getGetGameQueryKey(gameId), data);
+      if (callbacks?.onSuccess && data.log.length > 0) {
+        const lastEntry = data.log[data.log.length - 1];
+        callbacks.onSuccess(lastEntry);
+      }
     },
     onError: (error) => {
       console.error("[game-action] error:", error);
+      const msg = error instanceof Error
+        ? error.message.replace(/^HTTP \d+ [^:]+:\s*/, "")
+        : "An unexpected error occurred";
+      callbacks?.onError?.(msg);
     }
   });
 }

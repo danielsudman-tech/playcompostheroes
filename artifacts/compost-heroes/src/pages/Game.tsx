@@ -31,7 +31,9 @@ export default function Game() {
   const { toast } = useToast();
   
   const { data: gameState, isLoading, error } = useGameState(gameId || null);
-  const actionMutation = useGameAction(gameId || "");
+  const actionMutation = useGameAction(gameId || "", {
+    onError: (msg) => toast({ title: "Action failed", description: msg, variant: "destructive" }),
+  });
 
   // Local state for identifying "who I am" in Pass & Play mode
   const localPlayerId = gameState?.players[gameState.currentPlayerIndex]?.id;

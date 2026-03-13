@@ -12,28 +12,77 @@ interface DecisionModalProps {
   onResolve: (data: Record<string, unknown>) => void;
 }
 
+const CARD_SELECTION_TYPES = new Set([
+  "choose_card_from_hand",
+  "choose_card_from_discard",
+  "choose_card_from_compost",
+  "choose_hero_from_discard",
+  "choose_rainstorm_play",
+  "choose_rot_roulette_keep",
+  "choose_discard_for_spread",
+  "choose_under_web_hand_card",
+  "choose_under_web_discard_card",
+  "choose_nitrogen_boost_discard",
+]);
+
+const PLAYER_SELECTION_TYPES = new Set([
+  "choose_target_player",
+  "choose_opponent_for_steal",
+]);
+
+type MultiSelectMode =
+  | { mode: "fixed"; count: number; resolveKey: string }
+  | { mode: "optional" }
+  | null;
+
+function getMultiSelectMode(decision: PendingDecision): MultiSelectMode {
+  const type = decision.type;
+  const meta = (decision as any).meta ?? {};
+
+  if (type === "choose_rot_roulette_keep") {
+    return { mode: "fixed", count: meta.keepCount ?? 2, resolveKey: "keepCardIds" };
+  }
+  if (type === "choose_discard_for_spread") {
+    return { mode: "fixed", count: meta.count ?? 1, resolveKey: "cardIds" };
+  }
+  if (type === "choose_rainstorm_play") {
+    return { mode: "optional" };
+  }
+  return null;
+}
+
 export function DecisionModal({ decision, gameState, onResolve }: DecisionModalProps) {
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
 
   if (!decision) return null;
 
-  const isMultiSelect = decision.type === "choose_rot_roulette_keep";
-  const keepCount = (decision as any)?.meta?.keepCount ?? 2;
+  const type = decision.type;
+  const isOptional = (decision as any)?.meta?.optional === true;
+  const multiMode = getMultiSelectMode(decision);
+  const isFixedMulti = multiMode?.mode === "fixed";
+  const isOptionalMulti = multiMode?.mode === "optional";
+  const fixedCount = isFixedMulti ? (multiMode as any).count : 0;
+  const resolveKey = isFixedMulti ? (multiMode as any).resolveKey : "cardIds";
 
-  const isPlayerSelection = decision.type === "choose_target_player" || decision.type === "choose_opponent_for_steal";
-  const isCardSelection = decision.type.includes("card") || decision.type.includes("hero") || decision.type.includes("discard");
+  const isPlayerSelection = PLAYER_SELECTION_TYPES.has(type);
+  const isCardSelection = CARD_SELECTION_TYPES.has(type);
 
   const toggleCard = (cardId: string) => {
     setSelectedIds(prev => {
       if (prev.includes(cardId)) return prev.filter(id => id !== cardId);
-      if (prev.length >= keepCount) return [...prev.slice(1), cardId];
+      if (isFixedMulti && prev.length >= fixedCount) return [...prev.slice(1), cardId];
       return [...prev, cardId];
     });
   };
 
-  const handleMultiConfirm = () => {
-    if (selectedIds.length !== keepCount) return;
-    onResolve({ keepCardIds: selectedIds });
+  const handleFixedConfirm = () => {
+    if (selectedIds.length !== fixedCount) return;
+    onResolve({ [resolveKey]: selectedIds });
+    setSelectedIds([]);
+  };
+
+  const handleOptionalConfirm = () => {
+    onResolve({ cardIds: selectedIds });
     setSelectedIds([]);
   };
 
@@ -41,6 +90,17 @@ export function DecisionModal({ decision, gameState, onResolve }: DecisionModalP
     setSelectedIds([]);
     onResolve(opt);
   };
+
+  const handleSkip = () => {
+    setSelectedIds([]);
+    if (isOptionalMulti) {
+      onResolve({ cardIds: [] });
+    } else {
+      onResolve({ skip: true });
+    }
+  };
+
+  const options = (decision as any).options ?? [];
 
   return (
     <AnimatePresence>
@@ -54,9 +114,14 @@ export function DecisionModal({ decision, gameState, onResolve }: DecisionModalP
           <div className="p-6 bg-primary/10 border-b border-border">
             <h2 className="text-2xl font-display font-bold text-foreground text-center">Action Required</h2>
             <p className="text-center text-muted-foreground mt-2 text-lg">{decision.prompt}</p>
-            {isMultiSelect && (
+            {isFixedMulti && (
               <p className="text-center text-sm text-primary mt-1 font-bold">
-                Select {keepCount} cards ({selectedIds.length}/{keepCount} selected)
+                Select {fixedCount} cards ({selectedIds.length}/{fixedCount} selected)
+              </p>
+            )}
+            {isOptionalMulti && (
+              <p className="text-center text-sm text-primary mt-1 font-bold">
+                Select cards to play, or skip to play none
               </p>
             )}
           </div>
@@ -64,7 +129,7 @@ export function DecisionModal({ decision, gameState, onResolve }: DecisionModalP
           <div className="p-6 max-h-[60vh] overflow-y-auto">
             {isPlayerSelection && (
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                {(decision as any).options?.map((opt: any) => {
+                {options.map((opt: any) => {
                   const targetPlayer = gameState.players.find(p => p.id === opt.playerId || p.id === opt.targetPlayerId);
                   const displayPlayer = targetPlayer || gameState.players.find(p => p.name === opt.playerName);
                   if (!displayPlayer) return null;
@@ -91,13 +156,14 @@ export function DecisionModal({ decision, gameState, onResolve }: DecisionModalP
 
             {isCardSelection && !isPlayerSelection && (
               <div className="flex flex-wrap justify-center gap-4">
-                {(decision as any).options?.map((opt: any, i: number) => {
+                {options.map((opt: any, i: number) => {
                   const cardId = opt.cardId;
                   const card = opt.card 
                     || gameState.discardPile.find(c => c.id === cardId)
                     || gameState.players.flatMap(p => [...p.hand, ...p.compostPile]).find(c => c.id === cardId);
                   
                   const isSelected = selectedIds.includes(cardId);
+                  const isAnyMulti = isFixedMulti || isOptionalMulti;
 
                   return (
                     <div key={`${i}-${cardId}`} className="flex flex-col items-center gap-2">
@@ -106,7 +172,7 @@ export function DecisionModal({ decision, gameState, onResolve }: DecisionModalP
                           <GameCard 
                             card={card} 
                             size="md" 
-                            onClick={() => isMultiSelect ? toggleCard(cardId) : handleSingleOption(opt)}
+                            onClick={() => isAnyMulti ? toggleCard(cardId) : handleSingleOption(opt)}
                             className={cn(
                               "ring-4 ring-transparent cursor-pointer transition-all",
                               isSelected ? "ring-primary scale-105 shadow-lg shadow-primary/30" : "hover:ring-primary/50"
@@ -119,7 +185,11 @@ export function DecisionModal({ decision, gameState, onResolve }: DecisionModalP
                           )}
                         </div>
                       ) : (
-                        <Button onClick={() => isMultiSelect ? toggleCard(cardId) : handleSingleOption(opt)} variant="outline" className={cn("h-32 w-24", isSelected && "border-primary bg-primary/10")}>
+                        <Button
+                          onClick={() => isAnyMulti ? toggleCard(cardId) : handleSingleOption(opt)}
+                          variant={isSelected ? "default" : "outline"}
+                          className={cn("h-32 w-24", isSelected && "border-primary bg-primary/10")}
+                        >
                           {opt.cardName || opt.cardId}
                         </Button>
                       )}
@@ -131,9 +201,9 @@ export function DecisionModal({ decision, gameState, onResolve }: DecisionModalP
 
             {!isCardSelection && !isPlayerSelection && (
               <div className="flex flex-wrap justify-center gap-4">
-                {(decision as any).options?.map((opt: any, i: number) => (
+                {options.map((opt: any, i: number) => (
                   <Button key={i} size="lg" onClick={() => handleSingleOption(opt)} className="font-bold text-lg px-8">
-                    {opt.label || opt.cardName || "Select Option"}
+                    {opt.label || opt.cardName || opt.playerName || "Select Option"}
                   </Button>
                 ))}
               </div>
@@ -141,17 +211,36 @@ export function DecisionModal({ decision, gameState, onResolve }: DecisionModalP
           </div>
           
           <div className="p-4 bg-muted/50 border-t border-border flex justify-center gap-4">
-            {isMultiSelect ? (
+            {isFixedMulti ? (
               <Button 
                 variant="default" 
                 size="lg"
-                disabled={selectedIds.length !== keepCount}
-                onClick={handleMultiConfirm}
+                disabled={selectedIds.length !== fixedCount}
+                onClick={handleFixedConfirm}
                 className="font-bold"
               >
-                Keep {selectedIds.length}/{keepCount} Selected Cards
+                Confirm {selectedIds.length}/{fixedCount} Selected
               </Button>
-            ) : (decision as any).options?.some((o: any) => o.skip) ? (
+            ) : isOptionalMulti ? (
+              <>
+                <Button variant="ghost" size="lg" onClick={handleSkip}>
+                  Skip (Play None)
+                </Button>
+                <Button
+                  variant="default"
+                  size="lg"
+                  disabled={selectedIds.length === 0}
+                  onClick={handleOptionalConfirm}
+                  className="font-bold"
+                >
+                  Play {selectedIds.length} Selected
+                </Button>
+              </>
+            ) : isOptional ? (
+              <Button variant="ghost" size="lg" onClick={handleSkip}>
+                Skip
+              </Button>
+            ) : options.some((o: any) => o.skip) ? (
               <Button variant="ghost" onClick={() => handleSingleOption({ skip: true })}>
                 Skip Action
               </Button>

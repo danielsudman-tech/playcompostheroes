@@ -1424,6 +1424,10 @@ export function resolveDecision(
     }
 
     case "choose_nitrogen_boost_discard": {
+      if (decisionData.skip) {
+        addLog(s, `${player.name} skipped Nitrogen Boost discard.`);
+        return { state: s };
+      }
       const chosenId = decisionData.cardId as string;
       const card = player.hand.find(
         (c) => c.id === chosenId && c.function === "Nitrogen"

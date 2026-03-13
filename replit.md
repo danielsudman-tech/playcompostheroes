@@ -120,3 +120,8 @@ A browser-based digital card game for 2–4 players. Players collect hero cards 
 
 - `enforceHandSize`: infinite loop because `player` reference was stale inside while loop — fixed to refresh from state on each iteration
 - `choose_rot_roulette_keep`: second step (play 1 of kept cards) now properly calls `playCard()` after clearing pending decision
+- `DecisionModal`: rewrote with explicit type-based detection using `CARD_SELECTION_TYPES` / `PLAYER_SELECTION_TYPES` Sets instead of fragile string matching — `choose_rainstorm_play`, `choose_rot_roulette_keep`, `choose_discard_for_spread`, `choose_nitrogen_boost_discard` etc. now render card images correctly
+- `choose_rainstorm_play`: now shows optional multi-select with "Skip (Play None)" and "Play X Selected" buttons; sends `{ cardIds: [] }` when skipped
+- `choose_discard_for_spread`: now uses fixed-count multi-select (N = number of other players); sends `{ cardIds: string[] }` payload
+- `choose_nitrogen_boost_discard`: backend now handles `{ skip: true }` gracefully; frontend shows Skip button
+- `useGameAction`: added `GameActionCallbacks` with `onError(message)` callback; Game.tsx wires up destructive toast for action errors
