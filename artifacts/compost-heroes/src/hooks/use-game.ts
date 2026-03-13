@@ -1,47 +1,168 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { 
-  getGame, 
-  createGame, 
-  performAction,
-  getGetGameQueryKey
-} from "@workspace/api-client-react";
-import type { CreateGameRequest, GameAction } from "@workspace/api-client-react";
+import { useEffect, useRef, useState } from "react";
+import { getGetGameQueryKey } from "@workspace/api-client-react";
+import type { GameAction } from "@workspace/api-client-react";
 
-export function useGameState(gameId: string | null) {
+// ── Token management ──────────────────────────────────────────────────────────
+
+function tokenKey(gameId: string) {
+  return `compost_token_${gameId}`;
+}
+
+export function getStoredToken(gameId: string): string | null {
+  try {
+    return localStorage.getItem(tokenKey(gameId));
+  } catch {
+    return null;
+  }
+}
+
+export function storeToken(gameId: string, token: string) {
+  try {
+    localStorage.setItem(tokenKey(gameId), token);
+  } catch {}
+}
+
+// ── Claim a player slot ───────────────────────────────────────────────────────
+
+export interface ClaimResult {
+  token: string;
+  playerIndex: number;
+  playerId: string;
+  playerName: string;
+}
+
+export function useClaimSlot(gameId: string | null, enabled: boolean) {
+  const [claim, setClaim] = useState<ClaimResult | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [loading, setLoading] = useState(false);
+  const attempted = useRef(false);
+
+  useEffect(() => {
+    if (!gameId || !enabled || attempted.current) return;
+    attempted.current = true;
+
+    const existingToken = getStoredToken(gameId);
+    setLoading(true);
+
+    fetch(`/api/games/${gameId}/claim`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ token: existingToken ?? undefined }),
+    })
+      .then(async (r) => {
+        const data = await r.json();
+        if (!r.ok) throw new Error(data.error ?? "Failed to claim slot");
+        storeToken(gameId, data.token);
+        setClaim(data as ClaimResult);
+      })
+      .catch((e) => setError(e.message))
+      .finally(() => setLoading(false));
+  }, [gameId, enabled]);
+
+  return { claim, error, loading };
+}
+
+// ── Game state (polling for pass-and-play, SSE for online) ───────────────────
+
+export function useGameState(gameId: string | null, token?: string | null) {
   return useQuery({
     queryKey: gameId ? getGetGameQueryKey(gameId) : [],
     queryFn: async () => {
       if (!gameId) throw new Error("No game ID");
-      return getGame(gameId);
+      const url = token
+        ? `/api/games/${gameId}?token=${encodeURIComponent(token)}`
+        : `/api/games/${gameId}`;
+      const r = await fetch(url);
+      if (!r.ok) throw new Error("Failed to fetch game state");
+      return r.json();
     },
     enabled: !!gameId,
-    refetchInterval: 1500,
+    // Online mode: stop polling once state is loaded (SSE handles real-time updates)
+    // Pass & Play: poll every 1.5s so the UI stays in sync
+    refetchInterval: (query) => {
+      if (query.state.data?.mode === "online") return false;
+      return 1500;
+    },
     staleTime: 1000,
   });
 }
 
+// ── SSE subscription for online mode ─────────────────────────────────────────
+
+export function useGameSse(gameId: string | null, token: string | null, isOnline: boolean) {
+  const queryClient = useQueryClient();
+
+  useEffect(() => {
+    if (!gameId || !token || !isOnline) return;
+
+    const url = `/api/games/${gameId}/events?token=${encodeURIComponent(token)}`;
+    const source = new EventSource(url);
+
+    source.onmessage = (e) => {
+      try {
+        const data = JSON.parse(e.data);
+        queryClient.setQueryData(getGetGameQueryKey(gameId), data);
+      } catch {}
+    };
+
+    source.onerror = () => {
+      // EventSource will auto-reconnect — no action needed
+    };
+
+    return () => source.close();
+  }, [gameId, token, isOnline, queryClient]);
+}
+
+// ── Create new game ───────────────────────────────────────────────────────────
+
 export function useCreateNewGame() {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: async (data: CreateGameRequest) => {
-      return createGame(data);
+    mutationFn: async (data: { playerNames: string[]; mode: "facilitator" | "standalone" | "online" }) => {
+      const r = await fetch("/api/games", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(data),
+      });
+      if (!r.ok) {
+        const err = await r.json();
+        throw new Error(err.error ?? "Failed to create game");
+      }
+      return r.json();
     },
     onSuccess: (data) => {
       queryClient.setQueryData(getGetGameQueryKey(data.gameId), data);
+      // In online mode, store the creator's token
+      if (data.creatorToken) {
+        storeToken(data.gameId, data.creatorToken);
+      }
     },
   });
 }
+
+// ── Game actions ─────────────────────────────────────────────────────────────
 
 export interface GameActionCallbacks {
   onError?: (message: string) => void;
   onSuccess?: (logEntry: string) => void;
 }
 
-export function useGameAction(gameId: string, callbacks?: GameActionCallbacks) {
+export function useGameAction(gameId: string, token?: string | null, callbacks?: GameActionCallbacks) {
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: async (action: GameAction) => {
-      return performAction(gameId, action);
+      const body = token ? { ...action, token } : action;
+      const r = await fetch(`/api/games/${gameId}/action`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      });
+      if (!r.ok) {
+        const err = await r.json();
+        throw new Error(err.error ?? "Action failed");
+      }
+      return r.json();
     },
     onSuccess: (data) => {
       queryClient.setQueryData(getGetGameQueryKey(gameId), data);

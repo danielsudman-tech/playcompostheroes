@@ -62,7 +62,7 @@ export type GamePhase =
 
 export interface GameState {
   gameId: string;
-  mode: "facilitator" | "standalone";
+  mode: "facilitator" | "standalone" | "online";
   phase: GamePhase;
   currentPlayerIndex: number;
   players: PlayerState[];

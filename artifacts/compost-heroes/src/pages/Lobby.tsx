@@ -1,10 +1,10 @@
 import { useState } from "react";
 import { useLocation } from "wouter";
-import { motion } from "framer-motion";
+import { motion, AnimatePresence } from "framer-motion";
 import { useCreateNewGame } from "@/hooks/use-game";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Sprout, Users, Trash2, PlusCircle, Settings2, PlayCircle } from "lucide-react";
+import { Sprout, Users, Trash2, PlusCircle, Settings2, PlayCircle, Wifi, Copy, Check } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 
 export default function Lobby() {
@@ -12,8 +12,10 @@ export default function Lobby() {
   const { toast } = useToast();
   const createGame = useCreateNewGame();
   
-  const [mode, setMode] = useState<"standalone" | "facilitator">("standalone");
+  const [mode, setMode] = useState<"standalone" | "facilitator" | "online">("standalone");
   const [players, setPlayers] = useState<string[]>(["Player 1", "Player 2"]);
+  const [shareLink, setShareLink] = useState<string | null>(null);
+  const [copied, setCopied] = useState(false);
 
   const handleAddPlayer = () => {
     if (players.length < 4) {
@@ -33,6 +35,14 @@ export default function Lobby() {
     setPlayers(newPlayers);
   };
 
+  const handleCopyLink = () => {
+    if (!shareLink) return;
+    navigator.clipboard.writeText(shareLink).then(() => {
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    });
+  };
+
   const handleStartGame = () => {
     const validPlayers = players.filter(p => p.trim() !== "");
     if (validPlayers.length < 2) {
@@ -49,7 +59,12 @@ export default function Lobby() {
       mode: mode
     }, {
       onSuccess: (data) => {
-        setLocation(`/game/${data.gameId}`);
+        if (mode === "online") {
+          const link = `${window.location.origin}${import.meta.env.BASE_URL}game/${data.gameId}`.replace(/\/+$/, "");
+          setShareLink(link);
+        } else {
+          setLocation(`/game/${data.gameId}`);
+        }
       },
       onError: (err) => {
         toast({
@@ -61,14 +76,84 @@ export default function Lobby() {
     });
   };
 
+  // Online mode — show the share link screen after game creation
+  if (shareLink) {
+    const gameId = shareLink.split("/").pop();
+    return (
+      <div className="min-h-screen bg-background relative overflow-hidden flex flex-col items-center justify-center p-4">
+        <div className="absolute top-[-10%] left-[-10%] w-[40%] h-[40%] bg-primary/20 blur-[100px] rounded-full pointer-events-none" />
+        <div className="absolute bottom-[-10%] right-[-10%] w-[50%] h-[50%] bg-secondary/20 blur-[120px] rounded-full pointer-events-none" />
+
+        <motion.div
+          initial={{ y: 20, opacity: 0 }}
+          animate={{ y: 0, opacity: 1 }}
+          className="relative z-10 w-full max-w-md"
+        >
+          <div className="text-center mb-8">
+            <div className="inline-flex items-center justify-center w-20 h-20 bg-green-500/10 rounded-full mb-4 ring-8 ring-green-500/5">
+              <Wifi className="w-10 h-10 text-green-500" />
+            </div>
+            <h1 className="text-4xl font-display font-bold text-foreground mb-2">Game Created!</h1>
+            <p className="text-muted-foreground">Share this link with your players.</p>
+          </div>
+
+          <div className="bg-card/80 backdrop-blur-xl rounded-3xl shadow-xl border border-border p-6 space-y-6">
+            <div>
+              <label className="text-sm font-bold text-muted-foreground uppercase tracking-wider mb-3 block">Share Link</label>
+              <div className="flex gap-2">
+                <Input
+                  value={shareLink}
+                  readOnly
+                  className="h-12 bg-background/50 border-2 font-mono text-sm select-all"
+                  onClick={e => (e.target as HTMLInputElement).select()}
+                />
+                <Button
+                  variant="outline"
+                  className="h-12 w-12 shrink-0"
+                  onClick={handleCopyLink}
+                >
+                  {copied ? <Check className="w-5 h-5 text-green-500" /> : <Copy className="w-5 h-5" />}
+                </Button>
+              </div>
+            </div>
+
+            <div className="bg-muted/40 rounded-2xl p-4 space-y-2">
+              <p className="text-sm font-semibold text-foreground">How it works</p>
+              <ul className="text-sm text-muted-foreground space-y-1">
+                <li>• You are <strong>Player 1</strong> — open your game below</li>
+                <li>• Each player opens the link on their own device</li>
+                <li>• Players are assigned slots in the order they join</li>
+                <li>• Everyone sees their own hand privately</li>
+              </ul>
+            </div>
+
+            <div className="grid grid-cols-2 gap-3">
+              <Button
+                variant="outline"
+                className="h-12"
+                onClick={() => { setShareLink(null); }}
+              >
+                Back
+              </Button>
+              <Button
+                className="h-12"
+                onClick={() => setLocation(`/game/${gameId}`)}
+              >
+                Open My Game
+              </Button>
+            </div>
+          </div>
+        </motion.div>
+      </div>
+    );
+  }
+
   return (
     <div className="min-h-screen bg-background relative overflow-hidden flex flex-col items-center justify-center p-4">
-      {/* Background Image / Decoration */}
       <div className="absolute inset-0 z-0 opacity-[0.03] pointer-events-none mix-blend-multiply">
         <img src={`${import.meta.env.BASE_URL}images/wood-bg.png`} alt="wood texture" className="w-full h-full object-cover" />
       </div>
       
-      {/* Decorative Orbs */}
       <div className="absolute top-[-10%] left-[-10%] w-[40%] h-[40%] bg-primary/20 blur-[100px] rounded-full pointer-events-none" />
       <div className="absolute bottom-[-10%] right-[-10%] w-[50%] h-[50%] bg-secondary/20 blur-[120px] rounded-full pointer-events-none" />
 
@@ -93,22 +178,35 @@ export default function Lobby() {
             <label className="text-sm font-bold text-muted-foreground uppercase tracking-wider flex items-center gap-2">
               <Settings2 className="w-4 h-4" /> Game Mode
             </label>
-            <div className="grid grid-cols-2 gap-3">
+            <div className="grid grid-cols-3 gap-2">
               <button
                 onClick={() => setMode("standalone")}
                 className={`p-3 rounded-xl border-2 transition-all flex flex-col items-center text-center gap-1 ${mode === "standalone" ? "border-primary bg-primary/10 text-primary" : "border-border hover:border-primary/50 text-muted-foreground"}`}
               >
-                <span className="font-bold">Pass & Play</span>
-                <span className="text-[10px] opacity-80">Local Multiplayer</span>
+                <span className="font-bold text-sm">Pass & Play</span>
+                <span className="text-[10px] opacity-80">Same device</span>
+              </button>
+              <button
+                onClick={() => setMode("online")}
+                className={`p-3 rounded-xl border-2 transition-all flex flex-col items-center text-center gap-1 ${mode === "online" ? "border-green-500 bg-green-500/10 text-green-600" : "border-border hover:border-green-500/50 text-muted-foreground"}`}
+              >
+                <Wifi className="w-4 h-4 shrink-0" />
+                <span className="font-bold text-sm">Online</span>
+                <span className="text-[10px] opacity-80">Share a link</span>
               </button>
               <button
                 onClick={() => setMode("facilitator")}
                 className={`p-3 rounded-xl border-2 transition-all flex flex-col items-center text-center gap-1 ${mode === "facilitator" ? "border-secondary bg-secondary/10 text-secondary" : "border-border hover:border-secondary/50 text-muted-foreground"}`}
               >
-                <span className="font-bold">Facilitator</span>
-                <span className="text-[10px] opacity-80">Host controls view</span>
+                <span className="font-bold text-sm">Facilitator</span>
+                <span className="text-[10px] opacity-80">Host view</span>
               </button>
             </div>
+            {mode === "online" && (
+              <p className="text-xs text-muted-foreground bg-muted/40 rounded-xl px-3 py-2">
+                Set all player names now. After creating, you'll get a link to share — each player opens it on their own device.
+              </p>
+            )}
           </div>
 
           {/* Players */}
@@ -130,8 +228,13 @@ export default function Lobby() {
                   key={index} 
                   initial={{ opacity: 0, x: -20 }}
                   animate={{ opacity: 1, x: 0 }}
-                  className="flex gap-2"
+                  className="flex gap-2 items-center"
                 >
+                  {mode === "online" && (
+                    <span className="text-xs text-muted-foreground w-16 shrink-0 text-right font-medium">
+                      {index === 0 ? "You →" : `P${index + 1} →`}
+                    </span>
+                  )}
                   <Input 
                     value={player}
                     onChange={(e) => handleUpdateName(index, e.target.value)}
@@ -160,14 +263,14 @@ export default function Lobby() {
           >
             {createGame.isPending ? "Setting up pile..." : (
               <span className="flex items-center gap-2">
-                <PlayCircle className="w-6 h-6" /> Start Game
+                {mode === "online" ? <Wifi className="w-6 h-6" /> : <PlayCircle className="w-6 h-6" />}
+                {mode === "online" ? "Create Online Game" : "Start Game"}
               </span>
             )}
           </Button>
 
         </div>
         
-        {/* Rules summary link */}
         <div className="mt-6 text-center">
           <p className="text-sm text-muted-foreground">
             Collect 1 Hero from each of the 5 layers to win!

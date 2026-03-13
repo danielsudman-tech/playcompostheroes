@@ -2,7 +2,7 @@ import { useState, useEffect, useRef, useCallback } from "react";
 import { useParams, useLocation } from "wouter";
 import { motion, AnimatePresence } from "framer-motion";
 import confetti from "canvas-confetti";
-import { useGameState, useGameAction } from "@/hooks/use-game";
+import { useGameState, useGameAction, useClaimSlot, useGameSse, getStoredToken } from "@/hooks/use-game";
 import { PlayerMat } from "@/components/PlayerMat";
 import { GameCard } from "@/components/GameCard";
 import { DecisionModal } from "@/components/DecisionModal";
@@ -21,7 +21,8 @@ import {
   Zap,
   CircleDot,
   Leaf,
-  X
+  X,
+  Wifi
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -29,14 +30,32 @@ export default function Game() {
   const { gameId } = useParams();
   const [, setLocation] = useLocation();
   const { toast } = useToast();
-  
-  const { data: gameState, isLoading, error } = useGameState(gameId || null);
-  const actionMutation = useGameAction(gameId || "", {
+
+  // ── Token-based identity for online multiplayer ──
+  // 1. Use any token already in localStorage (so returning players get filtered state immediately)
+  const storedToken = gameId ? getStoredToken(gameId) : null;
+
+  // 2. Fetch game state (pass stored token so online games are filtered from first load)
+  const { data: gameState, isLoading, error } = useGameState(gameId || null, storedToken);
+  const isOnline = gameState?.mode === "online";
+
+  // 3. Claim a slot once we know the mode is online
+  const { claim, loading: claimLoading } = useClaimSlot(gameId || null, isOnline);
+  const localToken = claim?.token ?? storedToken;
+
+  // 4. Subscribe to SSE for real-time updates (online mode only)
+  useGameSse(gameId || null, localToken, isOnline);
+
+  const actionMutation = useGameAction(gameId || "", isOnline ? localToken : null, {
     onError: (msg) => toast({ title: "Action failed", description: msg, variant: "destructive" }),
   });
 
-  // Local state for identifying "who I am" in Pass & Play mode
-  const localPlayerId = gameState?.players[gameState.currentPlayerIndex]?.id;
+  // Player identity:
+  // - Online: fixed to the claimed slot (even when it's not your turn)
+  // - Pass & Play: always follows whoever's turn it currently is
+  const localPlayerId = isOnline
+    ? (claim?.playerId ?? null)
+    : gameState?.players[gameState.currentPlayerIndex]?.id;
 
   // State for viewing an opponent's compost pile
   const [viewingOpponent, setViewingOpponent] = useState<PlayerState | null>(null);
@@ -108,7 +127,8 @@ export default function Game() {
   }, []);
 
   useEffect(() => {
-    if (!gameState || gameState.phase === "game_over") return;
+    // Pass screen only makes sense in Pass & Play (same device)
+    if (!gameState || gameState.phase === "game_over" || isOnline) return;
     const idx = gameState.currentPlayerIndex;
     if (isFirstRender.current) {
       isFirstRender.current = false;
@@ -120,7 +140,7 @@ export default function Game() {
       setPassScreen({ name: newPlayer.name, cardCount: newPlayer.hand.length });
     }
     prevPlayerIndexRef.current = idx;
-  }, [gameState?.currentPlayerIndex]);
+  }, [gameState?.currentPlayerIndex, isOnline]);
 
   // Announce new log entries as on-screen banners
   useEffect(() => {
@@ -164,11 +184,13 @@ export default function Game() {
     }
   }, [gameState?.phase, gameState?.winner]);
 
-  if (isLoading) {
+  if (isLoading || (isOnline && claimLoading && !localToken)) {
     return (
       <div className="min-h-screen bg-background flex flex-col items-center justify-center">
         <Loader2 className="w-12 h-12 text-primary animate-spin mb-4" />
-        <h2 className="text-2xl font-display text-foreground">Loading Game State...</h2>
+        <h2 className="text-2xl font-display text-foreground">
+          {isOnline ? "Joining game..." : "Loading Game State..."}
+        </h2>
       </div>
     );
   }
@@ -250,6 +272,15 @@ export default function Game() {
       <div className="fixed inset-0 pointer-events-none opacity-[0.03] z-0 mix-blend-multiply">
          <img src={`${import.meta.env.BASE_URL}images/wood-bg.png`} className="w-full h-full object-cover" alt="" />
       </div>
+
+      {/* Online mode badge */}
+      {isOnline && (
+        <div className="fixed top-3 right-3 z-50 flex items-center gap-1.5 bg-green-500/15 border border-green-500/30 text-green-600 px-2.5 py-1 rounded-full text-xs font-bold backdrop-blur-md">
+          <Wifi className="w-3 h-3" />
+          Online
+          {claim?.playerName && <span className="opacity-70">· {claim.playerName}</span>}
+        </div>
+      )}
 
       {/* EFFECT ANNOUNCEMENT BANNER */}
       <AnimatePresence>
