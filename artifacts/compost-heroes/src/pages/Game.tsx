@@ -766,7 +766,7 @@ export default function Game() {
       </div>
 
       {/* BOTTOM ROW: Local Player mat (category slots + header only) */}
-      <div className="relative z-20 pb-52">
+      <div className="relative z-20 pb-52 max-w-3xl mx-auto w-full">
         <PlayerMat 
           player={localPlayerFull} 
           isCurrentPlayer={isMyTurn}

@@ -394,7 +394,7 @@ export function PlayerMat({
                 </div>
 
                 {/* Full card display — navigable when multiple cards in slot */}
-                <div className="relative w-full" style={{ aspectRatio: "2/3", minHeight: 64 }}>
+                <div className="relative w-full h-24" style={{ minHeight: 64 }}>
                   <AnimatePresence mode="wait">
                     {activeCard ? (
                       <motion.div
