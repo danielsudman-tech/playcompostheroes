@@ -27,7 +27,6 @@ import {
   ChevronLeft,
   ChevronRight,
   Lock,
-  Sprout,
   GalleryHorizontal,
   LayoutGrid,
 } from "lucide-react";
@@ -244,9 +243,7 @@ export default function Game() {
       <div className="min-h-screen bg-background flex flex-col items-center justify-center p-4">
         <div className="w-full max-w-sm">
           <div className="text-center mb-8">
-            <div className="inline-flex items-center justify-center w-20 h-20 bg-primary/10 rounded-full mb-4 ring-8 ring-primary/5">
-              <Sprout className="w-9 h-9 text-primary" />
-            </div>
+            <img src={`${import.meta.env.BASE_URL}assets/card-back.jpg`} alt="Compost Heroes" className="w-24 mx-auto rounded-xl shadow-lg mb-4" draggable={false} />
             <h1 className="text-3xl font-display font-bold text-foreground mb-2">Join Room</h1>
             <p className="text-muted-foreground text-sm">Enter your name to join this game.</p>
           </div>

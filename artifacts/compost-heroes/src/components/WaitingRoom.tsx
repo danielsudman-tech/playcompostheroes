@@ -62,7 +62,7 @@ export function WaitingRoom({ gameId, players, maxPlayers, playerIndex, token, h
             <span className="w-2 h-2 bg-green-500 rounded-full animate-pulse" />
             Waiting for players
           </div>
-          <h1 className="text-4xl font-display font-bold text-foreground mb-1">Compost Heroes</h1>
+          <img src={`${import.meta.env.BASE_URL}assets/card-back.jpg`} alt="Compost Heroes" className="w-24 mx-auto rounded-xl shadow-lg mb-2" draggable={false} />
           <p className="text-muted-foreground text-sm">
             {isHost ? "Share the link below so others can join." : "Waiting for the host to start the game."}
           </p>

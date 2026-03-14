@@ -5,7 +5,7 @@ import { useCreateNewGame, useRooms, type RoomInfo } from "@/hooks/use-game";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
-  Sprout, Users, Trash2, PlusCircle, Settings2, PlayCircle, Wifi, Lock,
+  Users, Trash2, PlusCircle, Settings2, PlayCircle, Wifi, Lock,
   RefreshCcw, LogIn, ChevronRight, Loader2
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
@@ -174,12 +174,12 @@ export default function Lobby() {
       >
         {/* Title */}
         <div className="text-center mb-6">
-          <div className="inline-flex items-center justify-center w-20 h-20 bg-primary/10 rounded-full mb-3 ring-8 ring-primary/5">
-            <Sprout className="w-10 h-10 text-primary" />
-          </div>
-          <h1 className="text-5xl font-display font-bold text-foreground mb-1">
-            Compost<br /><span className="text-primary">Heroes</span>
-          </h1>
+          <img
+            src={`${import.meta.env.BASE_URL}assets/card-back.jpg`}
+            alt="Compost Heroes"
+            className="w-40 mx-auto rounded-2xl shadow-2xl ring-4 ring-primary/20 mb-3"
+            draggable={false}
+          />
           <p className="text-muted-foreground font-medium">The card game of soil and strategy</p>
         </div>
 

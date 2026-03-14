@@ -263,7 +263,7 @@ export function PlayerMat({
                 key={i}
                 className="w-5 h-7 rounded border border-border bg-secondary/60 shadow-sm"
                 style={{
-                  backgroundImage: `url('${BASE}assets/card_back.jpg')`,
+                  backgroundImage: `url('${BASE}assets/card-back.jpg')`,
                   backgroundSize: "cover",
                   backgroundPosition: "center",
                 }}

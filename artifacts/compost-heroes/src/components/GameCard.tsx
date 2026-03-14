@@ -43,15 +43,17 @@ export function GameCard({
         whileHover={hoverable ? { y: -5, boxShadow: "0 10px 25px -5px rgba(0, 0, 0, 0.3)" } : {}}
         onClick={onClick}
         className={cn(
-          "relative bg-secondary/80 border-secondary border-4 cursor-pointer shadow-md overflow-hidden",
+          "relative overflow-hidden shadow-md cursor-pointer",
           sizeClasses[size],
           className
         )}
       >
-        <div className="absolute inset-0 opacity-20 bg-[url('data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSI4IiBoZWlnaHQ9IjgiPgo8cmVjdCB3aWR0aD0iOCIgaGVpZ2h0PSI4IiBmaWxsPSIjZmZmIj48L3JlY3Q+CjxwYXRoIGQ9Ik0wIDBMOCA4Wk04IDBMMCA4WiIgc3Ryb2tlPSIjMDAwIiBzdHJva2Utd2lkdGg9IjEiPjwvcGF0aD4KPC9zdmc+')] background-repeat" />
-        <div className="absolute inset-2 border-2 border-dashed border-secondary-foreground/30 rounded-md flex items-center justify-center">
-          <span className="font-display text-secondary-foreground/50 text-xl tracking-widest rotate-[-45deg]">CH</span>
-        </div>
+        <img
+          src={`${import.meta.env.BASE_URL}assets/card-back.jpg`}
+          alt="Card back"
+          className="w-full h-full object-cover"
+          draggable={false}
+        />
       </motion.div>
     );
   }

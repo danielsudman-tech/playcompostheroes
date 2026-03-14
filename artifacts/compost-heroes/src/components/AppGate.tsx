@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, type ReactNode } from "react";
-import { Lock, Loader2, Sprout } from "lucide-react";
+import { Lock, Loader2 } from "lucide-react";
 
 const STORAGE_KEY = "app_auth_password";
 
@@ -93,12 +93,12 @@ export function AppGate({ children }: { children: ReactNode }) {
 
       <div className="relative z-10 w-full max-w-sm">
         <div className="text-center mb-8">
-          <div className="inline-flex items-center justify-center w-24 h-24 bg-primary/10 rounded-full mb-4 ring-8 ring-primary/5">
-            <Sprout className="w-12 h-12 text-primary" />
-          </div>
-          <h1 className="text-5xl font-display font-bold text-foreground mb-2">
-            Compost<br /><span className="text-primary">Heroes</span>
-          </h1>
+          <img
+            src={`${import.meta.env.BASE_URL}assets/card-back.jpg`}
+            alt="Compost Heroes"
+            className="w-36 mx-auto rounded-2xl shadow-2xl ring-4 ring-primary/20 mb-4"
+            draggable={false}
+          />
           <p className="text-muted-foreground">This app is password protected.</p>
         </div>
 
