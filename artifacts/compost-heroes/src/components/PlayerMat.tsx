@@ -169,7 +169,7 @@ function HoverableCard({ card, canMove, onMoveLayer }: { card: CardState; canMov
                 <img
                   src={imageSrc}
                   alt={card.name}
-                  className="w-40 h-56 object-cover"
+                  className="w-48 h-64 object-contain bg-card"
                 />
               ) : (
                 <GameCard card={card} size="md" hoverable={false} />

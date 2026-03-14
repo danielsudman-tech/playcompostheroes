@@ -13,7 +13,7 @@ import { Button } from "@/components/ui/button";
 import { useToast } from "@/hooks/use-toast";
 import type { PlayerState, Card } from "@workspace/api-client-react";
 import { 
-  Layers, 
+  Layers,
   RefreshCcw, 
   History, 
   AlertCircle, 
@@ -28,8 +28,6 @@ import {
   ChevronLeft,
   ChevronRight,
   Lock,
-  GalleryHorizontal,
-  LayoutGrid,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -90,24 +88,11 @@ export default function Game() {
   // State for browsing the discard pile
   const [viewingDiscard, setViewingDiscard] = useState(false);
 
-  // Hand view mode: fan | carousel | grid (persisted in localStorage)
-  type HandView = "fan" | "carousel" | "grid";
-  const [handView, setHandView] = useState<HandView>(() => {
-    try { return (localStorage.getItem("compost_hand_view") as HandView) || "fan"; }
-    catch { return "fan"; }
-  });
-  const changeHandView = (v: HandView) => {
-    setHandView(v);
-    try { localStorage.setItem("compost_hand_view", v); } catch {}
-  };
+  // Mobile bottom panel: hand or pile view
+  const [mobileView, setMobileView] = useState<"hand" | "pile">("hand");
 
-  // Hand navigation (used in carousel and grid focus)
-  const [handFocusIdx, setHandFocusIdx] = useState(0);
-
-  // Rolodex wheel state — tracks how far the wheel has rotated (degrees)
-  const [wheelAngle, setWheelAngle] = useState(0);
-  const wheelDragRef = useRef<{ startX: number; startAngle: number } | null>(null);
-  const wasDraggingRef = useRef(false);
+  // Ref for the scrollable hand container
+  const handScrollRef = useRef<HTMLDivElement>(null);
 
   // Password prompt (online games that require a password to join)
   const [joinPassword, setJoinPassword] = useState("");
@@ -188,22 +173,6 @@ export default function Game() {
     prevPlayerIndexRef.current = idx;
   }, [gameState?.currentPlayerIndex, isOnline]);
 
-
-  // Clamp handFocusIdx when hand size changes
-  useEffect(() => {
-    if (!gameState) return;
-    const len = gameState.players.find(p => p.id === localPlayerId)?.hand.length ?? 0;
-    setHandFocusIdx(prev => Math.max(0, Math.min(prev, len - 1)));
-  }, [gameState?.players, localPlayerId]);
-
-  // Clamp wheelAngle when hand size changes
-  useEffect(() => {
-    if (!gameState) return;
-    const len = gameState.players.find(p => p.id === localPlayerId)?.hand.length ?? 0;
-    if (len === 0) { setWheelAngle(0); return; }
-    const spread = Math.max(8, Math.min(22, 130 / len));
-    setWheelAngle(a => Math.max(0, Math.min((len - 1) * spread, a)));
-  }, [gameState?.players, localPlayerId]);
 
   // Announce new log entries as on-screen banners
   useEffect(() => {
@@ -839,320 +808,191 @@ export default function Game() {
           );
         })()}
 
-        {/* ── MOBILE: toggle + views (hidden on md+) ── */}
+        {/* ── MOBILE: Hand / Pile tabs (hidden on md+) ── */}
         <div className="md:hidden">
 
-        {/* Toggle bar — always visible */}
-        <div className="flex items-center justify-between px-3 py-1.5 bg-card/95 backdrop-blur-md border-t border-border">
-          <span className="text-xs font-medium text-muted-foreground">
-            Hand&nbsp;
-            <span className="font-mono text-[10px] text-foreground/40">
-              {localPlayerFull.hand.length}/{localPlayerFull.maxHandSize}
-            </span>
-          </span>
-          <div className="flex gap-1">
-            {(["fan", "carousel", "grid"] as const).map((v) => (
-              <button
-                key={v}
-                onClick={() => changeHandView(v)}
-                title={{ fan: "Fan", carousel: "Card detail", grid: "All cards" }[v]}
-                className={cn(
-                  "w-8 h-8 rounded-lg flex items-center justify-center transition-all",
-                  handView === v
-                    ? "bg-primary text-primary-foreground shadow"
-                    : "text-muted-foreground hover:bg-muted hover:text-foreground"
-                )}
-              >
-                {v === "fan" && <Layers className="w-4 h-4" />}
-                {v === "carousel" && <GalleryHorizontal className="w-4 h-4" />}
-                {v === "grid" && <LayoutGrid className="w-4 h-4" />}
-              </button>
-            ))}
-          </div>
-        </div>
-
-        {/* ── FAN VIEW (Rolodex wheel) ── */}
-        {handView === "fan" && (() => {
-          const hand = localPlayerFull.hand;
-          const total = hand.length;
-          const PIVOT_R = 300;
-          const PIVOT_BEYOND = 300;   // pivot sits exactly below the container bottom → card bottoms rest there at angle=0
-          const CONTAINER_H = 190;
-          const CARD_W = 112;
-          const spreadDeg = total <= 1 ? 0 : Math.max(8, Math.min(22, 130 / total));
-          const clampedAngle = Math.max(0, Math.min((total - 1) * spreadDeg, wheelAngle));
-          const focusedIdx = Math.round(clampedAngle / (spreadDeg || 1));
-
-          const handleWheelPointerDown = (e: React.PointerEvent<HTMLDivElement>) => {
-            e.currentTarget.setPointerCapture(e.pointerId);
-            wheelDragRef.current = { startX: e.clientX, startAngle: clampedAngle };
-            wasDraggingRef.current = false;
-          };
-          const handleWheelPointerMove = (e: React.PointerEvent<HTMLDivElement>) => {
-            if (!wheelDragRef.current) return;
-            const deltaX = e.clientX - wheelDragRef.current.startX;
-            if (Math.abs(deltaX) > 5) wasDraggingRef.current = true;
-            const TOUCH_PX_PER_DEG = 8;
-            const raw = wheelDragRef.current.startAngle - deltaX / TOUCH_PX_PER_DEG;
-            setWheelAngle(Math.max(0, Math.min((total - 1) * spreadDeg, raw)));
-          };
-          const handleWheelPointerUp = () => {
-            wheelDragRef.current = null;
-            if (spreadDeg === 0) return;
-            setWheelAngle(a => {
-              const snapped = Math.round(a / spreadDeg) * spreadDeg;
-              return Math.max(0, Math.min((total - 1) * spreadDeg, snapped));
-            });
-          };
-
-          return (
-            <div
-              className="relative overflow-visible bg-card/30 backdrop-blur-sm touch-none select-none"
-              style={{ height: CONTAINER_H }}
-              onPointerDown={handleWheelPointerDown}
-              onPointerMove={handleWheelPointerMove}
-              onPointerUp={handleWheelPointerUp}
-              onPointerCancel={handleWheelPointerUp}
-            >
-              {hand.length === 0 && (
-                <div className="absolute bottom-4 left-1/2 -translate-x-1/2 text-muted-foreground/40 text-sm italic">No cards in hand</div>
+          {/* Tab bar */}
+          <div className="flex bg-card/95 backdrop-blur-md border-t border-border">
+            <button
+              onClick={() => setMobileView("hand")}
+              className={cn(
+                "flex-1 py-2.5 text-sm font-bold border-b-2 transition-colors",
+                mobileView === "hand"
+                  ? "border-primary text-primary bg-primary/5"
+                  : "border-transparent text-muted-foreground"
               )}
-              {hand.map((card, idx) => {
-                const slotAngle = idx * spreadDeg - clampedAngle;
-                const rad = (slotAngle * Math.PI) / 180;
-                const cardX = PIVOT_R * Math.sin(rad) - CARD_W / 2;
-                const cardY = -(PIVOT_R * Math.cos(rad) - PIVOT_BEYOND);
-                const progress = Math.max(0, Math.cos(rad));
-                const scale = 0.52 + 0.48 * progress;
-                const opacity = 0.22 + 0.78 * progress;
-                const isFocused = idx === focusedIdx;
+            >
+              Hand · {localPlayerFull.hand.length}/{localPlayerFull.maxHandSize}
+            </button>
+            <button
+              onClick={() => setMobileView("pile")}
+              className={cn(
+                "flex-1 py-2.5 text-sm font-bold border-b-2 transition-colors",
+                mobileView === "pile"
+                  ? "border-primary text-primary bg-primary/5"
+                  : "border-transparent text-muted-foreground"
+              )}
+            >
+              My Pile · {localPlayerFull.compostPile.length}/5
+            </button>
+          </div>
 
-                const isPlayPhase = isMyTurn && gameState.phase === "play" && !gameState.pendingDecision;
-                const heroBlocked = card.type === "hero" && gameState.heroPlayedThisTurn;
-                const actionBlocked = card.type === "action" && gameState.heroPlayedThisTurn && gameState.actionPlayedThisTurn;
-                const isPlayable = isPlayPhase && !heroBlocked && !actionBlocked;
-                const isBlocked = heroBlocked || actionBlocked;
-                const imageSrc = card.imageKey ? assetUrl(card.imageKey) : null;
+          {/* ── HAND VIEW: scrollable row with arrow buttons ── */}
+          {mobileView === "hand" && (() => {
+            const hand = localPlayerFull.hand;
+            const isPlayPhase = isMyTurn && gameState.phase === "play" && !gameState.pendingDecision;
+            const CARD_W = 128; // w-32 in px — gap-3 = 12px
+            const scrollByCard = (dir: -1 | 1) => {
+              handScrollRef.current?.scrollBy({ left: dir * (CARD_W + 12), behavior: "smooth" });
+            };
+            return (
+              <div className="bg-card/95 backdrop-blur-md">
+                {/* Action hint */}
+                {isMyTurn && (
+                  <div className="flex justify-center pt-1.5 pb-0.5">
+                    {gameState.phase === "draw" && (
+                      <span className="text-[11px] text-muted-foreground">Draw a card first</span>
+                    )}
+                    {isPlayPhase && (
+                      <span className="text-[11px] text-primary font-semibold">Tap a card to play it</span>
+                    )}
+                  </div>
+                )}
 
-                return (
-                  <motion.div
-                    key={card.id}
-                    className="absolute bottom-0 pointer-events-auto"
-                    style={{ left: "50%" }}
-                    animate={{
-                      x: cardX,
-                      y: cardY,
-                      rotate: slotAngle,
-                      scale: isBlocked ? scale * 0.82 : scale,
-                      opacity: isBlocked ? opacity * 0.5 : opacity,
-                      zIndex: isFocused ? 20 : Math.max(1, 15 - Math.abs(Math.round(slotAngle / (spreadDeg || 1)))),
-                    }}
-                    transition={{ type: "spring", stiffness: 380, damping: 32, mass: 0.85 }}
-                    onClick={() => {
-                      if (wasDraggingRef.current) { wasDraggingRef.current = false; return; }
-                      if (!isFocused) {
-                        setWheelAngle(idx * spreadDeg);
-                      } else {
-                        handleCardClick(card);
-                      }
-                    }}
+                {/* Scroll row */}
+                <div className="relative flex items-center gap-1 px-2 py-2">
+                  {/* Left arrow */}
+                  <button
+                    onClick={() => scrollByCard(-1)}
+                    className="shrink-0 w-8 h-8 rounded-full border border-border bg-background/80 flex items-center justify-center shadow-sm z-10"
                   >
-                    <div className="relative">
-                      {imageSrc ? (
-                        <div className={cn(
-                          "w-28 h-40 rounded-xl overflow-hidden shadow-xl border-2 transition-colors",
-                          isFocused ? "border-primary/70 shadow-primary/25" : "border-white/20",
-                          !isBlocked && "cursor-pointer",
-                          isBlocked && "cursor-not-allowed",
-                        )}>
-                          <img src={imageSrc} alt={card.name} className="w-full h-full object-cover" />
-                        </div>
-                      ) : (
-                        <GameCard
-                          card={card}
-                          isFaceDown={false}
-                          hoverable={false}
-                          className={cn(
-                            isFocused && "shadow-primary/25",
-                            !isBlocked && "cursor-pointer",
-                            isBlocked && "cursor-not-allowed",
-                          )}
-                        />
-                      )}
-                      {isFocused && isPlayable && (
-                        <div className="absolute -top-7 left-1/2 -translate-x-1/2 bg-primary text-primary-foreground text-[10px] font-bold px-2 py-0.5 rounded-full shadow-lg whitespace-nowrap pointer-events-none z-50">
-                          Tap to play
-                        </div>
-                      )}
-                      {isFocused && isBlocked && (
-                        <div className="absolute -top-7 left-1/2 -translate-x-1/2 bg-destructive text-destructive-foreground text-[10px] font-bold px-2 py-0.5 rounded-full shadow-lg whitespace-nowrap pointer-events-none z-50">
-                          {heroBlocked ? "1 hero/turn" : "1 action after hero"}
-                        </div>
-                      )}
-                    </div>
-                  </motion.div>
-                );
-              })}
-            </div>
-          );
-        })()}
+                    <ChevronLeft className="w-4 h-4" />
+                  </button>
 
-        {/* ── CAROUSEL VIEW ── */}
-        {handView === "carousel" && (() => {
-          const hand = localPlayerFull.hand;
-          const focusCard = hand[handFocusIdx] ?? hand[0];
-          const isPlayPhase = isMyTurn && gameState.phase === "play" && !gameState.pendingDecision;
-          const fHeroBlocked = focusCard?.type === "hero" && gameState.heroPlayedThisTurn;
-          const fActionBlocked = focusCard?.type === "action" && gameState.heroPlayedThisTurn && gameState.actionPlayedThisTurn;
-          const fPlayable = isPlayPhase && !fHeroBlocked && !fActionBlocked;
-
-          // Coverflow geometry
-          const STEP = 108; // px between adjacent card centres
-          const VISIBLE = 3; // cards shown each side of focus
-
-          // Touch swipe tracking
-          const handleTouchStart = (e: React.TouchEvent) => {
-            (e.currentTarget as HTMLDivElement).dataset.swipeX = String(e.touches[0].clientX);
-          };
-          const handleTouchEnd = (e: React.TouchEvent) => {
-            const startX = Number((e.currentTarget as HTMLDivElement).dataset.swipeX ?? 0);
-            const dx = e.changedTouches[0].clientX - startX;
-            if (Math.abs(dx) > 40) {
-              setHandFocusIdx(i => dx < 0
-                ? Math.min(i + 1, hand.length - 1)
-                : Math.max(i - 1, 0));
-            }
-          };
-
-          return (
-            <div className="bg-card/95 backdrop-blur-md select-none">
-              {hand.length === 0 ? (
-                <div className="flex items-center justify-center h-16 text-muted-foreground/50 text-sm italic">No cards in hand</div>
-              ) : (
-                <>
-                  {/* Coverflow stage */}
+                  {/* Cards */}
                   <div
-                    className="relative flex items-center justify-center overflow-hidden"
-                    style={{ height: 232, touchAction: "pan-y" }}
-                    onTouchStart={handleTouchStart}
-                    onTouchEnd={handleTouchEnd}
+                    ref={handScrollRef}
+                    className="flex gap-3 overflow-x-auto flex-1 scroll-smooth"
+                    style={{ scrollbarWidth: "none" }}
                   >
-                    {hand.map((c, i) => {
-                      const dist = i - handFocusIdx;
-                      const absDist = Math.abs(dist);
-                      if (absDist > VISIBLE) return null;
-
-                      const scale = [1, 0.72, 0.54, 0.42][absDist] ?? 0.42;
-                      const opacity = [1, 0.8, 0.55, 0.3][absDist] ?? 0.3;
-                      const x = dist * STEP;
-                      const zIndex = VISIBLE - absDist;
-                      const isBlocked = (c.type === "hero" && gameState.heroPlayedThisTurn) ||
-                        (c.type === "action" && gameState.heroPlayedThisTurn && gameState.actionPlayedThisTurn);
-                      const isCenter = absDist === 0;
-
+                    {hand.length === 0 && (
+                      <div className="flex-1 flex items-center justify-center py-6 text-muted-foreground/50 text-sm italic">No cards in hand</div>
+                    )}
+                    {hand.map((card, idx) => {
+                      const heroBlocked = card.type === "hero" && gameState.heroPlayedThisTurn;
+                      const actionBlocked = card.type === "action" && gameState.heroPlayedThisTurn && gameState.actionPlayedThisTurn;
+                      const isBlocked = heroBlocked || actionBlocked;
+                      const isPlayable = isPlayPhase && !isBlocked;
+                      const imageSrc = card.imageKey ? assetUrl(card.imageKey) : null;
                       return (
                         <motion.div
-                          key={c.id}
-                          animate={{ x, scale, opacity }}
-                          transition={{ type: "spring", stiffness: 320, damping: 30 }}
-                          style={{ position: "absolute", zIndex }}
-                          className={cn(
-                            "cursor-pointer",
-                            isCenter && fPlayable && "ring-2 ring-primary ring-offset-2 shadow-primary/30",
-                            isCenter && isBlocked && "opacity-50"
-                          )}
-                          onClick={() => {
-                            if (!isCenter) { setHandFocusIdx(i); }
-                            else if (!isBlocked) { handleCardClick(c); }
-                          }}
+                          key={`${card.id}-${idx}`}
+                          initial={{ opacity: 0, y: 8 }}
+                          animate={{ opacity: isBlocked ? 0.45 : 1, y: 0 }}
+                          transition={{ delay: idx * 0.03 }}
+                          className="shrink-0 flex flex-col items-center gap-1"
                         >
-                          <GameCard card={c} size="md" hoverable={false} />
+                          <div
+                            onClick={() => !isBlocked && handleCardClick(card)}
+                            className={cn(
+                              "w-32 h-48 rounded-xl overflow-hidden border-2 shadow-md transition-all",
+                              isPlayable
+                                ? "border-primary/70 cursor-pointer active:scale-95 shadow-primary/20"
+                                : "border-border",
+                              isBlocked && "cursor-not-allowed"
+                            )}
+                          >
+                            {imageSrc
+                              ? <img src={imageSrc} alt={card.name} className="w-full h-full object-cover" />
+                              : <GameCard card={card} size="md" hoverable={false} className="!w-32 !h-48" />
+                            }
+                          </div>
+                          {isPlayable && (
+                            <button
+                              onClick={() => handleCardClick(card)}
+                              className="text-[10px] bg-primary text-primary-foreground rounded-full px-3 py-0.5 font-bold shadow-sm"
+                            >
+                              Play
+                            </button>
+                          )}
+                          {isBlocked && (
+                            <span className="text-[9px] text-destructive font-bold">
+                              {heroBlocked ? "1 hero/turn" : "1 action/turn"}
+                            </span>
+                          )}
                         </motion.div>
                       );
                     })}
                   </div>
 
-                  {/* Status / Play button */}
-                  <div className="flex flex-col items-center gap-1 pb-1">
-                    {fHeroBlocked && <span className="text-[11px] text-destructive font-bold">Already played a hero this turn</span>}
-                    {fActionBlocked && <span className="text-[11px] text-destructive font-bold">Already played an action this turn</span>}
-                    {fPlayable && (
-                      <Button size="sm" className="h-9 px-8 font-bold" onClick={() => handleCardClick(focusCard)}>
-                        Play
-                      </Button>
-                    )}
-                  </div>
+                  {/* Right arrow */}
+                  <button
+                    onClick={() => scrollByCard(1)}
+                    className="shrink-0 w-8 h-8 rounded-full border border-border bg-background/80 flex items-center justify-center shadow-sm z-10"
+                  >
+                    <ChevronRight className="w-4 h-4" />
+                  </button>
+                </div>
+              </div>
+            );
+          })()}
 
-                  {/* Dot indicators */}
-                  {hand.length > 1 && (
-                    <div className="flex justify-center items-center gap-1.5 pb-2.5">
-                      {hand.map((_, i) => (
-                        <button
-                          key={i}
-                          onClick={() => setHandFocusIdx(i)}
-                          className={cn(
-                            "rounded-full transition-all",
-                            i === handFocusIdx ? "w-4 h-1.5 bg-primary" : "w-1.5 h-1.5 bg-muted-foreground/30 hover:bg-muted-foreground/60"
-                          )}
-                        />
-                      ))}
-                      <span className="ml-1 text-[10px] text-muted-foreground/40 font-mono">{handFocusIdx + 1}/{hand.length}</span>
-                    </div>
-                  )}
-                </>
-              )}
-            </div>
-          );
-        })()}
-
-        {/* ── GRID VIEW ── */}
-        {handView === "grid" && (
-          <div className="bg-card/95 backdrop-blur-md px-3 pt-2 pb-3">
-            {localPlayerFull.hand.length === 0 ? (
-              <div className="flex items-center justify-center h-12 text-muted-foreground/50 text-sm italic">No cards in hand</div>
-            ) : (
-              <div className="flex gap-2 overflow-x-auto pb-1 snap-x snap-mandatory" style={{ scrollbarWidth: "none" }}>
-                {localPlayerFull.hand.map((card, idx) => {
-                  const isPlayPhase = isMyTurn && gameState.phase === "play" && !gameState.pendingDecision;
-                  const heroBlocked = card.type === "hero" && gameState.heroPlayedThisTurn;
-                  const actionBlocked = card.type === "action" && gameState.heroPlayedThisTurn && gameState.actionPlayedThisTurn;
-                  const isPlayable = isPlayPhase && !heroBlocked && !actionBlocked;
-                  const imageSrc = card.imageKey ? assetUrl(card.imageKey) : null;
+          {/* ── PILE VIEW: compost category slots ── */}
+          {mobileView === "pile" && (() => {
+            const pile = localPlayerFull.compostPile;
+            const categories = [
+              { key: "moisture", label: "Moisture", borderClass: "border-blue-400", bgClass: "bg-blue-50 dark:bg-blue-950/30", headerClass: "bg-blue-100 text-blue-800", emptyDotClass: "bg-blue-200", match: (fn: string) => fn.toLowerCase().includes("moisture") },
+              { key: "carbon", label: "Carbon", borderClass: "border-amber-400", bgClass: "bg-amber-50 dark:bg-amber-950/30", headerClass: "bg-amber-100 text-amber-800", emptyDotClass: "bg-amber-200", match: (fn: string) => fn.toLowerCase().includes("carbon") },
+              { key: "decomposer", label: "Decomp.", borderClass: "border-orange-400", bgClass: "bg-orange-50 dark:bg-orange-950/30", headerClass: "bg-orange-100 text-orange-800", emptyDotClass: "bg-orange-200", match: (fn: string) => fn.toLowerCase().includes("decomp") || fn.toLowerCase().includes("fire") },
+              { key: "nitrogen", label: "Nitrogen", borderClass: "border-lime-400", bgClass: "bg-lime-50 dark:bg-lime-950/30", headerClass: "bg-lime-100 text-lime-800", emptyDotClass: "bg-lime-200", match: (fn: string) => fn.toLowerCase().includes("nitrogen") },
+              { key: "airflow", label: "Airflow", borderClass: "border-cyan-400", bgClass: "bg-cyan-50 dark:bg-cyan-950/30", headerClass: "bg-cyan-100 text-cyan-800", emptyDotClass: "bg-cyan-200", match: (fn: string) => fn.toLowerCase().includes("air") },
+            ];
+            const getEffFn = (c: Card) => (c as any).chosenFunction ?? c.function ?? "";
+            return (
+              <div className="bg-card/95 backdrop-blur-md px-3 pt-2 pb-3 grid grid-cols-5 gap-2">
+                {categories.map((cat) => {
+                  const cards = pile.filter((c) => cat.match(getEffFn(c)));
+                  const topCard = cards[cards.length - 1] ?? null;
+                  const has = topCard !== null;
+                  const imageSrc = topCard?.imageKey ? assetUrl(topCard.imageKey) : null;
                   return (
-                    <motion.button
-                      key={`${card.id}-${idx}`}
-                      initial={{ opacity: 0, y: 12 }}
-                      animate={{ opacity: (heroBlocked || actionBlocked) ? 0.45 : 1, y: 0 }}
-                      transition={{ delay: idx * 0.04 }}
-                      onClick={() => handleCardClick(card)}
+                    <div
+                      key={cat.key}
                       className={cn(
-                        "snap-start shrink-0 flex flex-col items-center gap-1 rounded-xl border-2 p-1.5 transition-all w-[72px]",
-                        isPlayable
-                          ? "border-primary/60 bg-primary/5 hover:bg-primary/10 hover:border-primary shadow-sm"
-                          : "border-border hover:border-border/80 bg-background/30",
-                        (heroBlocked || actionBlocked) && "cursor-not-allowed"
+                        "rounded-xl border-2 flex flex-col overflow-hidden",
+                        has ? `${cat.borderClass} ${cat.bgClass}` : "border-dashed border-muted-foreground/20 bg-muted/10"
                       )}
                     >
-                      <div className="w-12 h-16 rounded-lg overflow-hidden shadow-sm border border-border/40 shrink-0">
-                        {imageSrc
-                          ? <img src={imageSrc} alt={card.name} className="w-full h-full object-cover" />
-                          : <div className="w-full h-full bg-muted flex items-center justify-center text-[6px] font-bold text-center px-0.5 leading-tight text-muted-foreground">{card.name}</div>
-                        }
+                      <div className={cn(
+                        "px-1 py-0.5 text-[9px] font-bold uppercase tracking-wide truncate border-b",
+                        has ? `${cat.headerClass} border-current/20` : "bg-transparent text-muted-foreground/30 border-transparent"
+                      )}>
+                        {cat.label}
                       </div>
-                      <span className="text-[8px] font-semibold text-foreground text-center leading-tight line-clamp-2 w-full">{card.name}</span>
-                      {isPlayable && (
-                        <span className="text-[7px] bg-primary text-primary-foreground rounded-full px-1.5 py-0.5 font-bold leading-none">Play</span>
+                      <div className="flex-1 flex items-center justify-center" style={{ minHeight: 88 }}>
+                        {has && topCard ? (
+                          <div className="w-full h-full">
+                            {imageSrc
+                              ? <img src={imageSrc} alt={topCard.name} className="w-full h-full object-cover" />
+                              : <GameCard card={topCard} size="xs" hoverable={false} className="w-full h-full" />
+                            }
+                          </div>
+                        ) : (
+                          <div className={cn("w-2.5 h-2.5 rounded-full", cat.emptyDotClass, "opacity-40")} />
+                        )}
+                      </div>
+                      {has && topCard && (
+                        <div className="px-1 py-0.5 text-[8px] font-semibold text-center leading-tight text-foreground/70 bg-background/30 truncate">
+                          {topCard.name}
+                        </div>
                       )}
-                      {(heroBlocked || actionBlocked) && (
-                        <span className="text-[7px] text-destructive font-bold leading-none">Blocked</span>
-                      )}
-                    </motion.button>
+                    </div>
                   );
                 })}
               </div>
-            )}
-          </div>
-        )}
+            );
+          })()}
+
         </div>{/* end md:hidden mobile section */}
       </div>
 
