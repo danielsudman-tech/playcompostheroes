@@ -965,16 +965,17 @@ export default function Game() {
                       animate={{ opacity: 1, scale: 1 }}
                       transition={{ type: "spring", stiffness: 400, damping: 30 }}
                       className={cn(
-                        "w-36 h-52 rounded-2xl overflow-hidden shadow-2xl border-2 cursor-pointer transition-all",
-                        isPlayable ? "border-primary shadow-primary/30" : "border-border/60",
+                        "shadow-2xl transition-all",
+                        isPlayable && "ring-2 ring-primary ring-offset-2 shadow-primary/30",
                         (heroBlocked || actionBlocked) && "opacity-50 cursor-not-allowed"
                       )}
-                      onClick={(!heroBlocked && !actionBlocked) ? () => handleCardClick(card) : undefined}
                     >
-                      {imageSrc
-                        ? <img src={imageSrc} alt={card.name} className="w-full h-full object-cover" />
-                        : <div className="w-full h-full bg-muted flex items-center justify-center text-sm font-bold text-center px-2 leading-tight">{card.name}</div>
-                      }
+                      <GameCard
+                        card={card}
+                        size="md"
+                        hoverable={false}
+                        onClick={(!heroBlocked && !actionBlocked) ? () => handleCardClick(card) : undefined}
+                      />
                     </motion.div>
 
                     <button
@@ -986,17 +987,12 @@ export default function Game() {
                     </button>
                   </div>
 
-                  {/* Card details below the image */}
-                  <div className="w-full max-w-xs text-center space-y-1">
-                    <div className="font-bold text-sm text-foreground">{card.name}</div>
-                    <div className="text-[12px] text-muted-foreground leading-snug">{card.cardText}</div>
-                    <div className="flex items-center justify-center gap-2 pt-0.5">
-                      <span className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground/60 bg-muted rounded-full px-2.5 py-0.5">{card.function || card.type}</span>
-                      {heroBlocked && <span className="text-[10px] text-destructive font-bold">1 hero/turn</span>}
-                      {actionBlocked && <span className="text-[10px] text-destructive font-bold">1 action after hero</span>}
-                    </div>
+                  {/* Status / action row below the card */}
+                  <div className="flex flex-col items-center gap-1.5">
+                    {heroBlocked && <span className="text-[11px] text-destructive font-bold">Already played a hero this turn</span>}
+                    {actionBlocked && <span className="text-[11px] text-destructive font-bold">Already played an action this turn</span>}
                     {isPlayable && (
-                      <Button size="sm" className="h-9 px-6 font-bold mt-1" onClick={() => handleCardClick(card)}>
+                      <Button size="sm" className="h-9 px-8 font-bold" onClick={() => handleCardClick(card)}>
                         Play
                       </Button>
                     )}
