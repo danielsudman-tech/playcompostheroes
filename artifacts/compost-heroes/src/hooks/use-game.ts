@@ -104,7 +104,12 @@ export function useGameState(gameId: string | null, token?: string | null) {
 
 // ── SSE subscription for online mode ─────────────────────────────────────────
 
-export function useGameSse(gameId: string | null, token: string | null, isOnline: boolean) {
+export function useGameSse(
+  gameId: string | null,
+  token: string | null,
+  isOnline: boolean,
+  onKicked?: () => void
+) {
   const queryClient = useQueryClient();
 
   useEffect(() => {
@@ -120,12 +125,36 @@ export function useGameSse(gameId: string | null, token: string | null, isOnline
       } catch {}
     };
 
+    source.addEventListener("kicked", () => {
+      source.close();
+      onKicked?.();
+    });
+
     source.onerror = () => {
       // EventSource will auto-reconnect — no action needed
     };
 
     return () => source.close();
-  }, [gameId, token, isOnline, queryClient]);
+  }, [gameId, token, isOnline, queryClient, onKicked]);
+}
+
+// ── Leave or kick a player from a waiting room ────────────────────────────────
+
+export function useLeaveRoom(gameId: string | null, token: string | null) {
+  return useMutation({
+    mutationFn: async (playerId: string) => {
+      const r = await fetch(`/api/games/${gameId}/players/${playerId}`, {
+        method: "DELETE",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ token }),
+      });
+      if (!r.ok) {
+        const err = await r.json().catch(() => ({}));
+        throw new Error((err as any).error ?? "Failed to leave room");
+      }
+      return r.json();
+    },
+  });
 }
 
 // ── List open waiting rooms ───────────────────────────────────────────────────

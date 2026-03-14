@@ -122,6 +122,50 @@ export function removeSseClient(gameId: string, token: string): void {
   sseClientsByToken.get(gameId)?.delete(token);
 }
 
+/**
+ * Removes a player's token from the game by their player index.
+ * Shifts all higher indices down by 1 to stay in sync with the players array.
+ * Returns the removed player's token (so we can send them a kicked event).
+ */
+export function removePlayerTokenByIndex(
+  gameId: string,
+  removedIndex: number
+): string | null {
+  const tokens = gameTokens.get(gameId);
+  if (!tokens) return null;
+
+  let removedToken: string | null = null;
+  const updated = new Map<string, number>();
+
+  for (const [tok, idx] of tokens) {
+    if (idx === removedIndex) {
+      removedToken = tok;
+    } else if (idx > removedIndex) {
+      updated.set(tok, idx - 1);
+    } else {
+      updated.set(tok, idx);
+    }
+  }
+
+  gameTokens.set(gameId, updated);
+  return removedToken;
+}
+
+/**
+ * Sends a named SSE "kicked" event to a player's connection, then closes it.
+ */
+export function sendKickedEvent(gameId: string, token: string): void {
+  const clients = sseClientsByToken.get(gameId);
+  if (!clients) return;
+  const res = clients.get(token);
+  if (res) {
+    try {
+      res.write(`event: kicked\ndata: {}\n\n`);
+    } catch {}
+    clients.delete(token);
+  }
+}
+
 export function broadcastToGame(
   gameId: string,
   state: GameState,

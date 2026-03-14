@@ -56,7 +56,14 @@ export default function Game() {
   const localToken = claim?.token ?? storedToken;
 
   // 4. Subscribe to SSE for real-time updates (online mode only; need a token)
-  useGameSse(gameId || null, localToken, isOnline && !!localToken);
+  const handleKicked = useCallback(() => {
+    if (gameId) {
+      try { localStorage.removeItem(`compost_token_${gameId}`); } catch {}
+    }
+    toast({ title: "You were removed from the room", variant: "destructive" });
+    setLocation("/");
+  }, [gameId, toast, setLocation]);
+  useGameSse(gameId || null, localToken, isOnline && !!localToken, handleKicked);
 
   // 5. Join-form state (for waiting-room newcomers)
   const joinRoom = useJoinRoom(gameId || null);

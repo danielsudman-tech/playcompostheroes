@@ -1953,6 +1953,24 @@ export function createWaitingRoom(
   };
 }
 
+export function removePlayerFromRoom(
+  state: GameState,
+  playerId: string
+): { state: GameState; removedIndex: number } | { error: string } {
+  if (state.phase !== "waiting") {
+    return { error: "Can only remove players during the waiting phase" };
+  }
+  const idx = state.players.findIndex((p) => p.id === playerId);
+  if (idx === -1) {
+    return { error: "Player not found" };
+  }
+  const newPlayers = state.players.filter((p) => p.id !== playerId);
+  return {
+    state: { ...state, players: newPlayers },
+    removedIndex: idx,
+  };
+}
+
 export function addPlayerToRoom(
   state: GameState,
   playerName: string

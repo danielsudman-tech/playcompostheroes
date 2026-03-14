@@ -9,6 +9,7 @@ import {
   launchGame,
   moveCardLayer,
   playCard,
+  removePlayerFromRoom,
   resolveDecision,
   type GameState,
 } from "../lib/gameEngine.js";
@@ -22,7 +23,9 @@ import {
   gameHasPassword,
   getGame,
   getPlayerIndexForToken,
+  removePlayerTokenByIndex,
   removeSseClient,
+  sendKickedEvent,
   setGamePassword,
   storeGame,
 } from "../lib/gameStore.js";
@@ -407,6 +410,68 @@ router.post("/games/:gameId/action", (req, res) => {
   const viewerIndex =
     token ? (getPlayerIndexForToken(gameId, token) ?? undefined) : undefined;
   res.json(serializeState(result.state, viewerIndex));
+});
+
+// DELETE /api/games/:gameId/players/:playerId — leave (self) or kick (host only)
+router.delete("/games/:gameId/players/:playerId", (req, res) => {
+  const { gameId, playerId } = req.params as { gameId: string; playerId: string };
+  const { token } = req.body as { token?: string };
+
+  if (!token) {
+    res.status(401).json({ error: "Token required" });
+    return;
+  }
+
+  const state = getGame(gameId);
+  if (!state) {
+    res.status(404).json({ error: "Game not found" });
+    return;
+  }
+
+  const requesterIndex = getPlayerIndexForToken(gameId, token);
+  if (requesterIndex === null) {
+    res.status(403).json({ error: "Invalid token" });
+    return;
+  }
+
+  const requester = state.players[requesterIndex];
+  const target = state.players.find((p) => p.id === playerId);
+
+  if (!target) {
+    res.status(404).json({ error: "Player not found" });
+    return;
+  }
+
+  const isSelf = requester?.id === playerId;
+  const isHost = requesterIndex === 0;
+
+  if (!isSelf && !isHost) {
+    res.status(403).json({ error: "Only the host can kick other players" });
+    return;
+  }
+
+  const result = removePlayerFromRoom(state, playerId);
+  if ("error" in result) {
+    res.status(400).json({ error: result.error });
+    return;
+  }
+
+  // Remove the player's token, shifting indices; get their token to send a kick event
+  const removedToken = removePlayerTokenByIndex(gameId, result.removedIndex);
+
+  // Notify the removed player via SSE before anything else
+  if (removedToken) {
+    sendKickedEvent(gameId, removedToken);
+  }
+
+  storeGame(result.state);
+
+  // Broadcast updated state to remaining players
+  if (result.state.players.length > 0) {
+    broadcast(gameId, result.state);
+  }
+
+  res.json({ success: true });
 });
 
 export default router;

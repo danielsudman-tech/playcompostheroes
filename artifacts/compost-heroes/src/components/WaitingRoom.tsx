@@ -2,9 +2,9 @@ import { useState } from "react";
 import { useLocation } from "wouter";
 import { motion } from "framer-motion";
 import { Button } from "@/components/ui/button";
-import { useStartGame } from "@/hooks/use-game";
+import { useStartGame, useLeaveRoom } from "@/hooks/use-game";
 import { useToast } from "@/hooks/use-toast";
-import { Copy, Check, Crown, Loader2, Users, Lock } from "lucide-react";
+import { Copy, Check, Crown, Loader2, Users, Lock, LogOut, UserX } from "lucide-react";
 import { assetUrl } from "@/lib/assetUrl";
 
 interface PlayerSlot {
@@ -26,8 +26,10 @@ export function WaitingRoom({ gameId, players, maxPlayers, playerIndex, token, h
   const { toast } = useToast();
   const [copied, setCopied] = useState(false);
   const startGame = useStartGame(gameId, token);
+  const leaveRoom = useLeaveRoom(gameId, token);
 
   const isHost = playerIndex === 0;
+  const myPlayerId = playerIndex !== null ? players[playerIndex]?.id : null;
   const shareUrl = `${window.location.origin}${import.meta.env.BASE_URL}game/${gameId}`.replace(/\/+\//, "/");
   const roomCode = gameId.toUpperCase();
 
@@ -41,6 +43,27 @@ export function WaitingRoom({ gameId, players, maxPlayers, playerIndex, token, h
   const handleStart = () => {
     startGame.mutate(undefined, {
       onError: (err) => toast({ title: "Can't start yet", description: err.message, variant: "destructive" }),
+    });
+  };
+
+  const handleLeave = () => {
+    if (!myPlayerId) {
+      setLocation("/");
+      return;
+    }
+    leaveRoom.mutate(myPlayerId, {
+      onSuccess: () => setLocation("/"),
+      onError: (err) => {
+        toast({ title: "Couldn't leave", description: err.message, variant: "destructive" });
+        setLocation("/");
+      },
+    });
+  };
+
+  const handleKick = (targetPlayerId: string, targetName: string) => {
+    leaveRoom.mutate(targetPlayerId, {
+      onSuccess: () => toast({ title: `${targetName} was removed from the room` }),
+      onError: (err) => toast({ title: "Couldn't kick player", description: err.message, variant: "destructive" }),
     });
   };
 
@@ -118,29 +141,43 @@ export function WaitingRoom({ gameId, players, maxPlayers, playerIndex, token, h
           </div>
 
           <div className="space-y-2">
-            {players.map((p, i) => (
-              <motion.div
-                key={p.id}
-                initial={{ opacity: 0, x: -16 }}
-                animate={{ opacity: 1, x: 0 }}
-                transition={{ delay: i * 0.05 }}
-                className={`flex items-center gap-3 rounded-2xl px-4 py-3 border-2 ${i === playerIndex ? "border-primary/40 bg-primary/5" : "border-border bg-muted/20"}`}
-              >
-                <span className="w-7 h-7 rounded-full bg-primary/10 flex items-center justify-center text-primary text-xs font-bold shrink-0">
-                  {i === 0 ? <Crown className="w-3.5 h-3.5" /> : i + 1}
-                </span>
-                <span className="font-semibold text-sm text-foreground flex-1">{p.name}</span>
-                <div className="flex items-center gap-1.5">
-                  {i === 0 && (
-                    <span className="text-[10px] text-amber-600 bg-amber-50 border border-amber-200 rounded-full px-2 py-0.5 font-bold uppercase tracking-wide">Host</span>
-                  )}
-                  {i === playerIndex && (
-                    <span className="text-[10px] text-primary bg-primary/10 border border-primary/20 rounded-full px-2 py-0.5 font-bold uppercase tracking-wide">You</span>
-                  )}
-                  <span className="w-2 h-2 bg-green-400 rounded-full" />
-                </div>
-              </motion.div>
-            ))}
+            {players.map((p, i) => {
+              const isMe = i === playerIndex;
+              const canKick = isHost && !isMe;
+              return (
+                <motion.div
+                  key={p.id}
+                  initial={{ opacity: 0, x: -16 }}
+                  animate={{ opacity: 1, x: 0 }}
+                  transition={{ delay: i * 0.05 }}
+                  className={`flex items-center gap-3 rounded-2xl px-4 py-3 border-2 ${isMe ? "border-primary/40 bg-primary/5" : "border-border bg-muted/20"}`}
+                >
+                  <span className="w-7 h-7 rounded-full bg-primary/10 flex items-center justify-center text-primary text-xs font-bold shrink-0">
+                    {i === 0 ? <Crown className="w-3.5 h-3.5" /> : i + 1}
+                  </span>
+                  <span className="font-semibold text-sm text-foreground flex-1">{p.name}</span>
+                  <div className="flex items-center gap-1.5">
+                    {i === 0 && (
+                      <span className="text-[10px] text-amber-600 bg-amber-50 border border-amber-200 rounded-full px-2 py-0.5 font-bold uppercase tracking-wide">Host</span>
+                    )}
+                    {isMe && (
+                      <span className="text-[10px] text-primary bg-primary/10 border border-primary/20 rounded-full px-2 py-0.5 font-bold uppercase tracking-wide">You</span>
+                    )}
+                    <span className="w-2 h-2 bg-green-400 rounded-full" />
+                    {canKick && (
+                      <button
+                        onClick={() => handleKick(p.id, p.name)}
+                        disabled={leaveRoom.isPending}
+                        title={`Remove ${p.name}`}
+                        className="w-6 h-6 rounded-lg flex items-center justify-center text-muted-foreground hover:text-destructive hover:bg-destructive/10 transition-colors disabled:opacity-40 ml-1"
+                      >
+                        <UserX className="w-3.5 h-3.5" />
+                      </button>
+                    )}
+                  </div>
+                </motion.div>
+              );
+            })}
 
             {Array.from({ length: emptySlots }).map((_, i) => (
               <div
@@ -184,9 +221,15 @@ export function WaitingRoom({ gameId, players, maxPlayers, playerIndex, token, h
             </div>
           )}
           <button
-            onClick={() => setLocation("/")}
-            className="w-full text-sm text-muted-foreground hover:text-foreground transition-colors py-2"
+            onClick={handleLeave}
+            disabled={leaveRoom.isPending}
+            className="w-full flex items-center justify-center gap-2 text-sm text-muted-foreground hover:text-destructive transition-colors py-2 disabled:opacity-50"
           >
+            {leaveRoom.isPending ? (
+              <Loader2 className="w-3.5 h-3.5 animate-spin" />
+            ) : (
+              <LogOut className="w-3.5 h-3.5" />
+            )}
             Leave room
           </button>
         </div>
