@@ -346,56 +346,63 @@ router.post("/games/:gameId/action", (req, res) => {
 
   let result: { state: typeof state; error?: string };
 
-  switch (type) {
-    case "draw_card": {
-      result = drawCardAction(state, playerId);
-      break;
-    }
-    case "play_card": {
-      if (!cardId) {
-        res.status(400).json({ error: "cardId required for play_card" });
+  try {
+    switch (type) {
+      case "draw_card": {
+        result = drawCardAction(state, playerId);
+        break;
+      }
+      case "play_card": {
+        if (!cardId) {
+          res.status(400).json({ error: "cardId required for play_card" });
+          return;
+        }
+        result = playCard(state, playerId, cardId);
+        break;
+      }
+      case "end_turn": {
+        result = endTurn(state, playerId);
+        break;
+      }
+      case "resolve_decision": {
+        const data: Record<string, unknown> = {
+          ...(decisionData ?? {}),
+        };
+        if (targetPlayerId) data.targetPlayerId = targetPlayerId;
+        if (targetCardId) data.targetCardId = targetCardId;
+        if (cardId) data.cardId = cardId;
+        result = resolveDecision(state, playerId, data);
+        break;
+      }
+      case "activate_ongoing": {
+        result = activateOngoing(state, playerId);
+        break;
+      }
+      case "move_card_layer": {
+        if (!cardId) {
+          res.status(400).json({ error: "cardId required for move_card_layer" });
+          return;
+        }
+        result = moveCardLayer(state, playerId, cardId);
+        break;
+      }
+      case "reset_game": {
+        const players = state.players.map((p) => p.name);
+        const newState = createGameState(createGameId(), players, state.mode);
+        storeGame(newState);
+        broadcast(newState.gameId, newState);
+        res.json(serializeState(newState));
         return;
       }
-      result = playCard(state, playerId, cardId);
-      break;
-    }
-    case "end_turn": {
-      result = endTurn(state, playerId);
-      break;
-    }
-    case "resolve_decision": {
-      const data: Record<string, unknown> = {
-        ...(decisionData ?? {}),
-      };
-      if (targetPlayerId) data.targetPlayerId = targetPlayerId;
-      if (targetCardId) data.targetCardId = targetCardId;
-      if (cardId) data.cardId = cardId;
-      result = resolveDecision(state, playerId, data);
-      break;
-    }
-    case "activate_ongoing": {
-      result = activateOngoing(state, playerId);
-      break;
-    }
-    case "move_card_layer": {
-      if (!cardId) {
-        res.status(400).json({ error: "cardId required for move_card_layer" });
+      default:
+        res.status(400).json({ error: `Unknown action type: ${type}` });
         return;
-      }
-      result = moveCardLayer(state, playerId, cardId);
-      break;
     }
-    case "reset_game": {
-      const players = state.players.map((p) => p.name);
-      const newState = createGameState(createGameId(), players, state.mode);
-      storeGame(newState);
-      broadcast(newState.gameId, newState);
-      res.json(serializeState(newState));
-      return;
-    }
-    default:
-      res.status(400).json({ error: `Unknown action type: ${type}` });
-      return;
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    console.error(`[game action] ${type} threw an exception:`, err);
+    res.status(500).json({ error: `Server error processing ${type}: ${msg}` });
+    return;
   }
 
   if (result.error) {

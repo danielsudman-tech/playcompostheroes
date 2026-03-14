@@ -380,7 +380,7 @@ export default function Game() {
   const localPlayerFull = gameState.players.find(p => p.id === localPlayerId) || currentPlayer;
 
   const handleDrawCard = () => {
-    if (!isMyTurn || !localPlayerId) return;
+    if (!isMyTurn || !localPlayerId || actionMutation.isPending) return;
     playSound("draw");
     actionMutation.mutate({ type: "draw_card", playerId: localPlayerId });
   };
@@ -491,7 +491,7 @@ export default function Game() {
       </div>
 
       {/* MIDDLE ROW: Board — matches physical mat layout */}
-      <div className="relative z-10 flex-1 flex flex-row gap-4 px-4 py-2 items-stretch justify-center">
+      <div className="relative z-10 flex-1 flex flex-row gap-4 px-4 py-2 pb-56 md:pb-2 items-stretch justify-center">
 
         {/* Left: Activity Log */}
         <div className="hidden lg:flex flex-col w-56 bg-card/80 backdrop-blur-md border border-border shadow-inner rounded-xl overflow-hidden self-center" style={{ maxHeight: 320 }}>
@@ -674,8 +674,8 @@ export default function Game() {
               className="bg-primary/10 border border-primary/20 px-4 py-2.5 rounded-2xl flex items-center gap-3 shadow-lg backdrop-blur-md"
             >
               {gameState.phase === 'draw' && (
-                <Button size="lg" onClick={handleDrawCard} className="font-bold bg-primary hover:bg-primary/90 text-white rounded-xl shadow-md px-8">
-                  Draw Card
+                <Button size="lg" onClick={handleDrawCard} disabled={actionMutation.isPending} className="font-bold bg-primary hover:bg-primary/90 text-white rounded-xl shadow-md px-8">
+                  {actionMutation.isPending ? <><Loader2 className="w-4 h-4 mr-2 animate-spin" />Drawing…</> : "Draw Card"}
                 </Button>
               )}
               {gameState.phase === 'play' && (
@@ -734,8 +734,8 @@ export default function Game() {
 
       </div>
 
-      {/* BOTTOM ROW: Local Player mat (category slots + header only) */}
-      <div className="relative z-20 pb-52 max-w-3xl mx-auto w-full">
+      {/* BOTTOM ROW: Local Player mat (desktop only — mobile uses My Pile tab) */}
+      <div className="relative z-20 pb-52 max-w-3xl mx-auto w-full hidden md:block">
         <PlayerMat 
           player={localPlayerFull} 
           isCurrentPlayer={isMyTurn}
@@ -747,14 +747,14 @@ export default function Game() {
       </div>
 
       {/* HAND OVERLAY — fixed at screen bottom, with view-mode toggle */}
-      <div className="fixed bottom-0 inset-x-0 z-30">
+      <div className="fixed bottom-0 inset-x-0 z-30 pointer-events-none">
 
         {/* ── DESKTOP: flat side-by-side row (md+) ── */}
         {(() => {
           const hand = localPlayerFull.hand;
           const isPlayPhase = isMyTurn && gameState.phase === "play" && !gameState.pendingDecision;
           return (
-            <div className="hidden md:block bg-card/95 backdrop-blur-md border-t border-border">
+            <div className="hidden md:block bg-card/95 backdrop-blur-md border-t border-border pointer-events-auto">
               <div className="flex items-center justify-between px-4 py-1.5">
                 <span className="text-xs font-medium text-muted-foreground">
                   Hand&nbsp;
@@ -809,7 +809,7 @@ export default function Game() {
         })()}
 
         {/* ── MOBILE: Hand / Pile tabs (hidden on md+) ── */}
-        <div className="md:hidden">
+        <div className="md:hidden pointer-events-auto">
 
           {/* Tab bar */}
           <div className="flex bg-card/95 backdrop-blur-md border-t border-border">

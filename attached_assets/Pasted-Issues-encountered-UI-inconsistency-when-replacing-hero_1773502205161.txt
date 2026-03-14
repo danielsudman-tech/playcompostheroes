@@ -1,0 +1,29 @@
+Issues encountered
+
+UI inconsistency when replacing heroes: In Bob’s turn, playing “The Quencher” (a Nitrogen hero) replaced the existing Nitrogen hero (“The Legion of Life”) in terms of active effect, as indicated by the activity log (“The Quencher ongoing effect is now active for Bob”). However, the compost pile still displayed the old hero’s artwork and did not update the hero count (remained at 1/5). This makes it unclear which hero is actually in play.
+
+Game crash on playing “The Microbial Marshal”: During Charlie’s turn, attempting to play the hero card “The Microbial Marshal” (Nitrogen, instant) caused the game to crash and display a “Game Not Found – This compost pile has completely decomposed” error page, terminating the session. This appears to be a serious stability bug.
+
+Multiple clicks needed for actions: In several instances it required two clicks to activate “Draw Card,” “Play Card,” or “End Turn.” The first click seemed to highlight the button, and only the second click executed the action. This extra step isn’t explained and may confuse players.
+
+Lack of card-effect visibility after playing: Once a hero is placed in the compost pile, its details cannot be viewed again. Players can’t readily remind themselves of effects, which are critical for strategic decisions.
+
+Confusion about action resolution: Some action effects occur at end‑of‑turn or under specific conditions (e.g., “The Quencher” triggers when a Moisture card is played). The interface doesn’t clearly show when ongoing effects are available or exhausted.
+
+No drag-and-drop support: New players might intuitively try to drag hero cards onto category slots. Currently only clicking to open the modal and then clicking “Play Card” works. Without an on‑board tutorial, this may cause frustration.
+
+Suggestions for improvement
+
+Ensure visual updates when heroes are replaced: When a hero slot is overwritten, update the compost pile to show the new hero’s art and adjust the hero counter. This clarity will prevent confusion over which hero is active.
+
+Fix stability issues: Investigate the crash triggered by playing “The Microbial Marshal.” Logs suggest the session was invalidated after attempting to place it. Robust error handling is needed to prevent the game from ending unexpectedly.
+
+Button responsiveness: Remove the need for double‑clicks; each button should respond on the first click with clear feedback (e.g., disable after click and show a loading spinner if needed).
+
+Enable card details on already‑played heroes: Allow players to click or hover over heroes in their compost pile to bring up the card details modal again so they can review effects at any time.
+
+Improve effect resolution UI: Add icons or counters on hero and action cards in the compost pile to indicate whether ongoing effects are currently active, have been triggered or are no longer applicable.
+
+Consider adding drag‑and‑drop support or at least a tooltip/hint instructing players to click on cards to play them. A brief tutorial overlay during the first game could also explain the turn sequence and the win condition.
+
+Auto‑scroll to current player’s hand: When it’s your turn the interface could automatically scroll so your compost pile and hand are fully visible, reducing the need to manually scroll down.
