@@ -152,6 +152,7 @@ const ALL_CARDS: Card[] = [
     factText:
       "Fungi digest tough carbon while also storing precious nitrogen.",
     function: "Carbon",
+    alternateFunctions: ["Carbon", "Nitrogen"],
     imageKey: "Mycelial_Alchemist_1773283674658.jpg",
   },
   {

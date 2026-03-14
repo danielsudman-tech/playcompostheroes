@@ -151,7 +151,7 @@ function HoverableCard({
         <GameCard card={card} size="xs" hoverable={false} />
       )}
 
-      {canMove && onMoveLayer && !isDraggable && (
+      {canMove && onMoveLayer && (
         <button
           onClick={(e) => { e.stopPropagation(); onMoveLayer(); }}
           className="absolute -bottom-1 -right-1 z-10 bg-primary text-white rounded-full p-0.5 shadow-md hover:bg-primary/80 transition-colors"
@@ -161,7 +161,7 @@ function HoverableCard({
         </button>
       )}
 
-      {hovered && popupPos && !isDraggable && createPortal(
+      {hovered && popupPos && createPortal(
         <div
           className="pointer-events-none"
           style={{

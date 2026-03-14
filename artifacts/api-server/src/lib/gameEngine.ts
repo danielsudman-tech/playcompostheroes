@@ -181,6 +181,18 @@ function getEffectiveFunction(card: Card): string {
   return card.chosenFunction ?? card.function;
 }
 
+/** True if the card natively offers `fn` as one of its possible functions (regardless of which slot it occupies). */
+function cardHasFunctionNatively(card: Card, fn: string): boolean {
+  if (card.function === fn) return true;
+  if (card.alternateFunctions?.includes(fn)) return true;
+  return false;
+}
+
+/** A card is a valid steal/target for the given function if it is currently placed there OR it natively supports that function. */
+function cardMatchesStealFunction(card: Card, fn: string): boolean {
+  return getEffectiveFunction(card) === fn || cardHasFunctionNatively(card, fn);
+}
+
 function getHasFunction(player: PlayerState, fn: string): boolean {
   return player.compostPile.some((c) => getEffectiveFunction(c) === fn);
 }
@@ -377,12 +389,12 @@ function resolveHeroInstantEffect(
     // Brown Rogue: take 1 Nitrogen from any player's compost pile
     case "brown_rogue": {
       const targets = s.players
-        .filter((pl) => pl.id !== p.id && pl.compostPile.some((c) => c.function === "Nitrogen"))
+        .filter((pl) => pl.id !== p.id && pl.compostPile.some((c) => cardMatchesStealFunction(c, "Nitrogen")))
         .map((pl) => ({
           playerId: pl.id,
           playerName: pl.name,
           cards: pl.compostPile
-            .filter((c) => c.function === "Nitrogen")
+            .filter((c) => cardMatchesStealFunction(c, "Nitrogen"))
             .map((c) => ({ cardId: c.id, cardName: c.name })),
         }));
       if (targets.length === 0) {
@@ -1240,7 +1252,7 @@ export function resolveDecision(
 
       const stealFunction = decision.meta?.stealFunction as string | undefined;
       const validCards = targetPlayer.compostPile.filter(
-        (c) => !stealFunction || getEffectiveFunction(c) === stealFunction
+        (c) => !stealFunction || cardMatchesStealFunction(c, stealFunction)
       );
       if (validCards.length === 0) return { state, error: "No valid cards to steal from this player" };
 
