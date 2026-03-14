@@ -392,11 +392,8 @@ export function PlayerMat({
             const draggedCard = draggedCardId ? player.compostPile.find(c => c.id === draggedCardId) : null;
             const draggedCurrentFn = draggedCard ? getEffectiveFn(draggedCard) : null;
             const isCurrentSlot = draggedCard ? cat.match(draggedCurrentFn ?? "") : false;
-            // A slot is only valid if the card's own function(s) include this category
-            const draggedCardFns = draggedCard
-              ? new Set([(draggedCard as any).function as string, ...((draggedCard as any).alternateFunctions ?? [] as string[])])
-              : new Set<string>();
-            const isValidDropTarget = draggedCard && !isCurrentSlot && !has && draggedCardFns.has(cat.canonicalFn);
+            // Any empty slot (other than the card's current slot) is a valid rearrangement target
+            const isValidDropTarget = draggedCard && !isCurrentSlot && !has;
             const isDragOver = dragOverKey === cat.key && isValidDropTarget;
 
             const goNext = (e: React.MouseEvent) => {

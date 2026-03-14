@@ -766,15 +766,20 @@ export default function Game() {
       {/* HAND + TURN CONTROLS OVERLAY — fixed at screen bottom. Hand above, turn controls at very bottom. */}
       <div className="fixed bottom-0 inset-x-0 z-30 pointer-events-none">
 
-        {/* ── DESKTOP hand row (md+) — sits above the turn controls ── */}
+        {/* ── DESKTOP wrapper: tracks mouse across both hand row AND controls bar so hand stays expanded ── */}
+        <div
+          className="hidden md:flex md:flex-col pointer-events-auto"
+          onMouseEnter={() => setIsHandHovered(true)}
+          onMouseLeave={() => { setIsHandHovered(false); setHoveredHandCard(null); }}
+        >
+
+        {/* ── DESKTOP hand row ── */}
         {(() => {
           const hand = localPlayerFull.hand;
           const isPlayPhase = isMyTurn && gameState.phase === "play" && !gameState.pendingDecision;
           return (
             <motion.div
-              className="hidden md:block bg-card/95 backdrop-blur-md border-t border-border pointer-events-auto"
-              onMouseEnter={() => setIsHandHovered(true)}
-              onMouseLeave={() => { setIsHandHovered(false); setHoveredHandCard(null); }}
+              className="bg-card/95 backdrop-blur-md border-t border-border"
               layout
             >
               <div className="flex items-center justify-between px-4 py-1.5">
@@ -849,9 +854,9 @@ export default function Game() {
           );
         })()}
 
-        {/* ── DESKTOP Turn Controls bar (md+) — very bottom of screen ── */}
+        {/* ── DESKTOP Turn Controls bar — very bottom of screen ── */}
         {gameState.phase !== "game_over" && (
-          <div className="hidden md:block pointer-events-auto">
+          <div>
             <AnimatePresence>
               {isMyTurn && (
                 <motion.div
@@ -891,6 +896,8 @@ export default function Game() {
             </AnimatePresence>
           </div>
         )}
+
+        </div>{/* end desktop wrapper */}
 
         {/* ── MOBILE: Pile + Hand stacked (hidden on md+) ── */}
         {(() => {
