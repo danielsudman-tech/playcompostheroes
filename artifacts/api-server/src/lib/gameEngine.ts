@@ -83,6 +83,8 @@ export interface GameState {
   heroPlayedThisTurn: boolean;
   actionPlayedThisTurn: boolean;
   ongoingActionCard: Card | null;
+  /** True once the current player has already activated their ongoing-action-card benefit this turn. */
+  ongoingBenefitUsedThisTurn: boolean;
   maxPlayers?: number;
 }
 
@@ -1862,49 +1864,8 @@ export function drawCardAction(
   let s = drawCard(state, player);
   addLog(s, `${player.name} drew a card.`);
 
-  // If drawsExtraCard, draw one more
-  const updatedPlayer = getPlayer(s, playerId)!;
-  if (updatedPlayer.drawsExtraCard) {
-    s = drawCard(s, getPlayer(s, playerId)!);
-    addLog(s, `${player.name} drew an extra card (Hot Pile Bonus).`);
-  }
-
-  // Also check Critical Mass ongoing action
-  const critMass = s.activeModifiers.find((m) => m.cardId === "critical_mass");
-  if (critMass) {
-    const hasDoubleLayer = s.players
-      .find((pl) => pl.id === playerId)
-      ?.compostPile.some((c1, i, arr) =>
-        arr.some((c2, j) => j !== i && c1.layer === c2.layer && c1.layer !== null)
-      );
-    if (hasDoubleLayer) {
-      s = drawCard(s, getPlayer(s, playerId)!);
-      addLog(s, `${player.name} drew 1 card (Critical Mass — has 2 cards of same layer).`);
-    }
-  }
-
-  // Check Nitrogen Boost ongoing action
-  const nitroBoost = s.activeModifiers.find((m) => m.cardId === "nitrogen_boost");
-  if (nitroBoost) {
-    const currentPlayerState = getPlayer(s, playerId)!;
-    const hasNitrogen = currentPlayerState.hand.some((c) => c.function === "Nitrogen");
-    if (hasNitrogen) {
-      s = {
-        ...s,
-        pendingDecision: {
-          type: "choose_nitrogen_boost_discard",
-          playerId,
-          cardId: "nitrogen_boost",
-          options: currentPlayerState.hand
-            .filter((c) => c.function === "Nitrogen")
-            .map((c) => ({ cardId: c.id, cardName: c.name })),
-          prompt: `${player.name}: Nitrogen Boost — you may discard 1 Nitrogen card to draw 2. Choose which, or skip.`,
-          meta: { optional: true },
-        },
-      };
-    }
-  }
-
+  // Transition to play phase — ongoing card benefits are now player-triggered
+  // via the "Activate Effect" button (activateOngoing), not auto-fired on draw.
   s = { ...s, phase: "play" };
   return { state: s };
 }
@@ -1916,7 +1877,7 @@ function advanceTurnState(s: GameState): GameState {
   if (s.extraTurn) {
     const cp = s.players[s.currentPlayerIndex];
     addLog(s, `${cp.name} takes another turn!`);
-    return { ...s, extraTurn: false, phase: "draw", heroPlayedThisTurn: false, actionPlayedThisTurn: false };
+    return { ...s, extraTurn: false, phase: "draw", heroPlayedThisTurn: false, actionPlayedThisTurn: false, ongoingBenefitUsedThisTurn: false };
   }
 
   let nextIdx = nextPlayerIndex(s);
@@ -1938,6 +1899,7 @@ function advanceTurnState(s: GameState): GameState {
     turnNumber: s.turnNumber + 1,
     heroPlayedThisTurn: false,
     actionPlayedThisTurn: false,
+    ongoingBenefitUsedThisTurn: false,
   };
   addLog(s, `--- ${s.players[nextIdx].name}'s turn begins ---`);
   return s;
@@ -2013,6 +1975,7 @@ export function createGameState(
     heroPlayedThisTurn: false,
     actionPlayedThisTurn: false,
     ongoingActionCard: null,
+    ongoingBenefitUsedThisTurn: false,
   };
 
   // Deal 3 cards to each player
@@ -2044,13 +2007,46 @@ export function activateOngoing(
   const ongoing = state.ongoingActionCard;
   if (!ongoing) return { state, error: "No ongoing action card is active" };
 
+  if (state.ongoingBenefitUsedThisTurn) {
+    return { state, error: `You have already used ${ongoing.name}'s benefit this turn` };
+  }
+
+  // Mark benefit as used immediately (even for decision-based effects — starting the
+  // decision uses up the activation, preventing a second activation if the player skips).
+  const stateWithFlag: GameState = { ...state, ongoingBenefitUsedThisTurn: true };
+
   switch (ongoing.id) {
+    case "hot_pile_bonus": {
+      const decomposerCount = player.compostPile.filter(
+        (c) => getEffectiveFunction(c) === "Decomposer"
+      ).length;
+      if (decomposerCount < 2) {
+        return { state, error: "Hot Pile Bonus requires 2 Decomposer cards in your compost pile" };
+      }
+      let s = drawCard(stateWithFlag, getPlayer(stateWithFlag, playerId)!);
+      addLog(s, `${player.name} drew 1 card (Hot Pile Bonus — 2 Decomposers in pile).`);
+      return { state: s };
+    }
+
+    case "critical_mass": {
+      const pile = player.compostPile;
+      const hasDoubleLayer = pile.some((c1, i) =>
+        pile.some((c2, j) => j !== i && c1.layer === c2.layer && c1.layer !== null)
+      );
+      if (!hasDoubleLayer) {
+        return { state, error: "Critical Mass requires 2 cards of the same layer in your compost pile" };
+      }
+      let s = drawCard(stateWithFlag, getPlayer(stateWithFlag, playerId)!);
+      addLog(s, `${player.name} drew 1 card (Critical Mass — 2 cards of same layer).`);
+      return { state: s };
+    }
+
     case "rot_regrow": {
       if (player.hand.length < 3) {
         return { state, error: "Need at least 3 cards in hand to activate Rot & Regrow" };
       }
       const s = {
-        ...state,
+        ...stateWithFlag,
         pendingDecision: {
           type: "choose_rot_regrow_discard" as const,
           playerId,
@@ -2069,7 +2065,7 @@ export function activateOngoing(
         return { state, error: "No Nitrogen cards in hand to discard for Nitrogen Boost" };
       }
       const s = {
-        ...state,
+        ...stateWithFlag,
         pendingDecision: {
           type: "choose_nitrogen_boost_discard" as const,
           playerId,
@@ -2083,7 +2079,7 @@ export function activateOngoing(
     }
 
     default:
-      return { state, error: `${ongoing.name} has no activatable effect` };
+      return { state, error: `${ongoing.name} has no activatable player benefit` };
   }
 }
 
