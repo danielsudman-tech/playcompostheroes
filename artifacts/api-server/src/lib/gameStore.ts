@@ -3,6 +3,9 @@ import type { Response } from "express";
 
 const games = new Map<string, GameState>();
 
+// gameId -> plain-text password (optional)
+const gamePasswords = new Map<string, string>();
+
 // gameId -> Map<token -> playerIndex>
 const gameTokens = new Map<string, Map<string, number>>();
 
@@ -19,6 +22,20 @@ function generateToken(): string {
 
 export function storeGame(state: GameState): void {
   games.set(state.gameId, state);
+}
+
+export function setGamePassword(gameId: string, password: string): void {
+  gamePasswords.set(gameId, password);
+}
+
+export function gameHasPassword(gameId: string): boolean {
+  return gamePasswords.has(gameId);
+}
+
+export function checkGamePassword(gameId: string, password: string): boolean {
+  const stored = gamePasswords.get(gameId);
+  if (stored === undefined) return true; // no password set
+  return stored === password;
 }
 
 export function getGame(gameId: string): GameState | undefined {

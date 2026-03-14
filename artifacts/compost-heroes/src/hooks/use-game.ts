@@ -1,5 +1,5 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { getGetGameQueryKey } from "@workspace/api-client-react";
 import type { GameAction } from "@workspace/api-client-react";
 
@@ -36,31 +36,45 @@ export function useClaimSlot(gameId: string | null, enabled: boolean) {
   const [claim, setClaim] = useState<ClaimResult | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+  const [requiresPassword, setRequiresPassword] = useState(false);
   const attempted = useRef(false);
 
-  useEffect(() => {
-    if (!gameId || !enabled || attempted.current) return;
-    attempted.current = true;
-
+  const doClaim = useCallback((password?: string) => {
+    if (!gameId) return;
     const existingToken = getStoredToken(gameId);
     setLoading(true);
+    setError(null);
+    setRequiresPassword(false);
 
     fetch(`/api/games/${gameId}/claim`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ token: existingToken ?? undefined }),
+      body: JSON.stringify({ token: existingToken ?? undefined, password }),
     })
       .then(async (r) => {
         const data = await r.json();
+        if (r.status === 403 && data.requiresPassword) {
+          setRequiresPassword(true);
+          if (data.error !== "This game is password protected") {
+            setError(data.error ?? "Incorrect password");
+          }
+          return;
+        }
         if (!r.ok) throw new Error(data.error ?? "Failed to claim slot");
         storeToken(gameId, data.token);
         setClaim(data as ClaimResult);
       })
       .catch((e) => setError(e.message))
       .finally(() => setLoading(false));
-  }, [gameId, enabled]);
+  }, [gameId]);
 
-  return { claim, error, loading };
+  useEffect(() => {
+    if (!gameId || !enabled || attempted.current) return;
+    attempted.current = true;
+    doClaim();
+  }, [gameId, enabled, doClaim]);
+
+  return { claim, error, loading, requiresPassword, doClaim };
 }
 
 // ── Game state (polling for pass-and-play, SSE for online) ───────────────────
@@ -119,7 +133,7 @@ export function useGameSse(gameId: string | null, token: string | null, isOnline
 export function useCreateNewGame() {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: async (data: { playerNames: string[]; mode: "facilitator" | "standalone" | "online" }) => {
+    mutationFn: async (data: { playerNames: string[]; mode: "facilitator" | "standalone" | "online"; password?: string }) => {
       const r = await fetch("/api/games", {
         method: "POST",
         headers: { "Content-Type": "application/json" },

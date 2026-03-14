@@ -24,7 +24,8 @@ import {
   X,
   Wifi,
   ChevronLeft,
-  ChevronRight
+  ChevronRight,
+  Lock
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -42,7 +43,7 @@ export default function Game() {
   const isOnline = gameState?.mode === "online";
 
   // 3. Claim a slot once we know the mode is online
-  const { claim, loading: claimLoading } = useClaimSlot(gameId || null, isOnline);
+  const { claim, loading: claimLoading, requiresPassword, doClaim, error: claimError } = useClaimSlot(gameId || null, isOnline);
   const localToken = claim?.token ?? storedToken;
 
   // 4. Subscribe to SSE for real-time updates (online mode only)
@@ -71,6 +72,9 @@ export default function Game() {
   // Mobile hand navigation
   const [handFocusIdx, setHandFocusIdx] = useState(0);
   const [isMobileView, setIsMobileView] = useState(() => window.innerWidth < 640);
+
+  // Password prompt (online games that require a password to join)
+  const [joinPassword, setJoinPassword] = useState("");
 
   // On-screen effect announcement banner
   const [announcement, setAnnouncement] = useState<string | null>(null);
@@ -211,6 +215,64 @@ export default function Game() {
         <h2 className="text-2xl font-display text-foreground">
           {isOnline ? "Joining game..." : "Loading Game State..."}
         </h2>
+      </div>
+    );
+  }
+
+  if (isOnline && requiresPassword && !localToken) {
+    return (
+      <div className="min-h-screen bg-background flex flex-col items-center justify-center p-4">
+        <div className="w-full max-w-sm">
+          <div className="text-center mb-8">
+            <div className="inline-flex items-center justify-center w-20 h-20 bg-primary/10 rounded-full mb-4 ring-8 ring-primary/5">
+              <Lock className="w-9 h-9 text-primary" />
+            </div>
+            <h1 className="text-3xl font-display font-bold text-foreground mb-2">Password Required</h1>
+            <p className="text-muted-foreground text-sm">This game is protected. Enter the password to join.</p>
+          </div>
+
+          <form
+            className="bg-card/80 backdrop-blur-xl rounded-3xl shadow-xl border border-border p-6 space-y-4"
+            onSubmit={(e) => {
+              e.preventDefault();
+              doClaim(joinPassword.trim() || undefined);
+            }}
+          >
+            <div className="relative">
+              <Lock className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground/60 pointer-events-none" />
+              <input
+                type="password"
+                autoFocus
+                placeholder="Enter game password"
+                value={joinPassword}
+                onChange={(e) => setJoinPassword(e.target.value)}
+                className="w-full h-12 pl-9 pr-4 rounded-xl border-2 border-border bg-background/50 text-sm focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary"
+              />
+            </div>
+            {claimLoading && (
+              <p className="text-xs text-muted-foreground text-center flex items-center justify-center gap-1">
+                <Loader2 className="w-3 h-3 animate-spin" /> Checking…
+              </p>
+            )}
+            {claimError && !claimLoading && (
+              <p className="text-xs text-destructive text-center font-medium">{claimError}</p>
+            )}
+            <button
+              type="submit"
+              disabled={claimLoading || !joinPassword.trim()}
+              className="w-full h-12 rounded-xl bg-primary text-primary-foreground font-bold text-base hover:bg-primary/90 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              {claimLoading ? "Joining…" : "Join Game"}
+            </button>
+            <button
+              type="button"
+              className="w-full text-sm text-muted-foreground hover:text-foreground transition-colors"
+              onClick={() => setLocation("/")}
+            >
+              Back to Lobby
+            </button>
+          </form>
+        </div>
       </div>
     );
   }

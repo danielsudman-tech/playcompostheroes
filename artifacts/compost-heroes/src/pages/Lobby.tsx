@@ -4,7 +4,7 @@ import { motion, AnimatePresence } from "framer-motion";
 import { useCreateNewGame } from "@/hooks/use-game";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Sprout, Users, Trash2, PlusCircle, Settings2, PlayCircle, Wifi, Copy, Check } from "lucide-react";
+import { Sprout, Users, Trash2, PlusCircle, Settings2, PlayCircle, Wifi, Copy, Check, Lock } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 
 export default function Lobby() {
@@ -16,6 +16,7 @@ export default function Lobby() {
   const [players, setPlayers] = useState<string[]>(["Player 1", "Player 2"]);
   const [shareLink, setShareLink] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
+  const [gamePassword, setGamePassword] = useState("");
 
   const handleAddPlayer = () => {
     if (players.length < 4) {
@@ -56,7 +57,8 @@ export default function Lobby() {
 
     createGame.mutate({
       playerNames: validPlayers,
-      mode: mode
+      mode: mode,
+      password: mode === "online" && gamePassword.trim() ? gamePassword.trim() : undefined,
     }, {
       onSuccess: (data) => {
         if (mode === "online") {
@@ -116,6 +118,16 @@ export default function Lobby() {
                 </Button>
               </div>
             </div>
+
+            {gamePassword.trim() && (
+              <div className="flex items-start gap-3 bg-amber-50 border border-amber-200 rounded-2xl p-4">
+                <Lock className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
+                <div>
+                  <p className="text-sm font-semibold text-amber-800">Password protected</p>
+                  <p className="text-xs text-amber-700 mt-0.5">Players will need the password you set to join. Share it alongside the link.</p>
+                </div>
+              </div>
+            )}
 
             <div className="bg-muted/40 rounded-2xl p-4 space-y-2">
               <p className="text-sm font-semibold text-foreground">How it works</p>
@@ -203,9 +215,21 @@ export default function Lobby() {
               </button>
             </div>
             {mode === "online" && (
-              <p className="text-xs text-muted-foreground bg-muted/40 rounded-xl px-3 py-2">
-                Set all player names now. After creating, you'll get a link to share — each player opens it on their own device.
-              </p>
+              <div className="space-y-2">
+                <p className="text-xs text-muted-foreground bg-muted/40 rounded-xl px-3 py-2">
+                  Set all player names now. After creating, you'll get a link to share — each player opens it on their own device.
+                </p>
+                <div className="relative">
+                  <Lock className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground/60 pointer-events-none" />
+                  <Input
+                    type="password"
+                    placeholder="Game password (optional)"
+                    value={gamePassword}
+                    onChange={(e) => setGamePassword(e.target.value)}
+                    className="h-11 pl-9 bg-background/50 border-2 focus-visible:ring-primary/20 text-sm"
+                  />
+                </div>
+              </div>
             )}
           </div>
 

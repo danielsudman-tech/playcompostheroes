@@ -12,11 +12,14 @@ import {
 import {
   addSseClient,
   broadcastToGame,
+  checkGamePassword,
   claimSlot,
   createGameId,
+  gameHasPassword,
   getGame,
   getPlayerIndexForToken,
   removeSseClient,
+  setGamePassword,
   storeGame,
 } from "../lib/gameStore.js";
 
@@ -60,9 +63,10 @@ function broadcast(gameId: string, state: GameState) {
 
 // POST /api/games — create a new game
 router.post("/games", (req, res) => {
-  const { playerNames, mode } = req.body as {
+  const { playerNames, mode, password } = req.body as {
     playerNames: string[];
     mode: "facilitator" | "standalone" | "online";
+    password?: string;
   };
 
   if (
@@ -84,6 +88,10 @@ router.post("/games", (req, res) => {
   const gameId = createGameId();
   const state = createGameState(gameId, playerNames, mode);
   storeGame(state);
+
+  if (password && password.trim()) {
+    setGamePassword(gameId, password.trim());
+  }
 
   // In online mode, auto-claim slot 0 for the creator and return the token
   if (mode === "online") {
@@ -110,18 +118,31 @@ router.get("/games/:gameId", (req, res) => {
 
   const viewerIndex =
     token ? (getPlayerIndexForToken(gameId, token) ?? undefined) : undefined;
-  res.json(serializeState(state, viewerIndex));
+  res.json({ ...serializeState(state, viewerIndex), hasPassword: gameHasPassword(gameId) });
 });
 
 // POST /api/games/:gameId/claim — claim a player slot
 router.post("/games/:gameId/claim", (req, res) => {
   const { gameId } = req.params as { gameId: string };
-  const { token: existingToken } = req.body as { token?: string };
+  const { token: existingToken, password } = req.body as { token?: string; password?: string };
 
   const state = getGame(gameId);
   if (!state) {
     res.status(404).json({ error: "Game not found" });
     return;
+  }
+
+  // If the game has a password and this is a NEW join (no valid existing token),
+  // require a correct password before granting a slot.
+  if (gameHasPassword(gameId) && !existingToken) {
+    if (!password) {
+      res.status(403).json({ error: "This game is password protected", requiresPassword: true });
+      return;
+    }
+    if (!checkGamePassword(gameId, password)) {
+      res.status(403).json({ error: "Incorrect password", requiresPassword: true });
+      return;
+    }
   }
 
   const claimed = claimSlot(gameId, existingToken);
