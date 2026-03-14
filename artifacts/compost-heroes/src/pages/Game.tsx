@@ -422,9 +422,9 @@ export default function Game() {
       }
       return;
     }
-    // Block second action card when a hero was played this turn
-    if (card.type === "action" && gameState?.heroPlayedThisTurn && gameState?.actionPlayedThisTurn) {
-      toast({ title: "One action after a hero", description: "After playing a hero card you may only play one action card.", variant: "destructive" });
+    // Block second action card — only 1 per turn regardless of whether a hero was played
+    if (card.type === "action" && gameState?.actionPlayedThisTurn) {
+      toast({ title: "One action per turn", description: "You may only play one action card per turn.", variant: "destructive" });
       return;
     }
     setConfirmCard(card);
@@ -705,7 +705,7 @@ export default function Game() {
       </div>
 
       {/* BOTTOM ROW: Local Player mat (desktop only — mobile uses My Pile tab) */}
-      <div className="relative z-20 pb-36 max-w-3xl mx-auto w-full hidden md:block">
+      <div className="relative z-20 pb-72 max-w-3xl mx-auto w-full hidden md:block">
         <PlayerMat 
           player={localPlayerFull} 
           isCurrentPlayer={isMyTurn}
@@ -716,53 +716,10 @@ export default function Game() {
         />
       </div>
 
-      {/* HAND + TURN CONTROLS OVERLAY — fixed at screen bottom */}
+      {/* HAND + TURN CONTROLS OVERLAY — fixed at screen bottom. Hand above, turn controls at very bottom. */}
       <div className="fixed bottom-0 inset-x-0 z-30 pointer-events-none">
 
-        {/* ── DESKTOP Turn Controls bar (md+) ── */}
-        {gameState.phase !== "game_over" && (
-          <div className="hidden md:block pointer-events-auto">
-            <AnimatePresence>
-              {isMyTurn && (
-                <motion.div
-                  key="turn-controls"
-                  initial={{ y: 16, opacity: 0 }}
-                  animate={{ y: 0, opacity: 1 }}
-                  exit={{ y: 16, opacity: 0 }}
-                  className="flex items-center justify-center gap-4 px-6 py-2 bg-primary/10 border-t border-primary/20 backdrop-blur-md"
-                >
-                  {gameState.phase === "draw" && (
-                    <Button size="lg" onClick={handleDrawCard} disabled={actionMutation.isPending} className="font-bold bg-primary hover:bg-primary/90 text-white rounded-xl shadow-md px-10">
-                      {actionMutation.isPending ? <><Loader2 className="w-4 h-4 mr-2 animate-spin" />Drawing…</> : "Draw Card"}
-                    </Button>
-                  )}
-                  {gameState.phase === "play" && (
-                    <>
-                      <span className="font-bold text-primary text-sm">Play a card or end your turn</span>
-                      <Button size="lg" variant="secondary" onClick={handleEndTurn} disabled={actionMutation.isPending} className="font-bold rounded-xl shadow-md">
-                        {actionMutation.isPending ? <><Loader2 className="w-4 h-4 mr-2 animate-spin" />…</> : "End Turn"}
-                      </Button>
-                    </>
-                  )}
-                </motion.div>
-              )}
-              {!isMyTurn && (
-                <motion.div
-                  key="waiting"
-                  initial={{ opacity: 0 }}
-                  animate={{ opacity: 1 }}
-                  exit={{ opacity: 0 }}
-                  className="flex items-center justify-center gap-2 px-6 py-2 bg-muted/60 border-t border-border backdrop-blur-md"
-                >
-                  <Loader2 className="w-3.5 h-3.5 animate-spin text-muted-foreground" />
-                  <span className="text-sm text-muted-foreground font-medium">Waiting for {currentPlayer.name}…</span>
-                </motion.div>
-              )}
-            </AnimatePresence>
-          </div>
-        )}
-
-        {/* ── DESKTOP hand row (md+) ── */}
+        {/* ── DESKTOP hand row (md+) — sits above the turn controls ── */}
         {(() => {
           const hand = localPlayerFull.hand;
           const isPlayPhase = isMyTurn && gameState.phase === "play" && !gameState.pendingDecision;
@@ -785,7 +742,7 @@ export default function Game() {
                 )}
                 {hand.map((card, idx) => {
                   const heroBlocked = card.type === "hero" && (gameState.heroPlayedThisTurn || gameState.actionPlayedThisTurn);
-                  const actionBlocked = card.type === "action" && gameState.heroPlayedThisTurn && gameState.actionPlayedThisTurn;
+                  const actionBlocked = card.type === "action" && gameState.actionPlayedThisTurn;
                   const isPlayable = isPlayPhase && !heroBlocked && !actionBlocked;
                   const isBlocked = heroBlocked || actionBlocked;
                   const imageSrc = card.imageKey ? assetUrl(card.imageKey) : null;
@@ -820,6 +777,49 @@ export default function Game() {
             </div>
           );
         })()}
+
+        {/* ── DESKTOP Turn Controls bar (md+) — very bottom of screen ── */}
+        {gameState.phase !== "game_over" && (
+          <div className="hidden md:block pointer-events-auto">
+            <AnimatePresence>
+              {isMyTurn && (
+                <motion.div
+                  key="turn-controls"
+                  initial={{ y: 16, opacity: 0 }}
+                  animate={{ y: 0, opacity: 1 }}
+                  exit={{ y: 16, opacity: 0 }}
+                  className="flex items-center justify-center gap-4 px-6 py-3 bg-primary/10 border-t border-primary/20 backdrop-blur-md"
+                >
+                  {gameState.phase === "draw" && (
+                    <Button size="lg" onClick={handleDrawCard} disabled={actionMutation.isPending} className="font-bold bg-primary hover:bg-primary/90 text-white rounded-xl shadow-md px-10">
+                      {actionMutation.isPending ? <><Loader2 className="w-4 h-4 mr-2 animate-spin" />Drawing…</> : "Draw Card"}
+                    </Button>
+                  )}
+                  {gameState.phase === "play" && (
+                    <>
+                      <span className="font-bold text-primary text-sm">Play a card or end your turn</span>
+                      <Button size="lg" variant="secondary" onClick={handleEndTurn} disabled={actionMutation.isPending} className="font-bold rounded-xl shadow-md">
+                        {actionMutation.isPending ? <><Loader2 className="w-4 h-4 mr-2 animate-spin" />…</> : "End Turn"}
+                      </Button>
+                    </>
+                  )}
+                </motion.div>
+              )}
+              {!isMyTurn && (
+                <motion.div
+                  key="waiting"
+                  initial={{ opacity: 0 }}
+                  animate={{ opacity: 1 }}
+                  exit={{ opacity: 0 }}
+                  className="flex items-center justify-center gap-2 px-6 py-2.5 bg-muted/60 border-t border-border backdrop-blur-md"
+                >
+                  <Loader2 className="w-3.5 h-3.5 animate-spin text-muted-foreground" />
+                  <span className="text-sm text-muted-foreground font-medium">Waiting for {currentPlayer.name}…</span>
+                </motion.div>
+              )}
+            </AnimatePresence>
+          </div>
+        )}
 
         {/* ── MOBILE: Pile + Hand stacked (hidden on md+) ── */}
         {(() => {
@@ -926,7 +926,7 @@ export default function Game() {
                     )}
                     {hand.map((card, idx) => {
                       const heroBlocked = card.type === "hero" && (gameState.heroPlayedThisTurn || gameState.actionPlayedThisTurn);
-                      const actionBlocked = card.type === "action" && gameState.heroPlayedThisTurn && gameState.actionPlayedThisTurn;
+                      const actionBlocked = card.type === "action" && gameState.actionPlayedThisTurn;
                       const isBlocked = heroBlocked || actionBlocked;
                       const isPlayable = isPlayPhase && !isBlocked;
                       const imageSrc = card.imageKey ? assetUrl(card.imageKey) : null;

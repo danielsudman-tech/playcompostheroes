@@ -383,7 +383,7 @@ router.post("/games/:gameId/action", (req, res) => {
           res.status(400).json({ error: "cardId required for move_card_layer" });
           return;
         }
-        const targetFunction = body.targetFunction as string | undefined;
+        const targetFunction = (req.body as any).targetFunction as string | undefined;
         result = moveCardLayer(state, playerId, cardId, targetFunction);
         break;
       }

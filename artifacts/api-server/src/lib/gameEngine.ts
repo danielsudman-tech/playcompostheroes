@@ -1063,11 +1063,11 @@ export function playCard(
     // Quencher: whenever a Moisture card enters compost, draw 1 extra card
     s = triggerQuencher(s, player.id, cardInHand);
   } else {
-    // Action card — if a hero was played this turn, limit to 1 action card
-    if (state.heroPlayedThisTurn && state.actionPlayedThisTurn) {
+    // Action card — limit to 1 action card per turn (regardless of whether a hero was played)
+    if (state.actionPlayedThisTurn) {
       // Undo the hand removal before returning the error
       s = updatePlayer(state, player);
-      return { state: s, error: "After playing a hero card you may only play one action card per turn." };
+      return { state: s, error: "You may only play one action card per turn." };
     }
     if (cardInHand.effectType === "ongoing") {
       // Move old ongoing action card to discard if one was active
