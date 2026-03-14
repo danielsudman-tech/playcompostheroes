@@ -6,6 +6,7 @@ import NotFound from "@/pages/not-found";
 import Lobby from "./pages/Lobby";
 import Game from "./pages/Game";
 import Admin from "./pages/Admin";
+import { AppGate } from "./components/AppGate";
 
 const queryClient = new QueryClient();
 
@@ -22,14 +23,16 @@ function Router() {
 
 function App() {
   return (
-    <QueryClientProvider client={queryClient}>
-      <TooltipProvider>
-        <WouterRouter base={import.meta.env.BASE_URL.replace(/\/$/, "")}>
-          <Router />
-        </WouterRouter>
-        <Toaster />
-      </TooltipProvider>
-    </QueryClientProvider>
+    <AppGate>
+      <QueryClientProvider client={queryClient}>
+        <TooltipProvider>
+          <WouterRouter base={import.meta.env.BASE_URL.replace(/\/$/, "")}>
+            <Router />
+          </WouterRouter>
+          <Toaster />
+        </TooltipProvider>
+      </QueryClientProvider>
+    </AppGate>
   );
 }
 
