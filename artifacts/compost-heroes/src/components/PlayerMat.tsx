@@ -91,7 +91,7 @@ function getCategoryCards(pile: CardState[], matchFn: (fn: string) => boolean) {
   return pile.filter((c) => matchFn(getEffectiveFn(c)));
 }
 
-const POPUP_HEIGHT = 232;
+const POPUP_HEIGHT = 320;
 const POPUP_GAP = 8;
 
 function HoverableCard({
@@ -183,7 +183,7 @@ function HoverableCard({
           >
             <div className="shadow-2xl rounded-xl overflow-hidden border-2 border-white/40">
               {imageSrc ? (
-                <img src={imageSrc} alt={card.name} className="w-48 h-64 object-contain bg-card" />
+                <img src={imageSrc} alt={card.name} className="w-56 h-80 object-contain bg-card" />
               ) : (
                 <GameCard card={card} size="md" hoverable={false} />
               )}
@@ -463,7 +463,7 @@ export function PlayerMat({
                 )}
 
                 {/* Card display — navigable when multiple */}
-                <div className="relative w-full h-24" style={{ minHeight: 64 }}>
+                <div className="relative w-full h-40" style={{ minHeight: 96 }}>
                   <AnimatePresence mode="wait">
                     {activeCard ? (
                       <motion.div

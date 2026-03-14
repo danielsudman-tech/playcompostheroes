@@ -752,7 +752,8 @@ export default function Game() {
                       initial={{ opacity: 0, y: 8 }}
                       animate={{ opacity: isBlocked ? 0.4 : 1, y: 0 }}
                       transition={{ delay: idx * 0.03 }}
-                      whileHover={isPlayable ? { y: -8, scale: 1.04 } : {}}
+                      whileHover={!isBlocked ? { scale: 2.1, y: -80, zIndex: 100 } : {}}
+                      style={{ position: "relative", transformOrigin: "center bottom" }}
                       onClick={() => !isBlocked && handleCardClick(card)}
                       className={cn(
                         "shrink-0 cursor-pointer transition-shadow rounded-xl",
