@@ -392,7 +392,11 @@ export function PlayerMat({
             const draggedCard = draggedCardId ? player.compostPile.find(c => c.id === draggedCardId) : null;
             const draggedCurrentFn = draggedCard ? getEffectiveFn(draggedCard) : null;
             const isCurrentSlot = draggedCard ? cat.match(draggedCurrentFn ?? "") : false;
-            const isValidDropTarget = draggedCard && !isCurrentSlot && !has;
+            // A slot is only valid if the card's own function(s) include this category
+            const draggedCardFns = draggedCard
+              ? new Set([(draggedCard as any).function as string, ...((draggedCard as any).alternateFunctions ?? [] as string[])])
+              : new Set<string>();
+            const isValidDropTarget = draggedCard && !isCurrentSlot && !has && draggedCardFns.has(cat.canonicalFn);
             const isDragOver = dragOverKey === cat.key && isValidDropTarget;
 
             const goNext = (e: React.MouseEvent) => {
@@ -414,7 +418,7 @@ export function PlayerMat({
                     : "border-dashed border-muted-foreground/20 bg-muted/10",
                   isDragOver && "ring-2 ring-primary ring-offset-1 border-primary/60 bg-primary/5 scale-105",
                   draggedCardId && isValidDropTarget && !isDragOver && "border-primary/30 bg-primary/5 opacity-80",
-                  draggedCardId && !isValidDropTarget && !isCurrentSlot && has && "opacity-40",
+                  draggedCardId && !isValidDropTarget && !isCurrentSlot && "opacity-30",
                 )}
                 onDragOver={(e) => {
                   if (isValidDropTarget) {

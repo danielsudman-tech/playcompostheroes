@@ -2086,9 +2086,11 @@ export function moveCardLayer(
   const occupiedFunctions = new Set(
     player.compostPile.filter((c) => c.id !== cardId).map((c) => getEffectiveFunction(c))
   );
-  // Only offer empty slots (not the card's current slot, not occupied by another card)
+  // The card's own valid functions (primary + alternates)
+  const cardFunctions = new Set([card.function, ...(card.alternateFunctions ?? [])]);
+  // Only offer empty slots that (a) the card belongs to, (b) aren't already occupied, (c) aren't the current slot
   const availableTargets = ALL_HERO_FUNCTIONS.filter(
-    (fn) => fn !== currentFn && !occupiedFunctions.has(fn)
+    (fn) => fn !== currentFn && !occupiedFunctions.has(fn) && cardFunctions.has(fn)
   );
 
   if (availableTargets.length === 0) {
