@@ -128,6 +128,28 @@ export function useGameSse(gameId: string | null, token: string | null, isOnline
   }, [gameId, token, isOnline, queryClient]);
 }
 
+// ── List open waiting rooms ───────────────────────────────────────────────────
+
+export interface RoomInfo {
+  gameId: string;
+  hostName: string;
+  playerCount: number;
+  maxPlayers: number;
+  hasPassword: boolean;
+}
+
+export function useRooms() {
+  return useQuery({
+    queryKey: ["rooms"],
+    queryFn: async (): Promise<RoomInfo[]> => {
+      const r = await fetch("/api/rooms");
+      if (!r.ok) throw new Error("Failed to load rooms");
+      return r.json();
+    },
+    refetchInterval: 5000,
+  });
+}
+
 // ── Create new game ───────────────────────────────────────────────────────────
 
 export function useCreateNewGame() {

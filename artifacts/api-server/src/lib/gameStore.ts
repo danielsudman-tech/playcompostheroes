@@ -46,6 +46,28 @@ export function createGameId(): string {
   return generateId();
 }
 
+export function getAllWaitingRooms(): Array<{
+  gameId: string;
+  hostName: string;
+  playerCount: number;
+  maxPlayers: number;
+  hasPassword: boolean;
+}> {
+  const rooms = [];
+  for (const [gameId, state] of games) {
+    if (state.phase === "waiting" && state.mode === "online") {
+      rooms.push({
+        gameId,
+        hostName: state.players[0]?.name ?? "Unknown",
+        playerCount: state.players.length,
+        maxPlayers: state.maxPlayers ?? 4,
+        hasPassword: gamePasswords.has(gameId),
+      });
+    }
+  }
+  return rooms;
+}
+
 export function claimSlot(
   gameId: string,
   existingToken?: string

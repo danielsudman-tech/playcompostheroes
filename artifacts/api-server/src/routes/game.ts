@@ -14,6 +14,7 @@ import {
 } from "../lib/gameEngine.js";
 import {
   addSseClient,
+  getAllWaitingRooms,
   broadcastToGame,
   checkGamePassword,
   claimSlot,
@@ -63,6 +64,11 @@ function broadcast(gameId: string, state: GameState) {
 }
 
 // ─── Routes ──────────────────────────────────────────────────────────────────
+
+// GET /api/rooms — list all open waiting rooms
+router.get("/rooms", (_req, res) => {
+  res.json(getAllWaitingRooms());
+});
 
 // POST /api/games — create a new game
 router.post("/games", (req, res) => {
