@@ -780,6 +780,68 @@ export default function Game() {
       {/* HAND OVERLAY — fixed at screen bottom, with view-mode toggle */}
       <div className="fixed bottom-0 inset-x-0 z-30">
 
+        {/* ── DESKTOP: flat side-by-side row (md+) ── */}
+        {(() => {
+          const hand = localPlayerFull.hand;
+          const isPlayPhase = isMyTurn && gameState.phase === "play" && !gameState.pendingDecision;
+          return (
+            <div className="hidden md:block bg-card/95 backdrop-blur-md border-t border-border">
+              <div className="flex items-center justify-between px-4 py-1.5">
+                <span className="text-xs font-medium text-muted-foreground">
+                  Hand&nbsp;
+                  <span className="font-mono text-[10px] text-foreground/40">
+                    {hand.length}/{localPlayerFull.maxHandSize}
+                  </span>
+                </span>
+                {isPlayPhase && (
+                  <span className="text-[11px] text-primary font-semibold">Click a card to play</span>
+                )}
+              </div>
+              <div className="flex gap-3 overflow-x-auto px-4 pb-3 justify-center flex-wrap">
+                {hand.length === 0 && (
+                  <div className="py-4 text-muted-foreground/40 text-sm italic">No cards in hand</div>
+                )}
+                {hand.map((card, idx) => {
+                  const heroBlocked = card.type === "hero" && gameState.heroPlayedThisTurn;
+                  const actionBlocked = card.type === "action" && gameState.heroPlayedThisTurn && gameState.actionPlayedThisTurn;
+                  const isPlayable = isPlayPhase && !heroBlocked && !actionBlocked;
+                  const isBlocked = heroBlocked || actionBlocked;
+                  const imageSrc = card.imageKey ? assetUrl(card.imageKey) : null;
+                  return (
+                    <motion.div
+                      key={`${card.id}-${idx}`}
+                      initial={{ opacity: 0, y: 8 }}
+                      animate={{ opacity: isBlocked ? 0.4 : 1, y: 0 }}
+                      transition={{ delay: idx * 0.03 }}
+                      whileHover={isPlayable ? { y: -8, scale: 1.04 } : {}}
+                      onClick={() => !isBlocked && handleCardClick(card)}
+                      className={cn(
+                        "shrink-0 cursor-pointer transition-shadow rounded-xl",
+                        isPlayable && "ring-2 ring-primary/60 shadow-md shadow-primary/20 hover:shadow-lg hover:shadow-primary/30",
+                        isBlocked && "cursor-not-allowed",
+                      )}
+                    >
+                      {imageSrc ? (
+                        <img
+                          src={imageSrc}
+                          alt={card.name}
+                          className="w-24 h-36 object-cover rounded-xl"
+                          draggable={false}
+                        />
+                      ) : (
+                        <GameCard card={card} size="sm" hoverable={false} />
+                      )}
+                    </motion.div>
+                  );
+                })}
+              </div>
+            </div>
+          );
+        })()}
+
+        {/* ── MOBILE: toggle + views (hidden on md+) ── */}
+        <div className="md:hidden">
+
         {/* Toggle bar — always visible */}
         <div className="flex items-center justify-between px-3 py-1.5 bg-card/95 backdrop-blur-md border-t border-border">
           <span className="text-xs font-medium text-muted-foreground">
@@ -1091,6 +1153,7 @@ export default function Game() {
             )}
           </div>
         )}
+        </div>{/* end md:hidden mobile section */}
       </div>
 
 
