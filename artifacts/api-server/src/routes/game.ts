@@ -1,9 +1,12 @@
 import { Router, type IRouter } from "express";
 import {
   activateOngoing,
+  addPlayerToRoom,
   createGameState,
+  createWaitingRoom,
   drawCardAction,
   endTurn,
+  launchGame,
   moveCardLayer,
   playCard,
   resolveDecision,
@@ -63,45 +66,56 @@ function broadcast(gameId: string, state: GameState) {
 
 // POST /api/games — create a new game
 router.post("/games", (req, res) => {
-  const { playerNames, mode, password } = req.body as {
-    playerNames: string[];
+  const { playerNames, mode, password, hostName, maxPlayers } = req.body as {
+    playerNames?: string[];
     mode: "facilitator" | "standalone" | "online";
     password?: string;
+    hostName?: string;     // online waiting-room mode
+    maxPlayers?: number;   // online waiting-room mode
   };
 
-  if (
-    !Array.isArray(playerNames) ||
-    playerNames.length < 2 ||
-    playerNames.length > 4
-  ) {
-    res.status(400).json({ error: "Need 2-4 player names" });
+  if (mode !== "facilitator" && mode !== "standalone" && mode !== "online") {
+    res.status(400).json({ error: "mode must be facilitator, standalone, or online" });
     return;
   }
 
-  if (mode !== "facilitator" && mode !== "standalone" && mode !== "online") {
-    res
-      .status(400)
-      .json({ error: "mode must be facilitator, standalone, or online" });
+  // Online waiting-room: just the host name + max players
+  if (mode === "online") {
+    const name = (hostName ?? "").trim();
+    if (!name) {
+      res.status(400).json({ error: "hostName is required for online games" });
+      return;
+    }
+    const max = Math.min(4, Math.max(2, Number(maxPlayers) || 4));
+
+    const gameId = createGameId();
+    const state = createWaitingRoom(gameId, name, max, "online");
+    storeGame(state);
+
+    if (password && password.trim()) {
+      setGamePassword(gameId, password.trim());
+    }
+
+    // Auto-claim slot 0 (the host's slot)
+    const claimed = claimSlot(gameId);
+    const serialized = serializeState(state, claimed?.playerIndex);
+    res.status(201).json({
+      ...serialized,
+      hasPassword: gameHasPassword(gameId),
+      creatorToken: claimed?.token ?? null,
+    });
+    return;
+  }
+
+  // Pass & Play / Facilitator: classic flow with pre-filled player names
+  if (!Array.isArray(playerNames) || playerNames.length < 2 || playerNames.length > 4) {
+    res.status(400).json({ error: "Need 2-4 player names" });
     return;
   }
 
   const gameId = createGameId();
   const state = createGameState(gameId, playerNames, mode);
   storeGame(state);
-
-  if (password && password.trim()) {
-    setGamePassword(gameId, password.trim());
-  }
-
-  // In online mode, auto-claim slot 0 for the creator and return the token
-  if (mode === "online") {
-    const claimed = claimSlot(gameId);
-    const serialized = serializeState(state, claimed?.playerIndex);
-    res
-      .status(201)
-      .json({ ...serialized, creatorToken: claimed?.token ?? null });
-    return;
-  }
 
   res.status(201).json(serializeState(state));
 });
@@ -159,6 +173,95 @@ router.post("/games/:gameId/claim", (req, res) => {
     playerId: player.id,
     playerName: player.name,
   });
+});
+
+// POST /api/games/:gameId/join — join a waiting-room game with a player name
+router.post("/games/:gameId/join", (req, res) => {
+  const { gameId } = req.params as { gameId: string };
+  const { name, password } = req.body as { name?: string; password?: string };
+
+  const state = getGame(gameId);
+  if (!state) {
+    res.status(404).json({ error: "Game not found" });
+    return;
+  }
+  if (state.phase !== "waiting") {
+    res.status(409).json({ error: "Game already started" });
+    return;
+  }
+
+  // Password check for new joiners
+  if (gameHasPassword(gameId)) {
+    if (!password) {
+      res.status(403).json({ error: "This game is password protected", requiresPassword: true });
+      return;
+    }
+    if (!checkGamePassword(gameId, password)) {
+      res.status(403).json({ error: "Incorrect password", requiresPassword: true });
+      return;
+    }
+  }
+
+  const trimmedName = (name ?? "").trim();
+  if (!trimmedName) {
+    res.status(400).json({ error: "Name is required" });
+    return;
+  }
+
+  const result = addPlayerToRoom(state, trimmedName);
+  if ("error" in result) {
+    res.status(409).json({ error: result.error });
+    return;
+  }
+
+  storeGame(result.state);
+
+  // Claim a slot for the new player
+  const claimed = claimSlot(gameId);
+  if (!claimed) {
+    res.status(409).json({ error: "Failed to assign player slot" });
+    return;
+  }
+
+  broadcastToGame(gameId, result.state, serializeState);
+
+  const player = result.state.players[claimed.playerIndex];
+  res.status(201).json({
+    token: claimed.token,
+    playerIndex: claimed.playerIndex,
+    playerId: player.id,
+    playerName: player.name,
+  });
+});
+
+// POST /api/games/:gameId/start — host launches a waiting-room game
+router.post("/games/:gameId/start", (req, res) => {
+  const { gameId } = req.params as { gameId: string };
+  const { token } = req.body as { token?: string };
+
+  const state = getGame(gameId);
+  if (!state) {
+    res.status(404).json({ error: "Game not found" });
+    return;
+  }
+
+  // Only the host (player 0) can start
+  const viewerIndex = token ? (getPlayerIndexForToken(gameId, token) ?? undefined) : undefined;
+  if (viewerIndex !== 0) {
+    res.status(403).json({ error: "Only the host can start the game" });
+    return;
+  }
+
+  const launched = launchGame(state);
+  if (launched.error) {
+    res.status(400).json({ error: launched.error });
+    return;
+  }
+
+  storeGame(launched.state);
+  broadcastToGame(gameId, launched.state, serializeState);
+
+  res.json(serializeState(launched.state, viewerIndex));
 });
 
 // GET /api/games/:gameId/events — SSE real-time stream

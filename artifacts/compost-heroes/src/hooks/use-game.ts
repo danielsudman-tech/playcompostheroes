@@ -133,7 +133,13 @@ export function useGameSse(gameId: string | null, token: string | null, isOnline
 export function useCreateNewGame() {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: async (data: { playerNames: string[]; mode: "facilitator" | "standalone" | "online"; password?: string }) => {
+    mutationFn: async (data: {
+      playerNames?: string[];
+      mode: "facilitator" | "standalone" | "online";
+      password?: string;
+      hostName?: string;
+      maxPlayers?: number;
+    }) => {
       const r = await fetch("/api/games", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -192,5 +198,52 @@ export function useGameAction(gameId: string, token?: string | null, callbacks?:
         : "An unexpected error occurred";
       callbacks?.onError?.(msg);
     }
+  });
+}
+
+// ── Join a waiting-room game ──────────────────────────────────────────────────
+
+export function useJoinRoom(gameId: string | null) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async (data: { name: string; password?: string }) => {
+      const r = await fetch(`/api/games/${gameId}/join`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(data),
+      });
+      if (!r.ok) {
+        const err = await r.json();
+        throw new Error(err.error ?? "Failed to join");
+      }
+      return r.json() as Promise<{ token: string; playerIndex: number; playerId: string; playerName: string }>;
+    },
+    onSuccess: (data) => {
+      if (gameId) storeToken(gameId, data.token);
+      queryClient.invalidateQueries({ queryKey: getGetGameQueryKey(gameId) });
+    },
+  });
+}
+
+// ── Start a waiting-room game (host only) ─────────────────────────────────────
+
+export function useStartGame(gameId: string | null, token?: string | null) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async () => {
+      const r = await fetch(`/api/games/${gameId}/start`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ token }),
+      });
+      if (!r.ok) {
+        const err = await r.json();
+        throw new Error(err.error ?? "Failed to start game");
+      }
+      return r.json();
+    },
+    onSuccess: (data) => {
+      queryClient.setQueryData(getGetGameQueryKey(gameId), data);
+    },
   });
 }

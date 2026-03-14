@@ -2,7 +2,8 @@ import { useState, useEffect, useRef, useCallback } from "react";
 import { useParams, useLocation } from "wouter";
 import { motion, AnimatePresence } from "framer-motion";
 import confetti from "canvas-confetti";
-import { useGameState, useGameAction, useClaimSlot, useGameSse, getStoredToken } from "@/hooks/use-game";
+import { useGameState, useGameAction, useClaimSlot, useGameSse, useJoinRoom, getStoredToken } from "@/hooks/use-game";
+import { WaitingRoom } from "@/components/WaitingRoom";
 import { PlayerMat } from "@/components/PlayerMat";
 import { GameCard } from "@/components/GameCard";
 import { DecisionModal } from "@/components/DecisionModal";
@@ -25,7 +26,8 @@ import {
   Wifi,
   ChevronLeft,
   ChevronRight,
-  Lock
+  Lock,
+  Sprout
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -41,13 +43,23 @@ export default function Game() {
   // 2. Fetch game state (pass stored token so online games are filtered from first load)
   const { data: gameState, isLoading, error } = useGameState(gameId || null, storedToken);
   const isOnline = gameState?.mode === "online";
+  const isWaiting = gameState?.phase === "waiting";
 
-  // 3. Claim a slot once we know the mode is online
-  const { claim, loading: claimLoading, requiresPassword, doClaim, error: claimError } = useClaimSlot(gameId || null, isOnline);
+  // 3. Claim a slot once we know the mode is online.
+  //    For waiting-room games with no stored token, skip auto-claim — the join form handles it.
+  const { claim, loading: claimLoading, requiresPassword, doClaim, error: claimError } = useClaimSlot(
+    gameId || null,
+    isOnline && (!isWaiting || !!storedToken)
+  );
   const localToken = claim?.token ?? storedToken;
 
-  // 4. Subscribe to SSE for real-time updates (online mode only)
-  useGameSse(gameId || null, localToken, isOnline);
+  // 4. Subscribe to SSE for real-time updates (online mode only; need a token)
+  useGameSse(gameId || null, localToken, isOnline && !!localToken);
+
+  // 5. Join-form state (for waiting-room newcomers)
+  const joinRoom = useJoinRoom(gameId || null);
+  const [joinName, setJoinName] = useState("");
+  const [joinRoomPassword, setJoinRoomPassword] = useState("");
 
   const actionMutation = useGameAction(gameId || "", isOnline ? localToken : null, {
     onError: (msg) => toast({ title: "Action failed", description: msg, variant: "destructive" }),
@@ -216,6 +228,86 @@ export default function Game() {
           {isOnline ? "Joining game..." : "Loading Game State..."}
         </h2>
       </div>
+    );
+  }
+
+  // ── Waiting-room: join form (for newcomers without a token) ──────────────────
+  if (isWaiting && isOnline && !localToken) {
+    const hasPassword = (gameState as any)?.hasPassword as boolean | undefined;
+    return (
+      <div className="min-h-screen bg-background flex flex-col items-center justify-center p-4">
+        <div className="w-full max-w-sm">
+          <div className="text-center mb-8">
+            <div className="inline-flex items-center justify-center w-20 h-20 bg-primary/10 rounded-full mb-4 ring-8 ring-primary/5">
+              <Sprout className="w-9 h-9 text-primary" />
+            </div>
+            <h1 className="text-3xl font-display font-bold text-foreground mb-2">Join Room</h1>
+            <p className="text-muted-foreground text-sm">Enter your name to join this game.</p>
+          </div>
+
+          <form
+            className="bg-card/80 backdrop-blur-xl rounded-3xl shadow-xl border border-border p-6 space-y-4"
+            onSubmit={(e) => {
+              e.preventDefault();
+              const name = joinName.trim();
+              if (!name) return;
+              joinRoom.mutate({ name, password: joinRoomPassword.trim() || undefined });
+            }}
+          >
+            <input
+              autoFocus
+              placeholder="Your name"
+              value={joinName}
+              onChange={(e) => setJoinName(e.target.value)}
+              className="w-full h-12 px-4 rounded-xl border-2 border-border bg-background/50 text-base font-medium focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary"
+            />
+            {hasPassword && (
+              <div className="relative">
+                <Lock className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground/60 pointer-events-none" />
+                <input
+                  type="password"
+                  placeholder="Room password"
+                  value={joinRoomPassword}
+                  onChange={(e) => setJoinRoomPassword(e.target.value)}
+                  className="w-full h-12 pl-9 pr-4 rounded-xl border-2 border-border bg-background/50 text-sm focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary"
+                />
+              </div>
+            )}
+            {joinRoom.error && (
+              <p className="text-xs text-destructive text-center font-medium">{joinRoom.error.message}</p>
+            )}
+            <button
+              type="submit"
+              disabled={joinRoom.isPending || !joinName.trim()}
+              className="w-full h-12 rounded-xl bg-primary text-primary-foreground font-bold text-base hover:bg-primary/90 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              {joinRoom.isPending ? <Loader2 className="w-5 h-5 animate-spin mx-auto" /> : "Join Game"}
+            </button>
+            <button
+              type="button"
+              className="w-full text-sm text-muted-foreground hover:text-foreground transition-colors"
+              onClick={() => setLocation("/")}
+            >
+              Back to Lobby
+            </button>
+          </form>
+        </div>
+      </div>
+    );
+  }
+
+  // ── Waiting-room: lobby view (for joined players) ─────────────────────────────
+  if (isWaiting && isOnline && localToken) {
+    const playerIndex = claim?.playerIndex ?? null;
+    return (
+      <WaitingRoom
+        gameId={gameId!}
+        players={gameState!.players}
+        maxPlayers={(gameState as any)?.maxPlayers ?? 4}
+        playerIndex={playerIndex}
+        token={localToken}
+        hasPassword={(gameState as any)?.hasPassword}
+      />
     );
   }
 

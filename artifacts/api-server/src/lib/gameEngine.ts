@@ -53,6 +53,7 @@ export interface PendingDecision {
 }
 
 export type GamePhase =
+  | "waiting"
   | "setup"
   | "draw"
   | "play"
@@ -76,6 +77,7 @@ export interface GameState {
   extraTurn: boolean;
   heroPlayedThisTurn: boolean;
   ongoingActionCard: Card | null;
+  maxPlayers?: number;
 }
 
 type integer = number;
@@ -1898,5 +1900,95 @@ export function moveCardLayer(
       meta: { moveCardId: cardId },
     },
   };
+  return { state: s };
+}
+
+// ─────────────────────────────────────────────
+// WAITING ROOM
+// ─────────────────────────────────────────────
+
+export function createWaitingRoom(
+  gameId: string,
+  hostName: string,
+  maxPlayers: number,
+  mode: "online"
+): GameState {
+  const host: PlayerState = {
+    id: "player_0",
+    name: hostName,
+    hand: [],
+    compostPile: [],
+    skipsNextTurn: false,
+    maxHandSize: 5,
+    drawsExtraCard: false,
+  };
+  return {
+    gameId,
+    mode,
+    phase: "waiting",
+    currentPlayerIndex: 0,
+    players: [host],
+    deck: [],
+    discardPile: [],
+    activeModifiers: [],
+    pendingDecision: null,
+    log: [],
+    winner: null,
+    turnNumber: 1,
+    extraTurn: false,
+    heroPlayedThisTurn: false,
+    ongoingActionCard: null,
+    maxPlayers,
+  };
+}
+
+export function addPlayerToRoom(
+  state: GameState,
+  playerName: string
+): { state: GameState; playerIndex: number } | { state: GameState; error: string } {
+  if (state.phase !== "waiting") return { state, error: "Game already started" };
+  if (state.players.length >= (state.maxPlayers ?? 4))
+    return { state, error: "Room is full" };
+
+  const playerIndex = state.players.length;
+  const newPlayer: PlayerState = {
+    id: `player_${playerIndex}`,
+    name: playerName,
+    hand: [],
+    compostPile: [],
+    skipsNextTurn: false,
+    maxHandSize: 5,
+    drawsExtraCard: false,
+  };
+  return {
+    state: { ...state, players: [...state.players, newPlayer] },
+    playerIndex,
+  };
+}
+
+export function launchGame(
+  state: GameState
+): { state: GameState; error?: string } {
+  if (state.phase !== "waiting") return { state, error: "Game is not in waiting phase" };
+  if (state.players.length < 2) return { state, error: "Need at least 2 players to start" };
+
+  const deck = shuffle(buildDeck(getAllOverrides(), getAllCopies()));
+  let s: GameState = {
+    ...state,
+    phase: "draw",
+    deck,
+    discardPile: [],
+    turnNumber: 1,
+    extraTurn: false,
+    heroPlayedThisTurn: false,
+  };
+
+  for (const player of s.players) {
+    s = drawCard(s, getPlayer(s, player.id)!, 3);
+  }
+
+  addLog(s, `Game started! ${s.players.map((p) => p.name).join(", ")} are playing.`);
+  addLog(s, `--- ${s.players[0].name}'s turn begins ---`);
+
   return { state: s };
 }
