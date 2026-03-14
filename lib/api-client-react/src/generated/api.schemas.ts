@@ -121,6 +121,7 @@ export interface GameState {
   winner: string | null;
   turnNumber: number;
   heroPlayedThisTurn: boolean;
+  actionPlayedThisTurn: boolean;
   ongoingActionCard: Card | null;
 }
 

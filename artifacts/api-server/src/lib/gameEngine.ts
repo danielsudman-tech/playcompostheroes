@@ -76,6 +76,7 @@ export interface GameState {
   turnNumber: integer;
   extraTurn: boolean;
   heroPlayedThisTurn: boolean;
+  actionPlayedThisTurn: boolean;
   ongoingActionCard: Card | null;
   maxPlayers?: number;
 }
@@ -1004,7 +1005,12 @@ export function playCard(
       s = resolveHeroInstantEffect(s, getPlayer(s, player.id)!, cardInHand);
     }
   } else {
-    // Action card
+    // Action card — if a hero was played this turn, limit to 1 action card
+    if (state.heroPlayedThisTurn && state.actionPlayedThisTurn) {
+      // Undo the hand removal before returning the error
+      s = updatePlayer(state, player);
+      return { state: s, error: "After playing a hero card you may only play one action card per turn." };
+    }
     if (cardInHand.effectType === "ongoing") {
       // Move old ongoing action card to discard if one was active
       const prevOngoing = s.ongoingActionCard;
@@ -1027,6 +1033,8 @@ export function playCard(
       };
       s = resolveActionInstantEffect(s, getPlayer(s, player.id)!, cardInHand);
     }
+    // Track that an action card was played this turn
+    s = { ...s, actionPlayedThisTurn: true };
   }
 
   // Check Hot Head hero: each time a Carbon card is discarded, draw 1
@@ -1070,7 +1078,7 @@ export function resolveDecision(
       // Special case: Rot Roulette play — play card as if playing from hand
       // Bypass heroPlayedThisTurn restriction since Rot Roulette forces this play
       if (decision.meta?.rotRoulettePlay) {
-        s = { ...s, pendingDecision: null, heroPlayedThisTurn: false };
+        s = { ...s, pendingDecision: null, heroPlayedThisTurn: false, actionPlayedThisTurn: false };
         const playResult = playCard(s, playerId, chosenCardId);
         return playResult;
       }
@@ -1695,7 +1703,7 @@ function advanceTurnState(s: GameState): GameState {
   if (s.extraTurn) {
     const cp = s.players[s.currentPlayerIndex];
     addLog(s, `${cp.name} takes another turn!`);
-    return { ...s, extraTurn: false, phase: "draw", heroPlayedThisTurn: false };
+    return { ...s, extraTurn: false, phase: "draw", heroPlayedThisTurn: false, actionPlayedThisTurn: false };
   }
 
   let nextIdx = nextPlayerIndex(s);
@@ -1716,6 +1724,7 @@ function advanceTurnState(s: GameState): GameState {
     phase: "draw",
     turnNumber: s.turnNumber + 1,
     heroPlayedThisTurn: false,
+    actionPlayedThisTurn: false,
   };
   addLog(s, `--- ${s.players[nextIdx].name}'s turn begins ---`);
   return s;
@@ -1789,6 +1798,7 @@ export function createGameState(
     turnNumber: 1,
     extraTurn: false,
     heroPlayedThisTurn: false,
+    actionPlayedThisTurn: false,
     ongoingActionCard: null,
   };
 
@@ -1937,6 +1947,7 @@ export function createWaitingRoom(
     turnNumber: 1,
     extraTurn: false,
     heroPlayedThisTurn: false,
+    actionPlayedThisTurn: false,
     ongoingActionCard: null,
     maxPlayers,
   };
@@ -1981,6 +1992,7 @@ export function launchGame(
     turnNumber: 1,
     extraTurn: false,
     heroPlayedThisTurn: false,
+    actionPlayedThisTurn: false,
   };
 
   for (const player of s.players) {

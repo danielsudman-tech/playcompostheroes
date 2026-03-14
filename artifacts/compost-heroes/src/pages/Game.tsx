@@ -422,9 +422,14 @@ export default function Game() {
 
   const handleCardClick = (card: Card) => {
     if (!isMyTurn || gameState?.phase !== "play" || gameState?.pendingDecision) return;
-    // Block second hero immediately with a toast
+    // Block second hero
     if (card.type === "hero" && gameState?.heroPlayedThisTurn) {
       toast({ title: "One hero per turn", description: "You've already played a hero card this turn.", variant: "destructive" });
+      return;
+    }
+    // Block second action card when a hero was played this turn
+    if (card.type === "action" && gameState?.heroPlayedThisTurn && gameState?.actionPlayedThisTurn) {
+      toast({ title: "One action after a hero", description: "After playing a hero card you may only play one action card.", variant: "destructive" });
       return;
     }
     setConfirmCard(card);
@@ -799,14 +804,15 @@ export default function Game() {
                 const x = offset * spread;
                 const isPlayPhase = isMyTurn && gameState.phase === "play" && !gameState.pendingDecision;
                 const heroBlocked = card.type === "hero" && gameState.heroPlayedThisTurn;
-                const isPlayable = isPlayPhase && !heroBlocked;
+                const actionBlocked = card.type === "action" && gameState.heroPlayedThisTurn && gameState.actionPlayedThisTurn;
+                const isPlayable = isPlayPhase && !heroBlocked && !actionBlocked;
                 const imageSrc = card.imageKey ? `${import.meta.env.BASE_URL}assets/${card.imageKey}` : null;
                 return (
                   <motion.div
                     key={`${card.id}-${idx}`}
                     className="absolute bottom-0 origin-bottom pointer-events-auto"
                     initial={{ y: 200, opacity: 0 }}
-                    animate={{ x, y: arcY, rotate, opacity: heroBlocked ? 0.45 : 1, zIndex: idx + 1 }}
+                    animate={{ x, y: arcY, rotate, opacity: (heroBlocked || actionBlocked) ? 0.45 : 1, zIndex: idx + 1 }}
                     whileHover={isPlayPhase ? { y: -50, scale: 1.15, rotate: 0, zIndex: 60, transition: { duration: 0.15 } } : {}}
                     style={{ transformOrigin: "bottom center" }}
                   >
@@ -817,7 +823,7 @@ export default function Game() {
                           className={cn(
                             "w-28 h-40 rounded-xl overflow-hidden shadow-xl border-2 border-white/30",
                             isPlayable && "cursor-pointer hover:ring-2 hover:ring-primary ring-offset-1",
-                            heroBlocked && "cursor-not-allowed"
+                            (heroBlocked || actionBlocked) && "cursor-not-allowed"
                           )}
                         >
                           <img src={imageSrc} alt={card.name} className="w-full h-full object-cover" />
@@ -830,7 +836,7 @@ export default function Game() {
                           onClick={() => handleCardClick(card)}
                           className={cn(
                             isPlayable && "cursor-pointer ring-2 ring-transparent hover:ring-primary ring-offset-1",
-                            heroBlocked && "cursor-not-allowed"
+                            (heroBlocked || actionBlocked) && "cursor-not-allowed"
                           )}
                         />
                       )}
@@ -861,7 +867,8 @@ export default function Game() {
               const card = localPlayerFull.hand[handFocusIdx] ?? localPlayerFull.hand[0];
               const isPlayPhase = isMyTurn && gameState.phase === "play" && !gameState.pendingDecision;
               const heroBlocked = card.type === "hero" && gameState.heroPlayedThisTurn;
-              const isPlayable = isPlayPhase && !heroBlocked;
+              const actionBlocked = card.type === "action" && gameState.heroPlayedThisTurn && gameState.actionPlayedThisTurn;
+              const isPlayable = isPlayPhase && !heroBlocked && !actionBlocked;
               const imageSrc = card.imageKey ? `${import.meta.env.BASE_URL}assets/${card.imageKey}` : null;
               return (
                 <div className="flex items-center gap-2 px-3 py-2">
@@ -881,9 +888,9 @@ export default function Game() {
                       className={cn(
                         "shrink-0 w-16 h-24 rounded-xl overflow-hidden shadow-lg border-2 cursor-pointer transition-all",
                         isPlayable ? "border-primary shadow-primary/20" : "border-border/60",
-                        heroBlocked && "opacity-50 cursor-not-allowed"
+                        (heroBlocked || actionBlocked) && "opacity-50 cursor-not-allowed"
                       )}
-                      onClick={!heroBlocked ? () => handleCardClick(card) : undefined}
+                      onClick={(!heroBlocked && !actionBlocked) ? () => handleCardClick(card) : undefined}
                     >
                       {imageSrc
                         ? <img src={imageSrc} alt={card.name} className="w-full h-full object-cover" />
@@ -897,6 +904,7 @@ export default function Game() {
                       <div className="flex items-center gap-2 mt-1.5">
                         <span className="text-[9px] font-bold uppercase tracking-wider text-muted-foreground/50 bg-muted rounded-full px-2 py-0.5">{card.function || card.type}</span>
                         {heroBlocked && <span className="text-[10px] text-destructive font-bold">1 hero/turn</span>}
+                        {actionBlocked && <span className="text-[10px] text-destructive font-bold">1 action after hero</span>}
                       </div>
                     </div>
 
@@ -945,13 +953,14 @@ export default function Game() {
                 {localPlayerFull.hand.map((card, idx) => {
                   const isPlayPhase = isMyTurn && gameState.phase === "play" && !gameState.pendingDecision;
                   const heroBlocked = card.type === "hero" && gameState.heroPlayedThisTurn;
-                  const isPlayable = isPlayPhase && !heroBlocked;
+                  const actionBlocked = card.type === "action" && gameState.heroPlayedThisTurn && gameState.actionPlayedThisTurn;
+                  const isPlayable = isPlayPhase && !heroBlocked && !actionBlocked;
                   const imageSrc = card.imageKey ? `${import.meta.env.BASE_URL}assets/${card.imageKey}` : null;
                   return (
                     <motion.button
                       key={`${card.id}-${idx}`}
                       initial={{ opacity: 0, y: 12 }}
-                      animate={{ opacity: heroBlocked ? 0.45 : 1, y: 0 }}
+                      animate={{ opacity: (heroBlocked || actionBlocked) ? 0.45 : 1, y: 0 }}
                       transition={{ delay: idx * 0.04 }}
                       onClick={() => handleCardClick(card)}
                       className={cn(
@@ -959,7 +968,7 @@ export default function Game() {
                         isPlayable
                           ? "border-primary/60 bg-primary/5 hover:bg-primary/10 hover:border-primary shadow-sm"
                           : "border-border hover:border-border/80 bg-background/30",
-                        heroBlocked && "cursor-not-allowed"
+                        (heroBlocked || actionBlocked) && "cursor-not-allowed"
                       )}
                     >
                       <div className="w-12 h-16 rounded-lg overflow-hidden shadow-sm border border-border/40 shrink-0">
@@ -972,7 +981,7 @@ export default function Game() {
                       {isPlayable && (
                         <span className="text-[7px] bg-primary text-primary-foreground rounded-full px-1.5 py-0.5 font-bold leading-none">Play</span>
                       )}
-                      {heroBlocked && (
+                      {(heroBlocked || actionBlocked) && (
                         <span className="text-[7px] text-destructive font-bold leading-none">Blocked</span>
                       )}
                     </motion.button>
