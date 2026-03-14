@@ -549,30 +549,31 @@ function resolveHeroInstantEffect(
 
     // The Legion of Life: discard the active Ongoing Action Card
     case "legion_of_life": {
+      // Prioritize Plastic Contamination; otherwise target the current ongoingActionCard
+      const plasticMod = s.activeModifiers.find((m) => m.cardId === "plastic_contamination");
       const ongoingActions = s.activeModifiers.filter(
         (m) => getAllCards().find((c) => c.id === m.cardId)?.type === "action"
       );
-      if (ongoingActions.length === 0) {
+      const toRemoveMod = plasticMod ?? ongoingActions[0];
+      if (!toRemoveMod) {
         addLog(s, `No active Ongoing Action Card to discard (Legion of Life).`);
         return s;
       }
-      // Remove the first ongoing action card
-      const toRemove = ongoingActions[0];
       // Find the card and move to discard
-      const removedCard = getAllCards().find((c) => c.id === toRemove.cardId);
+      const removedCard = getAllCards().find((c) => c.id === toRemoveMod.cardId);
       if (removedCard) {
         s = {
           ...s,
           discardPile: [removedCard, ...s.discardPile],
           activeModifiers: s.activeModifiers.filter(
-            (m) => m.cardId !== toRemove.cardId
+            (m) => m.cardId !== toRemoveMod.cardId
           ),
           ongoingActionCard:
-            s.ongoingActionCard?.id === toRemove.cardId
+            s.ongoingActionCard?.id === toRemoveMod.cardId
               ? null
               : s.ongoingActionCard,
         };
-        addLog(s, `${p.name} used Legion of Life to remove ${toRemove.cardName}.`);
+        addLog(s, `${p.name} used Legion of Life to remove ${removedCard.name}.`);
       }
       return s;
     }
@@ -936,7 +937,8 @@ export function playCard(
   }
 
   // Check Plastic Contamination for hero cards
-  if (cardInHand.type === "hero") {
+  // Exception: Legion of Life can always be played — its effect removes the ongoing action card
+  if (cardInHand.type === "hero" && cardInHand.id !== "legion_of_life") {
     const plasticMod = state.activeModifiers.find(
       (m) => m.cardId === "plastic_contamination"
     );
