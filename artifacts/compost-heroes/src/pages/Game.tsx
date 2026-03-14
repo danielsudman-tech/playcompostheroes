@@ -28,6 +28,7 @@ import {
   ChevronLeft,
   ChevronRight,
   Lock,
+  MoveRight,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -89,7 +90,6 @@ export default function Game() {
   const [viewingDiscard, setViewingDiscard] = useState(false);
 
   // Mobile bottom panel: hand or pile view
-  const [mobileView, setMobileView] = useState<"hand" | "pile">("hand");
 
   // Ref for the scrollable hand container
   const handScrollRef = useRef<HTMLDivElement>(null);
@@ -413,9 +413,13 @@ export default function Game() {
 
   const handleCardClick = (card: Card) => {
     if (!isMyTurn || gameState?.phase !== "play" || gameState?.pendingDecision) return;
-    // Block second hero
-    if (card.type === "hero" && gameState?.heroPlayedThisTurn) {
-      toast({ title: "One hero per turn", description: "You've already played a hero card this turn.", variant: "destructive" });
+    // Block hero if already played one, OR if an action was played first (order rule)
+    if (card.type === "hero" && (gameState?.heroPlayedThisTurn || gameState?.actionPlayedThisTurn)) {
+      if (gameState?.heroPlayedThisTurn) {
+        toast({ title: "One hero per turn", description: "You've already played a hero card this turn.", variant: "destructive" });
+      } else {
+        toast({ title: "Play order", description: "You already played an action card — heroes must come before actions.", variant: "destructive" });
+      }
       return;
     }
     // Block second action card when a hero was played this turn
@@ -490,8 +494,8 @@ export default function Game() {
         ))}
       </div>
 
-      {/* MIDDLE ROW: Board — matches physical mat layout */}
-      <div className="relative z-10 flex-1 flex flex-row gap-4 px-4 py-2 pb-56 md:pb-2 items-stretch justify-center">
+      {/* MIDDLE ROW: Board — matches physical mat layout. pb-96 on mobile keeps content above the stacked hand+pile overlay */}
+      <div className="relative z-10 flex-1 flex flex-row gap-4 px-4 py-2 pb-96 md:pb-2 items-stretch justify-center">
 
         {/* Left: Activity Log */}
         <div className="hidden lg:flex flex-col w-56 bg-card/80 backdrop-blur-md border border-border shadow-inner rounded-xl overflow-hidden self-center" style={{ maxHeight: 320 }}>
@@ -771,7 +775,7 @@ export default function Game() {
                   <div className="py-4 text-muted-foreground/40 text-sm italic">No cards in hand</div>
                 )}
                 {hand.map((card, idx) => {
-                  const heroBlocked = card.type === "hero" && gameState.heroPlayedThisTurn;
+                  const heroBlocked = card.type === "hero" && (gameState.heroPlayedThisTurn || gameState.actionPlayedThisTurn);
                   const actionBlocked = card.type === "action" && gameState.heroPlayedThisTurn && gameState.actionPlayedThisTurn;
                   const isPlayable = isPlayPhase && !heroBlocked && !actionBlocked;
                   const isBlocked = heroBlocked || actionBlocked;
@@ -808,78 +812,111 @@ export default function Game() {
           );
         })()}
 
-        {/* ── MOBILE: Hand / Pile tabs (hidden on md+) ── */}
-        <div className="md:hidden pointer-events-auto">
+        {/* ── MOBILE: Pile + Hand stacked (hidden on md+) ── */}
+        {(() => {
+          const hand = localPlayerFull.hand;
+          const pile = localPlayerFull.compostPile;
+          const isPlayPhase = isMyTurn && gameState.phase === "play" && !gameState.pendingDecision;
+          const CARD_W = 128;
+          const scrollByCard = (dir: -1 | 1) => {
+            handScrollRef.current?.scrollBy({ left: dir * (CARD_W + 12), behavior: "smooth" });
+          };
+          const categories = [
+            { key: "moisture", label: "Moisture", borderClass: "border-blue-400", bgClass: "bg-blue-50 dark:bg-blue-950/30", headerClass: "bg-blue-100 text-blue-800", emptyDotClass: "bg-blue-200", match: (fn: string) => fn.toLowerCase().includes("moisture") },
+            { key: "carbon", label: "Carbon", borderClass: "border-amber-400", bgClass: "bg-amber-50 dark:bg-amber-950/30", headerClass: "bg-amber-100 text-amber-800", emptyDotClass: "bg-amber-200", match: (fn: string) => fn.toLowerCase().includes("carbon") },
+            { key: "decomposer", label: "Decomp.", borderClass: "border-orange-400", bgClass: "bg-orange-50 dark:bg-orange-950/30", headerClass: "bg-orange-100 text-orange-800", emptyDotClass: "bg-orange-200", match: (fn: string) => fn.toLowerCase().includes("decomp") || fn.toLowerCase().includes("fire") },
+            { key: "nitrogen", label: "Nitrogen", borderClass: "border-lime-400", bgClass: "bg-lime-50 dark:bg-lime-950/30", headerClass: "bg-lime-100 text-lime-800", emptyDotClass: "bg-lime-200", match: (fn: string) => fn.toLowerCase().includes("nitrogen") },
+            { key: "airflow", label: "Airflow", borderClass: "border-cyan-400", bgClass: "bg-cyan-50 dark:bg-cyan-950/30", headerClass: "bg-cyan-100 text-cyan-800", emptyDotClass: "bg-cyan-200", match: (fn: string) => fn.toLowerCase().includes("air") },
+          ];
+          const getEffFn = (c: Card) => (c as any).chosenFunction ?? c.function ?? "";
+          return (
+            <div className="md:hidden pointer-events-auto flex flex-col">
 
-          {/* Tab bar */}
-          <div className="flex bg-card/95 backdrop-blur-md border-t border-border">
-            <button
-              onClick={() => setMobileView("hand")}
-              className={cn(
-                "flex-1 py-2.5 text-sm font-bold border-b-2 transition-colors",
-                mobileView === "hand"
-                  ? "border-primary text-primary bg-primary/5"
-                  : "border-transparent text-muted-foreground"
-              )}
-            >
-              Hand · {localPlayerFull.hand.length}/{localPlayerFull.maxHandSize}
-            </button>
-            <button
-              onClick={() => setMobileView("pile")}
-              className={cn(
-                "flex-1 py-2.5 text-sm font-bold border-b-2 transition-colors",
-                mobileView === "pile"
-                  ? "border-primary text-primary bg-primary/5"
-                  : "border-transparent text-muted-foreground"
-              )}
-            >
-              My Pile · {localPlayerFull.compostPile.length}/5
-            </button>
-          </div>
+              {/* ── MY PILE ── */}
+              <div className="bg-card/95 backdrop-blur-md border-t border-border">
+                <div className="flex items-center justify-between px-3 py-1 border-b border-border/40">
+                  <span className="text-[11px] font-bold text-muted-foreground uppercase tracking-wide">My Compost Pile</span>
+                  <span className="text-[11px] font-bold text-primary">{pile.length}/5</span>
+                </div>
+                <div className="px-2 pt-1.5 pb-2 grid grid-cols-5 gap-1.5">
+                  {categories.map((cat) => {
+                    const cards = pile.filter((c) => cat.match(getEffFn(c)));
+                    const topCard = cards[cards.length - 1] ?? null;
+                    const has = topCard !== null;
+                    const imageSrc = topCard?.imageKey ? assetUrl(topCard.imageKey) : null;
+                    return (
+                      <div
+                        key={cat.key}
+                        className={cn(
+                          "rounded-lg border-2 flex flex-col overflow-hidden relative",
+                          has ? `${cat.borderClass} ${cat.bgClass}` : "border-dashed border-muted-foreground/20 bg-muted/10"
+                        )}
+                      >
+                        <div className={cn(
+                          "px-1 py-0.5 text-[8px] font-bold uppercase tracking-wide truncate border-b",
+                          has ? `${cat.headerClass} border-current/20` : "bg-transparent text-muted-foreground/30 border-transparent"
+                        )}>
+                          {cat.label}
+                        </div>
+                        <div className="flex-1 flex items-center justify-center" style={{ minHeight: 64 }}>
+                          {has && topCard ? (
+                            <div className="w-full h-full relative">
+                              {imageSrc
+                                ? <img src={imageSrc} alt={topCard.name} className="w-full h-full object-cover" />
+                                : <GameCard card={topCard} size="xs" hoverable={false} className="w-full h-full" />
+                              }
+                              {isMyTurn && localPlayerId && (
+                                <button
+                                  onClick={() => actionMutation.mutate({ type: "move_card_layer" as any, playerId: localPlayerId, cardId: topCard.id })}
+                                  className="absolute bottom-0.5 right-0.5 bg-primary/90 text-white rounded-full p-0.5 shadow-md hover:bg-primary transition-colors z-10"
+                                  title="Move to another layer"
+                                >
+                                  <MoveRight className="w-2 h-2" />
+                                </button>
+                              )}
+                            </div>
+                          ) : (
+                            <div className={cn("w-2 h-2 rounded-full", cat.emptyDotClass, "opacity-40")} />
+                          )}
+                        </div>
+                        {has && topCard && (
+                          <div className="px-0.5 py-0.5 text-[7px] font-semibold text-center leading-tight text-foreground/70 bg-background/30 truncate">
+                            {topCard.name}
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
 
-          {/* ── HAND VIEW: scrollable row with arrow buttons ── */}
-          {mobileView === "hand" && (() => {
-            const hand = localPlayerFull.hand;
-            const isPlayPhase = isMyTurn && gameState.phase === "play" && !gameState.pendingDecision;
-            const CARD_W = 128; // w-32 in px — gap-3 = 12px
-            const scrollByCard = (dir: -1 | 1) => {
-              handScrollRef.current?.scrollBy({ left: dir * (CARD_W + 12), behavior: "smooth" });
-            };
-            return (
-              <div className="bg-card/95 backdrop-blur-md">
-                {/* Action hint */}
-                {isMyTurn && (
-                  <div className="flex justify-center pt-1.5 pb-0.5">
-                    {gameState.phase === "draw" && (
-                      <span className="text-[11px] text-muted-foreground">Draw a card first</span>
-                    )}
-                    {isPlayPhase && (
-                      <span className="text-[11px] text-primary font-semibold">Tap a card to play it</span>
-                    )}
-                  </div>
-                )}
-
-                {/* Scroll row */}
+              {/* ── HAND ── */}
+              <div className="bg-card/90 backdrop-blur-md border-t border-border/60">
+                <div className="flex items-center justify-between px-3 py-1 border-b border-border/40">
+                  <span className="text-[11px] font-bold text-muted-foreground uppercase tracking-wide">Hand · {hand.length}/{localPlayerFull.maxHandSize}</span>
+                  {isMyTurn && (
+                    <span className="text-[11px] font-semibold text-primary">
+                      {gameState.phase === "draw" ? "Draw a card first" : isPlayPhase ? "Tap to play" : ""}
+                    </span>
+                  )}
+                </div>
                 <div className="relative flex items-center gap-1 px-2 py-2">
-                  {/* Left arrow */}
                   <button
                     onClick={() => scrollByCard(-1)}
-                    className="shrink-0 w-8 h-8 rounded-full border border-border bg-background/80 flex items-center justify-center shadow-sm z-10"
+                    className="shrink-0 w-7 h-7 rounded-full border border-border bg-background/80 flex items-center justify-center shadow-sm z-10"
                   >
-                    <ChevronLeft className="w-4 h-4" />
+                    <ChevronLeft className="w-3.5 h-3.5" />
                   </button>
-
-                  {/* Cards */}
                   <div
                     ref={handScrollRef}
                     className="flex gap-3 overflow-x-auto flex-1 scroll-smooth"
                     style={{ scrollbarWidth: "none" }}
                   >
                     {hand.length === 0 && (
-                      <div className="flex-1 flex items-center justify-center py-6 text-muted-foreground/50 text-sm italic">No cards in hand</div>
+                      <div className="flex-1 flex items-center justify-center py-4 text-muted-foreground/50 text-sm italic">No cards in hand</div>
                     )}
                     {hand.map((card, idx) => {
-                      const heroBlocked = card.type === "hero" && gameState.heroPlayedThisTurn;
+                      const heroBlocked = card.type === "hero" && (gameState.heroPlayedThisTurn || gameState.actionPlayedThisTurn);
                       const actionBlocked = card.type === "action" && gameState.heroPlayedThisTurn && gameState.actionPlayedThisTurn;
                       const isBlocked = heroBlocked || actionBlocked;
                       const isPlayable = isPlayPhase && !isBlocked;
@@ -895,7 +932,7 @@ export default function Game() {
                           <div
                             onClick={() => !isBlocked && handleCardClick(card)}
                             className={cn(
-                              "w-32 h-48 rounded-xl overflow-hidden border-2 shadow-md transition-all",
+                              "w-28 h-44 rounded-xl overflow-hidden border-2 shadow-md transition-all",
                               isPlayable
                                 ? "border-primary/70 cursor-pointer active:scale-95 shadow-primary/20"
                                 : "border-border",
@@ -904,7 +941,7 @@ export default function Game() {
                           >
                             {imageSrc
                               ? <img src={imageSrc} alt={card.name} className="w-full h-full object-cover" />
-                              : <GameCard card={card} size="md" hoverable={false} className="!w-32 !h-48" />
+                              : <GameCard card={card} size="md" hoverable={false} className="!w-28 !h-44" />
                             }
                           </div>
                           {isPlayable && (
@@ -917,83 +954,25 @@ export default function Game() {
                           )}
                           {isBlocked && (
                             <span className="text-[9px] text-destructive font-bold">
-                              {heroBlocked ? "1 hero/turn" : "1 action/turn"}
+                              {heroBlocked ? "hero first" : "1 action/turn"}
                             </span>
                           )}
                         </motion.div>
                       );
                     })}
                   </div>
-
-                  {/* Right arrow */}
                   <button
                     onClick={() => scrollByCard(1)}
-                    className="shrink-0 w-8 h-8 rounded-full border border-border bg-background/80 flex items-center justify-center shadow-sm z-10"
+                    className="shrink-0 w-7 h-7 rounded-full border border-border bg-background/80 flex items-center justify-center shadow-sm z-10"
                   >
-                    <ChevronRight className="w-4 h-4" />
+                    <ChevronRight className="w-3.5 h-3.5" />
                   </button>
                 </div>
               </div>
-            );
-          })()}
 
-          {/* ── PILE VIEW: compost category slots ── */}
-          {mobileView === "pile" && (() => {
-            const pile = localPlayerFull.compostPile;
-            const categories = [
-              { key: "moisture", label: "Moisture", borderClass: "border-blue-400", bgClass: "bg-blue-50 dark:bg-blue-950/30", headerClass: "bg-blue-100 text-blue-800", emptyDotClass: "bg-blue-200", match: (fn: string) => fn.toLowerCase().includes("moisture") },
-              { key: "carbon", label: "Carbon", borderClass: "border-amber-400", bgClass: "bg-amber-50 dark:bg-amber-950/30", headerClass: "bg-amber-100 text-amber-800", emptyDotClass: "bg-amber-200", match: (fn: string) => fn.toLowerCase().includes("carbon") },
-              { key: "decomposer", label: "Decomp.", borderClass: "border-orange-400", bgClass: "bg-orange-50 dark:bg-orange-950/30", headerClass: "bg-orange-100 text-orange-800", emptyDotClass: "bg-orange-200", match: (fn: string) => fn.toLowerCase().includes("decomp") || fn.toLowerCase().includes("fire") },
-              { key: "nitrogen", label: "Nitrogen", borderClass: "border-lime-400", bgClass: "bg-lime-50 dark:bg-lime-950/30", headerClass: "bg-lime-100 text-lime-800", emptyDotClass: "bg-lime-200", match: (fn: string) => fn.toLowerCase().includes("nitrogen") },
-              { key: "airflow", label: "Airflow", borderClass: "border-cyan-400", bgClass: "bg-cyan-50 dark:bg-cyan-950/30", headerClass: "bg-cyan-100 text-cyan-800", emptyDotClass: "bg-cyan-200", match: (fn: string) => fn.toLowerCase().includes("air") },
-            ];
-            const getEffFn = (c: Card) => (c as any).chosenFunction ?? c.function ?? "";
-            return (
-              <div className="bg-card/95 backdrop-blur-md px-3 pt-2 pb-3 grid grid-cols-5 gap-2">
-                {categories.map((cat) => {
-                  const cards = pile.filter((c) => cat.match(getEffFn(c)));
-                  const topCard = cards[cards.length - 1] ?? null;
-                  const has = topCard !== null;
-                  const imageSrc = topCard?.imageKey ? assetUrl(topCard.imageKey) : null;
-                  return (
-                    <div
-                      key={cat.key}
-                      className={cn(
-                        "rounded-xl border-2 flex flex-col overflow-hidden",
-                        has ? `${cat.borderClass} ${cat.bgClass}` : "border-dashed border-muted-foreground/20 bg-muted/10"
-                      )}
-                    >
-                      <div className={cn(
-                        "px-1 py-0.5 text-[9px] font-bold uppercase tracking-wide truncate border-b",
-                        has ? `${cat.headerClass} border-current/20` : "bg-transparent text-muted-foreground/30 border-transparent"
-                      )}>
-                        {cat.label}
-                      </div>
-                      <div className="flex-1 flex items-center justify-center" style={{ minHeight: 88 }}>
-                        {has && topCard ? (
-                          <div className="w-full h-full">
-                            {imageSrc
-                              ? <img src={imageSrc} alt={topCard.name} className="w-full h-full object-cover" />
-                              : <GameCard card={topCard} size="xs" hoverable={false} className="w-full h-full" />
-                            }
-                          </div>
-                        ) : (
-                          <div className={cn("w-2.5 h-2.5 rounded-full", cat.emptyDotClass, "opacity-40")} />
-                        )}
-                      </div>
-                      {has && topCard && (
-                        <div className="px-1 py-0.5 text-[8px] font-semibold text-center leading-tight text-foreground/70 bg-background/30 truncate">
-                          {topCard.name}
-                        </div>
-                      )}
-                    </div>
-                  );
-                })}
-              </div>
-            );
-          })()}
-
-        </div>{/* end md:hidden mobile section */}
+            </div>
+          );
+        })()}
       </div>
 
 

@@ -26,13 +26,18 @@ export type DecisionType =
   | "choose_card_from_compost"
   | "choose_card_to_swap_compost"
   | "choose_opponent_for_steal"
+  | "choose_steal_card"
   | "choose_card_from_opponent_compost"
   | "choose_cards_for_worm_party"
+  | "choose_worm_party_card"
   | "choose_discard_for_spread"
   | "choose_soggy_pile_discard"
   | "choose_rot_roulette_keep"
   | "choose_rainstorm_play"
   | "choose_hero_from_discard"
+  | "choose_swap_opponent_breezy"
+  | "choose_swap_their_card_breezy"
+  | "choose_swap_my_card_breezy"
   | "choose_compost_to_swap_breezy"
   | "choose_under_web_hand_card"
   | "choose_under_web_discard_card"
@@ -587,30 +592,29 @@ function resolveHeroInstantEffect(
       return s;
     }
 
-    // The Breezy Bandit: swap 1 card from another player's compost with yours
+    // The Breezy Bandit: swap 1 card from another player's compost with yours (3-step)
     case "breezy_bandit": {
-      const targets = s.players
-        .filter((pl) => pl.id !== p.id && pl.compostPile.length > 0)
-        .map((pl) => ({
-          playerId: pl.id,
-          playerName: pl.name,
-          cards: pl.compostPile
-            .filter((c) => !(moistureProtected(pl) && getEffectiveFunction(c) === "Moisture"))
-            .map((c) => ({ cardId: c.id, cardName: c.name })),
-        }))
-        .filter((t) => t.cards.length > 0);
-      if (targets.length === 0 || p.compostPile.length === 0) {
+      const validOpponents = s.players
+        .filter((pl) => pl.id !== p.id)
+        .filter((pl) => {
+          const swappable = pl.compostPile.filter(
+            (c) => !(moistureProtected(pl) && getEffectiveFunction(c) === "Moisture")
+          );
+          return swappable.length > 0;
+        })
+        .map((pl) => ({ playerId: pl.id, playerName: pl.name }));
+      if (validOpponents.length === 0 || p.compostPile.length === 0) {
         addLog(s, `Cannot use Breezy Bandit — no valid targets or your compost is empty.`);
         return s;
       }
       s = {
         ...s,
         pendingDecision: {
-          type: "choose_compost_to_swap_breezy",
+          type: "choose_swap_opponent_breezy",
           playerId: p.id,
           cardId: card.id,
-          options: targets,
-          prompt: `${p.name}: Choose opponent and cards to swap (your compost card ↔ their compost card).`,
+          options: validOpponents,
+          prompt: `${p.name}: Choose an opponent to swap a compost card with (Breezy Bandit).`,
         },
       };
       return s;
@@ -620,6 +624,47 @@ function resolveHeroInstantEffect(
       addLog(s, `${p.name} played ${card.name} (effect applied).`);
       return s;
   }
+}
+
+// Helper: apply the worm party pass using a specific card for the active player
+// chosenCardId = null means the active player has no hand (skip them)
+function applyWormParty(state: GameState, activePlayerId: string, chosenCardId: string | null): GameState {
+  let s = state;
+  const passCards: Array<{ fromId: string; card: Card }> = [];
+
+  for (const pl of s.players) {
+    if (pl.id === activePlayerId) {
+      if (chosenCardId) {
+        const card = pl.hand.find((c) => c.id === chosenCardId);
+        if (card) passCards.push({ fromId: pl.id, card });
+      }
+    } else if (pl.hand.length > 0) {
+      passCards.push({ fromId: pl.id, card: pl.hand[0] });
+    }
+  }
+
+  // Remove cards from hands
+  for (const { fromId, card: passedCard } of passCards) {
+    const pl = getPlayer(s, fromId)!;
+    s = updatePlayer(s, { ...pl, hand: pl.hand.filter((c) => c.id !== passedCard.id) });
+  }
+
+  // Give cards to the player on the left (i+1)
+  for (let i = 0; i < s.players.length; i++) {
+    const passEntry = passCards.find((pc) => pc.fromId === s.players[i].id);
+    if (passEntry) {
+      const leftIdx = (i + 1) % s.players.length;
+      const leftPlayer = s.players[leftIdx];
+      s = updatePlayer(s, { ...leftPlayer, hand: [...leftPlayer.hand, passEntry.card] });
+    }
+  }
+
+  const names = passCards.map((pc) => {
+    const pl = state.players.find((p) => p.id === pc.fromId)!;
+    return `${pl.name} → ${pc.card.name}`;
+  });
+  addLog(s, `Worm Party — cards passed: ${names.join(", ")}.`);
+  return s;
 }
 
 // ─────────────────────────────────────────────
@@ -688,22 +733,22 @@ function resolveActionInstantEffect(
       return s;
     }
 
-    // Critter Raid: all players discard 1 Nitrogen from hand
+    // Critter Raid: all players (including active player) discard 1 Nitrogen from hand
     case "critter_raid": {
       addLog(s, `Critter Raid! All players must discard 1 Nitrogen card from hand.`);
       for (const pl of s.players) {
-        const nitrogenIdx = pl.hand.findIndex((c) => c.function === "Nitrogen");
+        const currentPl = getPlayer(s, pl.id)!;
+        const nitrogenIdx = currentPl.hand.findIndex((c) => getEffectiveFunction(c) === "Nitrogen");
         if (nitrogenIdx >= 0) {
-          const discarded = pl.hand[nitrogenIdx];
-          const updated = {
-            ...pl,
-            hand: pl.hand.filter((_, i) => i !== nitrogenIdx),
-          };
+          const discarded = currentPl.hand[nitrogenIdx];
           s = {
             ...s,
             discardPile: [discarded, ...s.discardPile],
           };
-          s = updatePlayer(s, updated);
+          s = updatePlayer(s, {
+            ...currentPl,
+            hand: currentPl.hand.filter((_, i) => i !== nitrogenIdx),
+          });
           addLog(s, `${pl.name} discarded ${discarded.name}.`);
         }
       }
@@ -808,7 +853,7 @@ function resolveActionInstantEffect(
       return s;
     }
 
-    // Stinky Pile: each player discards 1 Nitrogen from compost
+    // Stinky Pile: each player discards 1 Nitrogen from compost (includes the active player)
     case "stinky_pile": {
       addLog(s, `Stinky Pile! Each player discards 1 Nitrogen from their compost.`);
       for (const pl of s.players) {
@@ -817,19 +862,19 @@ function resolveActionInstantEffect(
           continue;
         }
         const nitrogenIdx = pl.compostPile.findIndex(
-          (c) => c.function === "Nitrogen"
+          (c) => getEffectiveFunction(c) === "Nitrogen"
         );
         if (nitrogenIdx >= 0) {
-          const discarded = pl.compostPile[nitrogenIdx];
-          const updated = {
-            ...pl,
-            compostPile: pl.compostPile.filter((_, i) => i !== nitrogenIdx),
-          };
+          const currentPl = getPlayer(s, pl.id)!;
+          const discarded = currentPl.compostPile[nitrogenIdx];
           s = {
             ...s,
             discardPile: [discarded, ...s.discardPile],
           };
-          s = updatePlayer(s, updated);
+          s = updatePlayer(s, {
+            ...currentPl,
+            compostPile: currentPl.compostPile.filter((_, i) => i !== nitrogenIdx),
+          });
           addLog(s, `${pl.name} discarded ${discarded.name} from compost.`);
         }
       }
@@ -844,43 +889,24 @@ function resolveActionInstantEffect(
     }
 
     // Worm Party: each player passes 1 card from hand to player on left
+    // Prompt the active player to choose; auto-pick hand[0] for others
     case "worm_party": {
-      if (s.players.some((pl) => pl.hand.length === 0)) {
-        addLog(s, `Worm Party — some players have empty hands, effect limited.`);
+      if (p.hand.length === 0) {
+        addLog(s, `Worm Party — ${p.name} has no cards to pass, skipping their pass.`);
+        // Auto-process for all other players
+        s = applyWormParty(s, p.id, null);
+        return s;
       }
-      // Everyone passes simultaneously — auto pick first card
-      const passCards: Array<{ fromId: string; card: Card }> = [];
-      for (const pl of s.players) {
-        if (pl.hand.length > 0) {
-          passCards.push({ fromId: pl.id, card: pl.hand[0] });
-        }
-      }
-      // Apply passes
-      let newState = { ...s };
-      // Remove cards from hands
-      for (const { fromId, card: passedCard } of passCards) {
-        const pl = getPlayer(newState, fromId)!;
-        const updated = {
-          ...pl,
-          hand: pl.hand.filter((c) => c.id !== passedCard.id),
-        };
-        newState = updatePlayer(newState, updated);
-      }
-      // Give cards to left neighbor
-      for (let i = 0; i < newState.players.length; i++) {
-        const passEntry = passCards.find((pc) => pc.fromId === newState.players[i].id);
-        if (passEntry) {
-          const leftIdx = (i + 1) % newState.players.length;
-          const leftPlayer = newState.players[leftIdx];
-          const updated = {
-            ...leftPlayer,
-            hand: [...leftPlayer.hand, passEntry.card],
-          };
-          newState = updatePlayer(newState, updated);
-        }
-      }
-      s = newState;
-      addLog(s, `Worm Party — all players passed 1 card to the left!`);
+      s = {
+        ...s,
+        pendingDecision: {
+          type: "choose_worm_party_card",
+          playerId: p.id,
+          cardId: card.id,
+          options: p.hand.map((c) => ({ cardId: c.id, cardName: c.name })),
+          prompt: `${p.name}: Choose 1 card from your hand to pass to the player on your left (Worm Party).`,
+        },
+      };
       return s;
     }
 
@@ -967,6 +993,13 @@ export function playCard(
       return {
         state,
         error: "Plastic Contamination is active — no hero cards can be added to compost!",
+      };
+    }
+    // Block hero if an action card was already played this turn (action must follow hero, not precede)
+    if (state.actionPlayedThisTurn && !state.heroPlayedThisTurn) {
+      return {
+        state,
+        error: "You already played an action card — heroes must be played before actions.",
       };
     }
     // Enforce 1 hero card per turn
@@ -1202,37 +1235,158 @@ export function resolveDecision(
 
     case "choose_opponent_for_steal": {
       const targetPlayerId = decisionData.targetPlayerId as string;
-      const targetCardId = decisionData.targetCardId as string;
       const targetPlayer = getPlayer(s, targetPlayerId);
       if (!targetPlayer) return { state, error: "Target player not found" };
 
-      const card = targetPlayer.compostPile.find((c) => c.id === targetCardId);
+      const stealFunction = decision.meta?.stealFunction as string | undefined;
+      const validCards = targetPlayer.compostPile.filter(
+        (c) => !stealFunction || getEffectiveFunction(c) === stealFunction
+      );
+      if (validCards.length === 0) return { state, error: "No valid cards to steal from this player" };
+
+      if (validCards.length === 1) {
+        // Auto-steal the only card
+        const card = validCards[0];
+        const updatedTarget = {
+          ...targetPlayer,
+          compostPile: targetPlayer.compostPile.filter((c) => c.id !== card.id),
+        };
+        s = updatePlayer(s, updatedTarget);
+        const stealToCompost = decision.meta?.stealToCompost as boolean;
+        if (stealToCompost) {
+          s = updatePlayer(s, {
+            ...getPlayer(s, playerId)!,
+            compostPile: [...getPlayer(s, playerId)!.compostPile, card],
+          });
+          addLog(s, `${player.name} took ${card.name} from ${targetPlayer.name}'s compost into their own compost.`);
+        } else {
+          s = updatePlayer(s, {
+            ...getPlayer(s, playerId)!,
+            hand: [...getPlayer(s, playerId)!.hand, card],
+          });
+          addLog(s, `${player.name} took ${card.name} from ${targetPlayer.name}'s compost into hand.`);
+        }
+        return { state: s };
+      }
+
+      // Multiple cards — let the player pick one
+      s = {
+        ...s,
+        pendingDecision: {
+          type: "choose_steal_card",
+          playerId,
+          cardId: decision.cardId,
+          options: validCards.map((c) => ({ cardId: c.id, cardName: c.name })),
+          prompt: `Choose which card to steal from ${targetPlayer.name}'s compost pile.`,
+          meta: { ...decision.meta, targetPlayerId },
+        },
+      };
+      return { state: s };
+    }
+
+    case "choose_steal_card": {
+      const chosenCardId = decisionData.cardId as string;
+      const targetPlayerId = decision.meta?.targetPlayerId as string;
+      const targetPlayer = getPlayer(s, targetPlayerId);
+      if (!targetPlayer) return { state, error: "Target player not found" };
+
+      const card = targetPlayer.compostPile.find((c) => c.id === chosenCardId);
       if (!card) return { state, error: "Card not in target's compost" };
 
-      const updatedTarget = {
+      s = updatePlayer(s, {
         ...targetPlayer,
-        compostPile: targetPlayer.compostPile.filter((c) => c.id !== targetCardId),
-      };
-      s = updatePlayer(s, updatedTarget);
-
+        compostPile: targetPlayer.compostPile.filter((c) => c.id !== chosenCardId),
+      });
       const stealToCompost = decision.meta?.stealToCompost as boolean;
       if (stealToCompost) {
-        // Carbon Sink: add to your compost
-        const updatedPlayer = {
+        s = updatePlayer(s, {
           ...getPlayer(s, playerId)!,
           compostPile: [...getPlayer(s, playerId)!.compostPile, card],
-        };
-        s = updatePlayer(s, updatedPlayer);
+        });
         addLog(s, `${player.name} took ${card.name} from ${targetPlayer.name}'s compost into their own compost.`);
       } else {
-        // Brown Rogue: add to hand
-        const updatedPlayer = {
+        s = updatePlayer(s, {
           ...getPlayer(s, playerId)!,
           hand: [...getPlayer(s, playerId)!.hand, card],
-        };
-        s = updatePlayer(s, updatedPlayer);
+        });
         addLog(s, `${player.name} took ${card.name} from ${targetPlayer.name}'s compost into hand.`);
       }
+      return { state: s };
+    }
+
+    case "choose_swap_opponent_breezy": {
+      const targetPlayerId = decisionData.targetPlayerId as string;
+      const targetPlayer = getPlayer(s, targetPlayerId);
+      if (!targetPlayer) return { state, error: "Opponent not found" };
+      const swappable = targetPlayer.compostPile.filter(
+        (c) => !(moistureProtected(targetPlayer) && getEffectiveFunction(c) === "Moisture")
+      );
+      if (swappable.length === 0) return { state, error: "No swappable cards in that player's pile" };
+      s = {
+        ...s,
+        pendingDecision: {
+          type: "choose_swap_their_card_breezy",
+          playerId,
+          cardId: decision.cardId,
+          options: swappable.map((c) => ({ cardId: c.id, cardName: c.name })),
+          prompt: `Choose which of ${targetPlayer.name}'s compost cards to take.`,
+          meta: { theirPlayerId: targetPlayerId },
+        },
+      };
+      return { state: s };
+    }
+
+    case "choose_swap_their_card_breezy": {
+      const theirCardId = decisionData.cardId as string;
+      const theirPlayerId = decision.meta?.theirPlayerId as string;
+      const theirPlayer = getPlayer(s, theirPlayerId);
+      if (!theirPlayer) return { state, error: "Opponent not found" };
+      const theirCard = theirPlayer.compostPile.find((c) => c.id === theirCardId);
+      if (!theirCard) return { state, error: "Card not found in opponent's pile" };
+      if (player.compostPile.length === 0) return { state, error: "Your compost pile is empty — nothing to swap." };
+      s = {
+        ...s,
+        pendingDecision: {
+          type: "choose_swap_my_card_breezy",
+          playerId,
+          cardId: decision.cardId,
+          options: player.compostPile.map((c) => ({ cardId: c.id, cardName: c.name })),
+          prompt: `Choose which of your compost cards to give to ${theirPlayer.name} in exchange.`,
+          meta: { theirPlayerId, theirCardId },
+        },
+      };
+      return { state: s };
+    }
+
+    case "choose_swap_my_card_breezy": {
+      const myCardId = decisionData.cardId as string;
+      const theirCardId = decision.meta?.theirCardId as string;
+      const theirPlayerId = decision.meta?.theirPlayerId as string;
+      const myCard = player.compostPile.find((c) => c.id === myCardId);
+      const theirPlayer = getPlayer(s, theirPlayerId);
+      if (!myCard || !theirPlayer) return { state, error: "Invalid swap cards" };
+      const theirCard = theirPlayer.compostPile.find((c) => c.id === theirCardId);
+      if (!theirCard) return { state, error: "Their card not found" };
+      if (moistureProtected(theirPlayer) && getEffectiveFunction(theirCard) === "Moisture") {
+        return { state, error: `${theirPlayer.name}'s Moisture cards are protected by the Soggy Saver!` };
+      }
+      s = updatePlayer(s, {
+        ...player,
+        compostPile: [...player.compostPile.filter((c) => c.id !== myCardId), theirCard],
+      });
+      s = updatePlayer(s, {
+        ...theirPlayer,
+        compostPile: [...theirPlayer.compostPile.filter((c) => c.id !== theirCardId), myCard],
+      });
+      addLog(s, `${player.name} swapped ${myCard.name} with ${theirPlayer.name}'s ${theirCard.name}.`);
+      return { state: s };
+    }
+
+    case "choose_worm_party_card": {
+      const chosenId = decisionData.cardId as string;
+      const myCard = player.hand.find((c) => c.id === chosenId);
+      if (!myCard) return { state, error: "Card not in hand" };
+      s = applyWormParty(s, playerId, chosenId);
       return { state: s };
     }
 

@@ -35,11 +35,16 @@ const CARD_SELECTION_TYPES = new Set([
   "choose_rot_regrow_discard",
   "choose_rot_regrow_take",
   "choose_discard_to_limit",
+  "choose_swap_their_card_breezy",
+  "choose_swap_my_card_breezy",
+  "choose_worm_party_card",
+  "choose_steal_card",
 ]);
 
 const PLAYER_SELECTION_TYPES = new Set([
   "choose_target_player",
   "choose_opponent_for_steal",
+  "choose_swap_opponent_breezy",
 ]);
 
 const FUNCTION_SELECTION_TYPES = new Set([
