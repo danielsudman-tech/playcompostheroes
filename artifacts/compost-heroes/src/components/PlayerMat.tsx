@@ -86,9 +86,13 @@ function getCategoryCards(pile: CardState[], matchFn: (fn: string) => boolean) {
   return pile.filter((c) => matchFn(getEffectiveFn(c)));
 }
 
+// Popup card is w-40 h-56 = 160×224px
+const POPUP_HEIGHT = 232; // 224px card + 8px gap
+const POPUP_GAP = 8;
+
 function HoverableCard({ card, canMove, onMoveLayer }: { card: CardState; canMove?: boolean; onMoveLayer?: () => void }) {
   const [hovered, setHovered] = useState(false);
-  const [popupPos, setPopupPos] = useState<{ x: number; y: number } | null>(null);
+  const [popupPos, setPopupPos] = useState<{ x: number; top: number; bottom: number } | null>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const imageSrc = card.imageKey ? assetUrl(card.imageKey) : null;
 
@@ -97,7 +101,8 @@ function HoverableCard({ card, canMove, onMoveLayer }: { card: CardState; canMov
       const rect = containerRef.current.getBoundingClientRect();
       setPopupPos({
         x: rect.left + rect.width / 2,
-        y: rect.top,
+        top: rect.top,
+        bottom: rect.bottom,
       });
     }
     setHovered(true);
@@ -107,6 +112,9 @@ function HoverableCard({ card, canMove, onMoveLayer }: { card: CardState; canMov
     setHovered(false);
     setPopupPos(null);
   };
+
+  // Decide whether to show the popup above or below the card
+  const showBelow = popupPos ? popupPos.top < POPUP_HEIGHT : false;
 
   return (
     <div
@@ -142,9 +150,11 @@ function HoverableCard({ card, canMove, onMoveLayer }: { card: CardState; canMov
           style={{
             position: "fixed",
             left: popupPos.x,
-            bottom: window.innerHeight - popupPos.y + 8,
             transform: "translateX(-50%)",
             zIndex: 99999,
+            ...(showBelow
+              ? { top: popupPos.bottom + POPUP_GAP }
+              : { bottom: window.innerHeight - popupPos.top + POPUP_GAP }),
           }}
         >
           <motion.div
@@ -152,7 +162,7 @@ function HoverableCard({ card, canMove, onMoveLayer }: { card: CardState; canMov
             animate={{ opacity: 1, scale: 1 }}
             exit={{ opacity: 0, scale: 0.7 }}
             transition={{ duration: 0.15 }}
-            style={{ transformOrigin: "bottom center" }}
+            style={{ transformOrigin: showBelow ? "top center" : "bottom center" }}
           >
             <div className="shadow-2xl rounded-xl overflow-hidden border-2 border-white/40">
               {imageSrc ? (
