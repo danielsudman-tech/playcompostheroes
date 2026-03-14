@@ -948,57 +948,59 @@ export default function Game() {
               const isPlayable = isPlayPhase && !heroBlocked && !actionBlocked;
               const imageSrc = card.imageKey ? assetUrl(card.imageKey) : null;
               return (
-                <div className="flex items-center gap-2 px-3 py-2">
-                  <button
-                    className="shrink-0 w-9 h-9 rounded-full bg-background/80 border border-border flex items-center justify-center disabled:opacity-30 active:scale-95 transition-transform"
-                    disabled={handFocusIdx === 0}
-                    onClick={() => setHandFocusIdx(i => i - 1)}
-                  >
-                    <ChevronLeft className="w-5 h-5" />
-                  </button>
+                <div className="flex flex-col items-center px-3 pt-2 pb-2.5 gap-2">
+                  {/* Card image row with prev/next arrows */}
+                  <div className="flex items-center gap-3 w-full justify-center">
+                    <button
+                      className="shrink-0 w-9 h-9 rounded-full bg-background/80 border border-border flex items-center justify-center disabled:opacity-30 active:scale-95 transition-transform"
+                      disabled={handFocusIdx === 0}
+                      onClick={() => setHandFocusIdx(i => i - 1)}
+                    >
+                      <ChevronLeft className="w-5 h-5" />
+                    </button>
 
-                  <div className="flex-1 flex items-center gap-3 min-w-0">
                     <motion.div
                       key={card.id}
-                      initial={{ opacity: 0, scale: 0.88, x: 16 }}
-                      animate={{ opacity: 1, scale: 1, x: 0 }}
+                      initial={{ opacity: 0, scale: 0.88 }}
+                      animate={{ opacity: 1, scale: 1 }}
+                      transition={{ type: "spring", stiffness: 400, damping: 30 }}
                       className={cn(
-                        "shrink-0 w-16 h-24 rounded-xl overflow-hidden shadow-lg border-2 cursor-pointer transition-all",
-                        isPlayable ? "border-primary shadow-primary/20" : "border-border/60",
+                        "w-36 h-52 rounded-2xl overflow-hidden shadow-2xl border-2 cursor-pointer transition-all",
+                        isPlayable ? "border-primary shadow-primary/30" : "border-border/60",
                         (heroBlocked || actionBlocked) && "opacity-50 cursor-not-allowed"
                       )}
                       onClick={(!heroBlocked && !actionBlocked) ? () => handleCardClick(card) : undefined}
                     >
                       {imageSrc
                         ? <img src={imageSrc} alt={card.name} className="w-full h-full object-cover" />
-                        : <div className="w-full h-full bg-muted flex items-center justify-center text-[8px] font-bold text-center px-1 leading-tight">{card.name}</div>
+                        : <div className="w-full h-full bg-muted flex items-center justify-center text-sm font-bold text-center px-2 leading-tight">{card.name}</div>
                       }
                     </motion.div>
 
-                    <div className="flex-1 min-w-0">
-                      <div className="font-bold text-sm text-foreground truncate">{card.name}</div>
-                      <div className="text-[11px] text-muted-foreground leading-snug line-clamp-2 mt-0.5">{card.cardText}</div>
-                      <div className="flex items-center gap-2 mt-1.5">
-                        <span className="text-[9px] font-bold uppercase tracking-wider text-muted-foreground/50 bg-muted rounded-full px-2 py-0.5">{card.function || card.type}</span>
-                        {heroBlocked && <span className="text-[10px] text-destructive font-bold">1 hero/turn</span>}
-                        {actionBlocked && <span className="text-[10px] text-destructive font-bold">1 action after hero</span>}
-                      </div>
-                    </div>
+                    <button
+                      className="shrink-0 w-9 h-9 rounded-full bg-background/80 border border-border flex items-center justify-center disabled:opacity-30 active:scale-95 transition-transform"
+                      disabled={handFocusIdx >= localPlayerFull.hand.length - 1}
+                      onClick={() => setHandFocusIdx(i => i + 1)}
+                    >
+                      <ChevronRight className="w-5 h-5" />
+                    </button>
+                  </div>
 
+                  {/* Card details below the image */}
+                  <div className="w-full max-w-xs text-center space-y-1">
+                    <div className="font-bold text-sm text-foreground">{card.name}</div>
+                    <div className="text-[12px] text-muted-foreground leading-snug">{card.cardText}</div>
+                    <div className="flex items-center justify-center gap-2 pt-0.5">
+                      <span className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground/60 bg-muted rounded-full px-2.5 py-0.5">{card.function || card.type}</span>
+                      {heroBlocked && <span className="text-[10px] text-destructive font-bold">1 hero/turn</span>}
+                      {actionBlocked && <span className="text-[10px] text-destructive font-bold">1 action after hero</span>}
+                    </div>
                     {isPlayable && (
-                      <Button size="sm" className="shrink-0 h-9 px-4 font-bold" onClick={() => handleCardClick(card)}>
+                      <Button size="sm" className="h-9 px-6 font-bold mt-1" onClick={() => handleCardClick(card)}>
                         Play
                       </Button>
                     )}
                   </div>
-
-                  <button
-                    className="shrink-0 w-9 h-9 rounded-full bg-background/80 border border-border flex items-center justify-center disabled:opacity-30 active:scale-95 transition-transform"
-                    disabled={handFocusIdx >= localPlayerFull.hand.length - 1}
-                    onClick={() => setHandFocusIdx(i => i + 1)}
-                  >
-                    <ChevronRight className="w-5 h-5" />
-                  </button>
                 </div>
               );
             })()}
