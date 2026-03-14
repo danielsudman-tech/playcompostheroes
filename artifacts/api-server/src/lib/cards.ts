@@ -80,6 +80,7 @@ const ALL_CARDS: Card[] = [
     factText:
       "Black soldier fly larvae devour scraps before they have a chance to smell.",
     function: "Airflow",
+    alternateFunctions: ["Airflow", "Decomposer"],
     imageKey: null,
   },
   {
@@ -91,6 +92,7 @@ const ALL_CARDS: Card[] = [
     cardText: "Draw 1 extra card.",
     factText: "Red wigglers can eat half their weight daily.",
     function: "Airflow",
+    alternateFunctions: ["Airflow", "Decomposer"],
     imageKey: null,
   },
   {
@@ -165,6 +167,7 @@ const ALL_CARDS: Card[] = [
     factText:
       "Mycelium are like nature's internet moving nutrients throughout the soil.",
     function: "Carbon",
+    alternateFunctions: ["Carbon", "Nitrogen"],
     imageKey: null,
   },
   {
@@ -262,6 +265,7 @@ const ALL_CARDS: Card[] = [
     cardText: "If this is the first card in your compost pile, draw 2 cards.",
     factText: "A scoop of soil inoculates compost with microbes.",
     function: "Nitrogen",
+    alternateFunctions: ["Nitrogen", "Decomposer"],
     imageKey: null,
   },
   {
@@ -299,6 +303,7 @@ const ALL_CARDS: Card[] = [
     factText:
       "Just one teaspoon of healthy compost can contain over a billion beneficial bacteria.",
     function: "Nitrogen",
+    alternateFunctions: ["Nitrogen", "Decomposer", "Moisture"],
     imageKey: null,
   },
   {
@@ -312,6 +317,7 @@ const ALL_CARDS: Card[] = [
     factText:
       "Moisture activates dormant bacteria, jump-starting their activity and driving decomposition.",
     function: "Nitrogen",
+    alternateFunctions: ["Nitrogen", "Decomposer"],
     imageKey: null,
   },
   // ── ACTION CARDS ──

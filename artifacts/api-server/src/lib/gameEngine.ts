@@ -1054,7 +1054,7 @@ export function playCard(
 
     // If card has multiple possible functions, ask player to choose which slot
     const allFunctions = cardInHand.alternateFunctions?.length
-      ? [cardInHand.function, ...cardInHand.alternateFunctions]
+      ? [...new Set([cardInHand.function, ...cardInHand.alternateFunctions])]
       : [];
     if (allFunctions.length > 1) {
       addLog(s, `${player.name} played ${cardInHand.name} — choose which function slot to fill.`);
@@ -1776,7 +1776,7 @@ export function resolveDecision(
       const chosenFn = decisionData.function as string;
       const pendingCard = decision.meta?.pendingCard as Card | undefined;
       if (!pendingCard) return { state, error: "No pending card to place" };
-      const allFns = [pendingCard.function, ...(pendingCard.alternateFunctions ?? [])];
+      const allFns = [...new Set([pendingCard.function, ...(pendingCard.alternateFunctions ?? [])])];
       if (!allFns.includes(chosenFn)) return { state, error: "Invalid function choice" };
 
       const cardWithChoice: Card = { ...pendingCard, chosenFunction: chosenFn };
@@ -2269,7 +2269,7 @@ function botTakeTurn(state: GameState): GameState {
 
   for (const card of updatedPlayer.hand) {
     if (card.type !== "hero") continue;
-    const validFns = [card.function, ...(card.alternateFunctions ?? [])];
+    const validFns = [...new Set([card.function, ...(card.alternateFunctions ?? [])])];
     const matchMissing = validFns.filter((f) => (missingFunctions as string[]).includes(f));
     if (matchMissing.length > 0) {
       bestHero = card;
