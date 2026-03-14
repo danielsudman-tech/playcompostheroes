@@ -190,6 +190,7 @@ export function useCreateNewGame() {
       password?: string;
       hostName?: string;
       maxPlayers?: number;
+      botPlayerIndices?: number[];
     }) => {
       const r = await fetch("/api/games", {
         method: "POST",

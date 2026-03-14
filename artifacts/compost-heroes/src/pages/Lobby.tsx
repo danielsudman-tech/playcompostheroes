@@ -7,7 +7,7 @@ import { Input } from "@/components/ui/input";
 import { assetUrl } from "@/lib/assetUrl";
 import {
   Users, Trash2, PlusCircle, Settings2, PlayCircle, Wifi, Lock,
-  RefreshCcw, LogIn, ChevronRight, Loader2
+  RefreshCcw, LogIn, ChevronRight, Loader2, Bot, User
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 
@@ -110,6 +110,7 @@ export default function Lobby() {
 
   // Pass & Play / Facilitator fields
   const [players, setPlayers] = useState<string[]>(["Player 1", "Player 2"]);
+  const [botPlayers, setBotPlayers] = useState<boolean[]>([false, false]);
 
   // Online (waiting room) fields
   const [hostName, setHostName] = useState("");
@@ -117,15 +118,37 @@ export default function Lobby() {
   const [gamePassword, setGamePassword] = useState("");
 
   const handleAddPlayer = () => {
-    if (players.length < 4) setPlayers([...players, `Player ${players.length + 1}`]);
+    if (players.length < 4) {
+      setPlayers([...players, `Player ${players.length + 1}`]);
+      setBotPlayers([...botPlayers, false]);
+    }
   };
   const handleRemovePlayer = (i: number) => {
-    if (players.length > 2) setPlayers(players.filter((_, idx) => idx !== i));
+    if (players.length > 2) {
+      setPlayers(players.filter((_, idx) => idx !== i));
+      setBotPlayers(botPlayers.filter((_, idx) => idx !== i));
+    }
   };
   const handleUpdateName = (i: number, name: string) => {
     const next = [...players];
     next[i] = name;
     setPlayers(next);
+  };
+  const handleToggleBot = (i: number) => {
+    const humanCount = botPlayers.filter((b) => !b).length;
+    if (!botPlayers[i] && humanCount <= 1) {
+      toast({ title: "Need at least 1 human player", description: "You can't make everyone a bot.", variant: "destructive" });
+      return;
+    }
+    const next = [...botPlayers];
+    next[i] = !next[i];
+    setBotPlayers(next);
+    // If toggling to bot, give a default bot name
+    if (next[i] && players[i].startsWith("Player ")) {
+      const nameCopy = [...players];
+      nameCopy[i] = `Bot ${i + 1}`;
+      setPlayers(nameCopy);
+    }
   };
 
   const handleStartGame = () => {
@@ -150,8 +173,11 @@ export default function Lobby() {
       toast({ title: "Not enough players", description: "You need at least 2 players to start.", variant: "destructive" });
       return;
     }
+    const botPlayerIndices = botPlayers
+      .map((isBot, i) => (isBot ? i : -1))
+      .filter((i) => i >= 0);
     createGame.mutate(
-      { playerNames: validPlayers, mode },
+      { playerNames: validPlayers, mode, botPlayerIndices },
       {
         onSuccess: (data) => setLocation(`/game/${data.gameId}`),
         onError: (err) => toast({ title: "Failed to create game", description: err.message, variant: "destructive" }),
@@ -301,12 +327,32 @@ export default function Lobby() {
                     <div className="space-y-3">
                       {players.map((player, i) => (
                         <motion.div key={i} initial={{ opacity: 0, x: -20 }} animate={{ opacity: 1, x: 0 }} className="flex gap-2 items-center">
-                          <Input
-                            value={player}
-                            onChange={(e) => handleUpdateName(i, e.target.value)}
-                            placeholder={`Player ${i + 1}`}
-                            className="h-12 bg-background/50 border-2 focus-visible:ring-primary/20 text-lg font-medium"
-                          />
+                          <div className="relative flex-1">
+                            <Input
+                              value={player}
+                              onChange={(e) => handleUpdateName(i, e.target.value)}
+                              placeholder={`Player ${i + 1}`}
+                              disabled={botPlayers[i]}
+                              className={`h-12 border-2 focus-visible:ring-primary/20 text-lg font-medium transition-colors ${
+                                botPlayers[i]
+                                  ? "bg-violet-50 dark:bg-violet-950/20 border-violet-300 dark:border-violet-700 text-violet-700 dark:text-violet-300"
+                                  : "bg-background/50"
+                              }`}
+                            />
+                          </div>
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            title={botPlayers[i] ? "Switch to human player" : "Switch to bot player"}
+                            className={`h-12 w-12 shrink-0 transition-all ${
+                              botPlayers[i]
+                                ? "border-violet-400 bg-violet-100 dark:bg-violet-950/30 text-violet-600 dark:text-violet-400 hover:bg-violet-200 dark:hover:bg-violet-900/40"
+                                : "border-border text-muted-foreground hover:border-primary/50 hover:text-primary"
+                            }`}
+                            onClick={() => handleToggleBot(i)}
+                          >
+                            {botPlayers[i] ? <Bot className="w-5 h-5" /> : <User className="w-5 h-5" />}
+                          </Button>
                           {players.length > 2 && (
                             <Button
                               variant="outline"

@@ -178,7 +178,10 @@ export default function Game() {
     }
     if (prevPlayerIndexRef.current !== null && prevPlayerIndexRef.current !== idx) {
       const newPlayer = gameState.players[idx];
-      setPassScreen({ name: newPlayer.name, cardCount: newPlayer.hand.length });
+      // Don't show pass screen for bot players — they play instantly server-side
+      if (!(newPlayer as any).isBot) {
+        setPassScreen({ name: newPlayer.name, cardCount: newPlayer.hand.length });
+      }
     }
     prevPlayerIndexRef.current = idx;
   }, [gameState?.currentPlayerIndex, isOnline]);

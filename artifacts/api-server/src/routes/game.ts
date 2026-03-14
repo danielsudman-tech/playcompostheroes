@@ -11,6 +11,7 @@ import {
   playCard,
   removePlayerFromRoom,
   resolveDecision,
+  runBotTurnsIfNeeded,
   type GameState,
 } from "../lib/gameEngine.js";
 import {
@@ -75,12 +76,13 @@ router.get("/rooms", (_req, res) => {
 
 // POST /api/games — create a new game
 router.post("/games", (req, res) => {
-  const { playerNames, mode, password, hostName, maxPlayers } = req.body as {
+  const { playerNames, mode, password, hostName, maxPlayers, botPlayerIndices } = req.body as {
     playerNames?: string[];
     mode: "facilitator" | "standalone" | "online";
     password?: string;
-    hostName?: string;     // online waiting-room mode
-    maxPlayers?: number;   // online waiting-room mode
+    hostName?: string;       // online waiting-room mode
+    maxPlayers?: number;     // online waiting-room mode
+    botPlayerIndices?: number[];  // pass & play: which player slots are bots
   };
 
   if (mode !== "facilitator" && mode !== "standalone" && mode !== "online") {
@@ -123,7 +125,12 @@ router.post("/games", (req, res) => {
   }
 
   const gameId = createGameId();
-  const state = createGameState(gameId, playerNames, mode);
+  const validBotIndices = Array.isArray(botPlayerIndices)
+    ? botPlayerIndices.filter((i) => typeof i === "number" && i >= 0 && i < playerNames.length)
+    : [];
+  let state = createGameState(gameId, playerNames, mode, validBotIndices);
+  // Run bot turns in case the first player(s) happen to be bots
+  state = runBotTurnsIfNeeded(state);
   storeGame(state);
 
   res.status(201).json(serializeState(state));
@@ -388,8 +395,12 @@ router.post("/games/:gameId/action", (req, res) => {
         break;
       }
       case "reset_game": {
-        const players = state.players.map((p) => p.name);
-        const newState = createGameState(createGameId(), players, state.mode);
+        const playerNames = state.players.map((p) => p.name);
+        const botIndices = state.players
+          .map((p, i) => (p.isBot ? i : -1))
+          .filter((i) => i >= 0);
+        let newState = createGameState(createGameId(), playerNames, state.mode as "facilitator" | "standalone", botIndices);
+        newState = runBotTurnsIfNeeded(newState);
         storeGame(newState);
         broadcast(newState.gameId, newState);
         res.json(serializeState(newState));
@@ -411,13 +422,15 @@ router.post("/games/:gameId/action", (req, res) => {
     return;
   }
 
-  storeGame(result.state);
-  broadcast(gameId, result.state);
+  // After any action that may have advanced the turn, let bots take their turns
+  const stateAfterBots = runBotTurnsIfNeeded(result.state);
+  storeGame(stateAfterBots);
+  broadcast(gameId, stateAfterBots);
 
   // Return filtered state for the requesting player
   const viewerIndex =
     token ? (getPlayerIndexForToken(gameId, token) ?? undefined) : undefined;
-  res.json(serializeState(result.state, viewerIndex));
+  res.json(serializeState(stateAfterBots, viewerIndex));
 });
 
 // DELETE /api/games/:gameId/players/:playerId — leave (self) or kick (host only)

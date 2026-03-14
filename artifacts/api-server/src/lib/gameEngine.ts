@@ -10,6 +10,7 @@ export interface PlayerState {
   skipsNextTurn: boolean;
   maxHandSize: number;
   drawsExtraCard: boolean;
+  isBot: boolean;
 }
 
 export interface ActiveModifier {
@@ -1945,7 +1946,8 @@ export function endTurn(
 export function createGameState(
   gameId: string,
   playerNames: string[],
-  mode: "facilitator" | "standalone"
+  mode: "facilitator" | "standalone",
+  botPlayerIndices: number[] = []
 ): GameState {
   const deck = shuffle(buildDeck(getAllOverrides(), getAllCopies()));
   const players: PlayerState[] = playerNames.map((name, i) => ({
@@ -1956,6 +1958,7 @@ export function createGameState(
     skipsNextTurn: false,
     maxHandSize: 5,
     drawsExtraCard: false,
+    isBot: botPlayerIndices.includes(i),
   }));
 
   let state: GameState = {
@@ -2235,6 +2238,103 @@ export function addPlayerToRoom(
     state: { ...state, players: [...state.players, newPlayer] },
     playerIndex,
   };
+}
+
+// ─────────────────────────────────────────────
+// BOT AI
+// ─────────────────────────────────────────────
+
+/**
+ * Execute a single bot turn: draw → maybe play best hero → end turn.
+ * Returns the new state (which will be at the next player's draw phase).
+ */
+function botTakeTurn(state: GameState): GameState {
+  const player = state.players[state.currentPlayerIndex];
+  if (!player.isBot) return state;
+
+  // 1. Draw card
+  let s = drawCard(state, player);
+  s = { ...s, phase: "play" };
+  addLog(s, `${player.name} (Bot) drew a card.`);
+
+  // 2. Find best hero to play (fills a missing function in their pile)
+  const updatedPlayer = getPlayer(s, player.id)!;
+  const coveredFunctions = new Set(
+    updatedPlayer.compostPile.map((c) => getEffectiveFunction(c))
+  );
+  const missingFunctions = WIN_FUNCTIONS.filter((f) => !coveredFunctions.has(f));
+
+  let bestHero: Card | null = null;
+  let bestChosenFn: string | null = null;
+
+  for (const card of updatedPlayer.hand) {
+    if (card.type !== "hero") continue;
+    const validFns = [card.function, ...(card.alternateFunctions ?? [])];
+    const matchMissing = validFns.filter((f) => (missingFunctions as string[]).includes(f));
+    if (matchMissing.length > 0) {
+      bestHero = card;
+      bestChosenFn = matchMissing[0];
+      break;
+    }
+    // If no missing function match, but card fills a slot we don't have at all,
+    // still a candidate (lower priority)
+    if (!bestHero && validFns.some((f) => !(coveredFunctions as Set<string>).has(f))) {
+      bestHero = card;
+      bestChosenFn = validFns.find((f) => !(coveredFunctions as Set<string>).has(f)) ?? null;
+    }
+  }
+
+  if (bestHero) {
+    const playResult = playCard(s, player.id, bestHero.id);
+    if (!playResult.error) {
+      s = playResult.state;
+      // Resolve choose_function decision if triggered (multi-function hero)
+      if (s.pendingDecision?.type === "choose_function" && bestChosenFn) {
+        const resolveResult = resolveDecision(s, player.id, { function: bestChosenFn });
+        if (!resolveResult.error) s = resolveResult.state;
+      }
+    }
+  }
+
+  // 3. End turn
+  const endResult = endTurn(s, player.id);
+  if (!endResult.error) s = endResult.state;
+  else {
+    // If endTurn hit choose_discard_to_limit, auto-discard excess cards (least useful first)
+    if (s.pendingDecision?.type === "choose_discard_to_limit") {
+      const count = (s.pendingDecision.meta?.count as number) ?? 1;
+      const toDiscard = s.pendingDecision.options!.slice(0, count) as { cardId: string }[];
+      let rs = s;
+      for (const opt of toDiscard) {
+        const rr = resolveDecision(rs, player.id, { cardId: opt.cardId });
+        if (!rr.error) rs = rr.state;
+      }
+      s = rs;
+    }
+  }
+
+  return s;
+}
+
+/**
+ * While the current player is a bot and the game is in draw phase,
+ * execute their turn automatically. Call after any state mutation that
+ * might have advanced the turn.
+ */
+export function runBotTurnsIfNeeded(state: GameState): GameState {
+  let s = state;
+  let iterations = 0;
+  while (
+    s.phase === "draw" &&
+    s.phase !== "game_over" &&
+    s.players[s.currentPlayerIndex]?.isBot &&
+    iterations < 20
+  ) {
+    s = botTakeTurn(s);
+    iterations++;
+    if (s.phase === "game_over") break;
+  }
+  return s;
 }
 
 export function launchGame(
