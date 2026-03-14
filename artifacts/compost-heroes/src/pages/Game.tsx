@@ -114,6 +114,8 @@ export default function Game() {
     name: string;
     rect: DOMRect;
   } | null>(null);
+  // Desktop hand area expanded state — all cards grow when mouse enters the row
+  const [isHandHovered, setIsHandHovered] = useState(false);
 
   // Sound effect utility (Web Audio API — no external files needed)
   const playSound = useCallback((type: "draw" | "play_action" | "play_hero" | "error") => {
@@ -750,7 +752,7 @@ export default function Game() {
       </div>
 
       {/* BOTTOM ROW: Local Player mat (desktop only — mobile uses My Pile tab) */}
-      <div className="relative z-20 pb-72 max-w-3xl mx-auto w-full hidden md:block">
+      <div className="relative z-20 pb-[420px] max-w-3xl mx-auto w-full hidden md:block">
         <PlayerMat 
           player={localPlayerFull} 
           isCurrentPlayer={isMyTurn}
@@ -769,7 +771,12 @@ export default function Game() {
           const hand = localPlayerFull.hand;
           const isPlayPhase = isMyTurn && gameState.phase === "play" && !gameState.pendingDecision;
           return (
-            <div className="hidden md:block bg-card/95 backdrop-blur-md border-t border-border pointer-events-auto">
+            <motion.div
+              className="hidden md:block bg-card/95 backdrop-blur-md border-t border-border pointer-events-auto"
+              onMouseEnter={() => setIsHandHovered(true)}
+              onMouseLeave={() => { setIsHandHovered(false); setHoveredHandCard(null); }}
+              layout
+            >
               <div className="flex items-center justify-between px-4 py-1.5">
                 <span className="text-xs font-medium text-muted-foreground">
                   Hand&nbsp;
@@ -778,10 +785,17 @@ export default function Game() {
                   </span>
                 </span>
                 {isPlayPhase && (
-                  <span className="text-[11px] text-primary font-semibold">Click a card to play</span>
+                  <span className="text-[11px] text-primary font-semibold">
+                    {isHandHovered ? "Click a card to play it" : "Hover to expand · Click to play"}
+                  </span>
                 )}
               </div>
-              <div className="flex gap-3 overflow-x-auto px-4 pb-3 justify-center flex-wrap">
+              <div className={cn(
+                "flex gap-3 px-4 pb-3 transition-all",
+                isHandHovered
+                  ? "overflow-x-auto flex-nowrap justify-start items-end"
+                  : "overflow-x-auto flex-wrap justify-center items-end"
+              )}>
                 {hand.length === 0 && (
                   <div className="py-4 text-muted-foreground/40 text-sm italic">No cards in hand</div>
                 )}
@@ -795,16 +809,22 @@ export default function Game() {
                     <motion.div
                       key={`${card.id}-${idx}`}
                       initial={{ opacity: 0, y: 8 }}
-                      animate={{ opacity: isBlocked ? 0.4 : 1, y: 0 }}
-                      transition={{ delay: idx * 0.03 }}
+                      animate={{
+                        opacity: isBlocked ? 0.4 : 1,
+                        y: 0,
+                        width: isHandHovered ? 192 : 96,
+                        height: isHandHovered ? 288 : 144,
+                      }}
+                      transition={{ type: "spring", stiffness: 280, damping: 28, delay: isHandHovered ? idx * 0.02 : 0 }}
                       onClick={() => !isBlocked && handleCardClick(card)}
                       onMouseEnter={(e) => {
+                        if (isHandHovered) return;
                         const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
                         setHoveredHandCard({ imageSrc, name: card.name, rect });
                       }}
                       onMouseLeave={() => setHoveredHandCard(null)}
                       className={cn(
-                        "shrink-0 cursor-pointer transition-shadow rounded-xl",
+                        "shrink-0 cursor-pointer rounded-xl overflow-hidden",
                         isPlayable && "ring-2 ring-primary/60 shadow-md shadow-primary/20 hover:shadow-lg hover:shadow-primary/30",
                         isBlocked && "cursor-not-allowed",
                       )}
@@ -813,17 +833,19 @@ export default function Game() {
                         <img
                           src={imageSrc}
                           alt={card.name}
-                          className="w-24 h-36 object-cover rounded-xl"
+                          className="w-full h-full object-cover"
                           draggable={false}
                         />
                       ) : (
-                        <GameCard card={card} size="sm" hoverable={false} />
+                        <div className="w-full h-full">
+                          <GameCard card={card} size={isHandHovered ? "md" : "sm"} hoverable={false} />
+                        </div>
                       )}
                     </motion.div>
                   );
                 })}
               </div>
-            </div>
+            </motion.div>
           );
         })()}
 
