@@ -936,87 +936,112 @@ export default function Game() {
         })()}
 
         {/* ── CAROUSEL VIEW ── */}
-        {handView === "carousel" && (
-          <div className="bg-card/95 backdrop-blur-md">
-            {localPlayerFull.hand.length === 0 ? (
-              <div className="flex items-center justify-center h-16 text-muted-foreground/50 text-sm italic">No cards in hand</div>
-            ) : (() => {
-              const card = localPlayerFull.hand[handFocusIdx] ?? localPlayerFull.hand[0];
-              const isPlayPhase = isMyTurn && gameState.phase === "play" && !gameState.pendingDecision;
-              const heroBlocked = card.type === "hero" && gameState.heroPlayedThisTurn;
-              const actionBlocked = card.type === "action" && gameState.heroPlayedThisTurn && gameState.actionPlayedThisTurn;
-              const isPlayable = isPlayPhase && !heroBlocked && !actionBlocked;
-              const imageSrc = card.imageKey ? assetUrl(card.imageKey) : null;
-              return (
-                <div className="flex flex-col items-center px-3 pt-2 pb-2.5 gap-2">
-                  {/* Card image row with prev/next arrows */}
-                  <div className="flex items-center gap-3 w-full justify-center">
-                    <button
-                      className="shrink-0 w-9 h-9 rounded-full bg-background/80 border border-border flex items-center justify-center disabled:opacity-30 active:scale-95 transition-transform"
-                      disabled={handFocusIdx === 0}
-                      onClick={() => setHandFocusIdx(i => i - 1)}
-                    >
-                      <ChevronLeft className="w-5 h-5" />
-                    </button>
+        {handView === "carousel" && (() => {
+          const hand = localPlayerFull.hand;
+          const focusCard = hand[handFocusIdx] ?? hand[0];
+          const isPlayPhase = isMyTurn && gameState.phase === "play" && !gameState.pendingDecision;
+          const fHeroBlocked = focusCard?.type === "hero" && gameState.heroPlayedThisTurn;
+          const fActionBlocked = focusCard?.type === "action" && gameState.heroPlayedThisTurn && gameState.actionPlayedThisTurn;
+          const fPlayable = isPlayPhase && !fHeroBlocked && !fActionBlocked;
 
-                    <motion.div
-                      key={card.id}
-                      initial={{ opacity: 0, scale: 0.88 }}
-                      animate={{ opacity: 1, scale: 1 }}
-                      transition={{ type: "spring", stiffness: 400, damping: 30 }}
-                      className={cn(
-                        "shadow-2xl transition-all",
-                        isPlayable && "ring-2 ring-primary ring-offset-2 shadow-primary/30",
-                        (heroBlocked || actionBlocked) && "opacity-50 cursor-not-allowed"
-                      )}
-                    >
-                      <GameCard
-                        card={card}
-                        size="md"
-                        hoverable={false}
-                        onClick={(!heroBlocked && !actionBlocked) ? () => handleCardClick(card) : undefined}
-                      />
-                    </motion.div>
+          // Coverflow geometry
+          const STEP = 108; // px between adjacent card centres
+          const VISIBLE = 3; // cards shown each side of focus
 
-                    <button
-                      className="shrink-0 w-9 h-9 rounded-full bg-background/80 border border-border flex items-center justify-center disabled:opacity-30 active:scale-95 transition-transform"
-                      disabled={handFocusIdx >= localPlayerFull.hand.length - 1}
-                      onClick={() => setHandFocusIdx(i => i + 1)}
-                    >
-                      <ChevronRight className="w-5 h-5" />
-                    </button>
+          // Touch swipe tracking
+          const handleTouchStart = (e: React.TouchEvent) => {
+            (e.currentTarget as HTMLDivElement).dataset.swipeX = String(e.touches[0].clientX);
+          };
+          const handleTouchEnd = (e: React.TouchEvent) => {
+            const startX = Number((e.currentTarget as HTMLDivElement).dataset.swipeX ?? 0);
+            const dx = e.changedTouches[0].clientX - startX;
+            if (Math.abs(dx) > 40) {
+              setHandFocusIdx(i => dx < 0
+                ? Math.min(i + 1, hand.length - 1)
+                : Math.max(i - 1, 0));
+            }
+          };
+
+          return (
+            <div className="bg-card/95 backdrop-blur-md select-none">
+              {hand.length === 0 ? (
+                <div className="flex items-center justify-center h-16 text-muted-foreground/50 text-sm italic">No cards in hand</div>
+              ) : (
+                <>
+                  {/* Coverflow stage */}
+                  <div
+                    className="relative flex items-center justify-center overflow-hidden"
+                    style={{ height: 232, touchAction: "pan-y" }}
+                    onTouchStart={handleTouchStart}
+                    onTouchEnd={handleTouchEnd}
+                  >
+                    {hand.map((c, i) => {
+                      const dist = i - handFocusIdx;
+                      const absDist = Math.abs(dist);
+                      if (absDist > VISIBLE) return null;
+
+                      const scale = [1, 0.72, 0.54, 0.42][absDist] ?? 0.42;
+                      const opacity = [1, 0.8, 0.55, 0.3][absDist] ?? 0.3;
+                      const x = dist * STEP;
+                      const zIndex = VISIBLE - absDist;
+                      const isBlocked = (c.type === "hero" && gameState.heroPlayedThisTurn) ||
+                        (c.type === "action" && gameState.heroPlayedThisTurn && gameState.actionPlayedThisTurn);
+                      const isCenter = absDist === 0;
+
+                      return (
+                        <motion.div
+                          key={c.id}
+                          animate={{ x, scale, opacity }}
+                          transition={{ type: "spring", stiffness: 320, damping: 30 }}
+                          style={{ position: "absolute", zIndex }}
+                          className={cn(
+                            "cursor-pointer",
+                            isCenter && fPlayable && "ring-2 ring-primary ring-offset-2 shadow-primary/30",
+                            isCenter && isBlocked && "opacity-50"
+                          )}
+                          onClick={() => {
+                            if (!isCenter) { setHandFocusIdx(i); }
+                            else if (!isBlocked) { handleCardClick(c); }
+                          }}
+                        >
+                          <GameCard card={c} size="md" hoverable={false} />
+                        </motion.div>
+                      );
+                    })}
                   </div>
 
-                  {/* Status / action row below the card */}
-                  <div className="flex flex-col items-center gap-1.5">
-                    {heroBlocked && <span className="text-[11px] text-destructive font-bold">Already played a hero this turn</span>}
-                    {actionBlocked && <span className="text-[11px] text-destructive font-bold">Already played an action this turn</span>}
-                    {isPlayable && (
-                      <Button size="sm" className="h-9 px-8 font-bold" onClick={() => handleCardClick(card)}>
+                  {/* Status / Play button */}
+                  <div className="flex flex-col items-center gap-1 pb-1">
+                    {fHeroBlocked && <span className="text-[11px] text-destructive font-bold">Already played a hero this turn</span>}
+                    {fActionBlocked && <span className="text-[11px] text-destructive font-bold">Already played an action this turn</span>}
+                    {fPlayable && (
+                      <Button size="sm" className="h-9 px-8 font-bold" onClick={() => handleCardClick(focusCard)}>
                         Play
                       </Button>
                     )}
                   </div>
-                </div>
-              );
-            })()}
-            {localPlayerFull.hand.length > 1 && (
-              <div className="flex justify-center items-center gap-1.5 pb-2.5">
-                {localPlayerFull.hand.map((_, i) => (
-                  <button
-                    key={i}
-                    onClick={() => setHandFocusIdx(i)}
-                    className={cn(
-                      "rounded-full transition-all",
-                      i === handFocusIdx ? "w-4 h-1.5 bg-primary" : "w-1.5 h-1.5 bg-muted-foreground/30 hover:bg-muted-foreground/60"
-                    )}
-                  />
-                ))}
-                <span className="ml-1 text-[10px] text-muted-foreground/40 font-mono">{handFocusIdx + 1}/{localPlayerFull.hand.length}</span>
-              </div>
-            )}
-          </div>
-        )}
+
+                  {/* Dot indicators */}
+                  {hand.length > 1 && (
+                    <div className="flex justify-center items-center gap-1.5 pb-2.5">
+                      {hand.map((_, i) => (
+                        <button
+                          key={i}
+                          onClick={() => setHandFocusIdx(i)}
+                          className={cn(
+                            "rounded-full transition-all",
+                            i === handFocusIdx ? "w-4 h-1.5 bg-primary" : "w-1.5 h-1.5 bg-muted-foreground/30 hover:bg-muted-foreground/60"
+                          )}
+                        />
+                      ))}
+                      <span className="ml-1 text-[10px] text-muted-foreground/40 font-mono">{handFocusIdx + 1}/{hand.length}</span>
+                    </div>
+                  )}
+                </>
+              )}
+            </div>
+          );
+        })()}
 
         {/* ── GRID VIEW ── */}
         {handView === "grid" && (
