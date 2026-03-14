@@ -3,14 +3,15 @@ import { X } from "lucide-react";
 import type { PlayerState } from "@workspace/api-client-react";
 import { GameCard } from "./GameCard";
 import { cn } from "@/lib/utils";
-import { Wind, Leaf, Droplets, Sprout, Worm, CheckCircle2 } from "lucide-react";
+import { CheckCircle2 } from "lucide-react";
 
+const BASE = import.meta.env.BASE_URL;
 const CATEGORIES = [
-  { label: "Airflow", Icon: Wind, match: (fn: string) => fn.toLowerCase().includes("air"), color: "text-cyan-600" },
-  { label: "Carbon", Icon: Leaf, match: (fn: string) => fn.toLowerCase().includes("carbon"), color: "text-amber-700" },
-  { label: "Moisture", Icon: Droplets, match: (fn: string) => fn.toLowerCase().includes("moisture"), color: "text-blue-600" },
-  { label: "Nitrogen", Icon: Sprout, match: (fn: string) => fn.toLowerCase().includes("nitrogen"), color: "text-lime-600" },
-  { label: "Decomposer", Icon: Worm, match: (fn: string) => fn.toLowerCase().includes("decomp") || fn.toLowerCase().includes("fire"), color: "text-orange-600" },
+  { label: "Airflow",    iconSrc: `${BASE}assets/icon-airflow.png`,    match: (fn: string) => fn.toLowerCase().includes("air"),     color: "text-cyan-600" },
+  { label: "Carbon",     iconSrc: `${BASE}assets/icon-carbon.png`,     match: (fn: string) => fn.toLowerCase().includes("carbon"),  color: "text-amber-700" },
+  { label: "Moisture",   iconSrc: `${BASE}assets/icon-moisture.png`,   match: (fn: string) => fn.toLowerCase().includes("moisture"),color: "text-blue-600" },
+  { label: "Nitrogen",   iconSrc: `${BASE}assets/icon-nitrogen.png`,   match: (fn: string) => fn.toLowerCase().includes("nitrogen"),color: "text-lime-600" },
+  { label: "Decomposer", iconSrc: `${BASE}assets/icon-decomposer.png`, match: (fn: string) => fn.toLowerCase().includes("decomp") || fn.toLowerCase().includes("fire"), color: "text-orange-600" },
 ];
 
 interface OpponentPileModalProps {
@@ -65,7 +66,7 @@ export function OpponentPileModal({ player, onClose }: OpponentPileModalProps) {
                     "flex items-center gap-2 mb-2 text-sm font-bold uppercase tracking-wider",
                     has ? cat.color : "text-muted-foreground/40"
                   )}>
-                    <cat.Icon className="w-4 h-4" />
+                    <img src={cat.iconSrc} alt={cat.label} className="w-4 h-4 object-contain" draggable={false} />
                     <span>{cat.label}</span>
                     {has && <CheckCircle2 className="w-4 h-4 ml-1" />}
                     {!has && <span className="font-normal normal-case tracking-normal text-xs ml-1">— not yet collected</span>}

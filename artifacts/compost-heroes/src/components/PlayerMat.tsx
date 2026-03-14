@@ -4,7 +4,7 @@ import { motion, AnimatePresence } from "framer-motion";
 import { GameCard } from "./GameCard";
 import type { PlayerState, CardState } from "@workspace/api-client-react";
 import { cn } from "@/lib/utils";
-import { Wind, Leaf, Droplets, Sprout, Worm, User, MoveRight, ChevronLeft, ChevronRight } from "lucide-react";
+import { User, MoveRight, ChevronLeft, ChevronRight } from "lucide-react";
 
 interface PlayerMatProps {
   player: PlayerState;
@@ -22,57 +22,57 @@ const CATEGORIES = [
   {
     key: "moisture",
     label: "Moisture",
-    Icon: Droplets,
+    iconSrc: `${import.meta.env.BASE_URL}assets/icon-moisture.png`,
     borderClass: "border-blue-400",
     bgClass: "bg-blue-50 dark:bg-blue-950/30",
     headerClass: "bg-blue-100 text-blue-800",
     emptyDotClass: "bg-blue-200",
-    iconClass: "text-blue-500",
+    iconClass: "opacity-100",
     match: (fn: string) => fn.toLowerCase().includes("moisture"),
   },
   {
     key: "carbon",
     label: "Carbon",
-    Icon: Leaf,
+    iconSrc: `${import.meta.env.BASE_URL}assets/icon-carbon.png`,
     borderClass: "border-amber-400",
     bgClass: "bg-amber-50 dark:bg-amber-950/30",
     headerClass: "bg-amber-100 text-amber-800",
     emptyDotClass: "bg-amber-200",
-    iconClass: "text-amber-500",
+    iconClass: "opacity-100",
     match: (fn: string) => fn.toLowerCase().includes("carbon"),
   },
   {
     key: "decomposer",
     label: "Decomposer",
-    Icon: Worm,
+    iconSrc: `${import.meta.env.BASE_URL}assets/icon-decomposer.png`,
     borderClass: "border-orange-400",
     bgClass: "bg-orange-50 dark:bg-orange-950/30",
     headerClass: "bg-orange-100 text-orange-800",
     emptyDotClass: "bg-orange-200",
-    iconClass: "text-orange-500",
+    iconClass: "opacity-100",
     match: (fn: string) =>
       fn.toLowerCase().includes("decomp") || fn.toLowerCase().includes("fire"),
   },
   {
     key: "nitrogen",
     label: "Nitrogen",
-    Icon: Sprout,
+    iconSrc: `${import.meta.env.BASE_URL}assets/icon-nitrogen.png`,
     borderClass: "border-lime-400",
     bgClass: "bg-lime-50 dark:bg-lime-950/30",
     headerClass: "bg-lime-100 text-lime-800",
     emptyDotClass: "bg-lime-200",
-    iconClass: "text-lime-600",
+    iconClass: "opacity-100",
     match: (fn: string) => fn.toLowerCase().includes("nitrogen"),
   },
   {
     key: "airflow",
     label: "Airflow",
-    Icon: Wind,
+    iconSrc: `${import.meta.env.BASE_URL}assets/icon-airflow.png`,
     borderClass: "border-cyan-400",
     bgClass: "bg-cyan-50 dark:bg-cyan-950/30",
     headerClass: "bg-cyan-100 text-cyan-800",
     emptyDotClass: "bg-cyan-200",
-    iconClass: "text-cyan-500",
+    iconClass: "opacity-100",
     match: (fn: string) => fn.toLowerCase().includes("air"),
   },
 ];
@@ -236,8 +236,8 @@ export function PlayerMat({
                 style={{ minHeight: 52 }}
               >
                 {/* Category icon */}
-                <div className={cn("pt-0.5 pb-0.5", has ? cat.iconClass : "text-muted-foreground/30")}>
-                  <cat.Icon className="w-2.5 h-2.5" />
+                <div className={cn("pt-0.5 pb-0.5", !has && "opacity-20")}>
+                  <img src={cat.iconSrc} alt={cat.label} className="w-2.5 h-2.5 object-contain" draggable={false} />
                 </div>
                 {/* Tiny card slot */}
                 <div className="w-full flex-1 px-0.5 pb-0.5 relative" style={{ minHeight: 36 }}>
@@ -377,7 +377,7 @@ export function PlayerMat({
                       : "bg-transparent text-muted-foreground/40 border-transparent"
                   )}
                 >
-                  <cat.Icon className="w-2.5 h-2.5 shrink-0" />
+                  <img src={cat.iconSrc} alt={cat.label} className="w-2.5 h-2.5 shrink-0 object-contain" draggable={false} />
                   <span className="truncate">{cat.label}</span>
                   {multi && (
                     <span className="ml-auto font-bold text-[8px]">{activeIdx + 1}/{cards.length}</span>
@@ -404,7 +404,7 @@ export function PlayerMat({
                       </motion.div>
                     ) : (
                       <div className="absolute inset-0 flex flex-col items-center justify-center gap-1 text-muted-foreground/25">
-                        <cat.Icon className="w-6 h-6" />
+                        <img src={cat.iconSrc} alt={cat.label} className="w-6 h-6 object-contain opacity-25" draggable={false} />
                         <span className="text-[8px] font-bold uppercase">Empty</span>
                       </div>
                     )}

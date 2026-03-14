@@ -3,15 +3,16 @@ import { motion, AnimatePresence } from "framer-motion";
 import type { PendingDecision, GameState } from "@workspace/api-client-react";
 import { Button } from "@/components/ui/button";
 import { GameCard } from "./GameCard";
-import { User, CheckSquare, Wind, Leaf, Droplets, Sprout, Worm } from "lucide-react";
+import { User, CheckSquare } from "lucide-react";
 import { cn } from "@/lib/utils";
 
-const FUNCTION_META: Record<string, { label: string; Icon: React.ElementType; color: string; bg: string }> = {
-  Airflow:    { label: "Airflow",    Icon: Wind,     color: "text-cyan-700",  bg: "bg-cyan-50 border-cyan-400" },
-  Carbon:     { label: "Carbon",     Icon: Leaf,     color: "text-amber-700", bg: "bg-amber-50 border-amber-400" },
-  Moisture:   { label: "Moisture",   Icon: Droplets, color: "text-blue-700",  bg: "bg-blue-50 border-blue-400" },
-  Nitrogen:   { label: "Nitrogen",   Icon: Sprout,   color: "text-lime-700",  bg: "bg-lime-50 border-lime-400" },
-  Decomposer: { label: "Decomposer", Icon: Worm,     color: "text-orange-700",bg: "bg-orange-50 border-orange-400" },
+const BASE = import.meta.env.BASE_URL;
+const FUNCTION_META: Record<string, { label: string; iconSrc: string; color: string; bg: string }> = {
+  Airflow:    { label: "Airflow",    iconSrc: `${BASE}assets/icon-airflow.png`,    color: "text-cyan-700",   bg: "bg-cyan-50 border-cyan-400" },
+  Carbon:     { label: "Carbon",     iconSrc: `${BASE}assets/icon-carbon.png`,     color: "text-amber-700",  bg: "bg-amber-50 border-amber-400" },
+  Moisture:   { label: "Moisture",   iconSrc: `${BASE}assets/icon-moisture.png`,   color: "text-blue-700",   bg: "bg-blue-50 border-blue-400" },
+  Nitrogen:   { label: "Nitrogen",   iconSrc: `${BASE}assets/icon-nitrogen.png`,   color: "text-lime-700",   bg: "bg-lime-50 border-lime-400" },
+  Decomposer: { label: "Decomposer", iconSrc: `${BASE}assets/icon-decomposer.png`, color: "text-orange-700", bg: "bg-orange-50 border-orange-400" },
 };
 
 interface DecisionModalProps {
@@ -249,8 +250,7 @@ export function DecisionModal({ decision, gameState, onResolve }: DecisionModalP
               <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
                 {options.map((opt: any, i: number) => {
                   const fn = opt.function as string;
-                  const meta = FUNCTION_META[fn] ?? { label: fn, Icon: Leaf, color: "text-muted-foreground", bg: "bg-muted border-border" };
-                  const { Icon } = meta;
+                  const meta = FUNCTION_META[fn] ?? { label: fn, iconSrc: null, color: "text-muted-foreground", bg: "bg-muted border-border" };
                   return (
                     <button
                       key={i}
@@ -260,7 +260,10 @@ export function DecisionModal({ decision, gameState, onResolve }: DecisionModalP
                         meta.bg, meta.color
                       )}
                     >
-                      <Icon className="w-8 h-8" />
+                      {meta.iconSrc
+                        ? <img src={meta.iconSrc} alt={meta.label} className="w-8 h-8 object-contain" draggable={false} />
+                        : <span className="w-8 h-8" />
+                      }
                       {meta.label}
                     </button>
                   );
