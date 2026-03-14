@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from "react";
+import { createPortal } from "react-dom";
 import { useParams, useLocation } from "wouter";
 import { motion, AnimatePresence } from "framer-motion";
 import confetti from "canvas-confetti";
@@ -106,6 +107,13 @@ export default function Game() {
   const [passScreen, setPassScreen] = useState<{ name: string; cardCount: number } | null>(null);
   const prevPlayerIndexRef = useRef<number | null>(null);
   const isFirstRender = useRef(true);
+
+  // Desktop hand-card hover preview portal
+  const [hoveredHandCard, setHoveredHandCard] = useState<{
+    imageSrc: string | null;
+    name: string;
+    rect: DOMRect;
+  } | null>(null);
 
   // Sound effect utility (Web Audio API — no external files needed)
   const playSound = useCallback((type: "draw" | "play_action" | "play_hero" | "error") => {
@@ -443,7 +451,44 @@ export default function Game() {
     ? gameState.discardPile[gameState.discardPile.length - 1] 
     : null;
 
+  // Portal must be computed outside JSX to avoid parser issues with createPortal(<JSX>, node) inside expressions
+  const handCardPortal = hoveredHandCard
+    ? createPortal(
+        <div
+          className="pointer-events-none fixed z-[9999]"
+          style={{
+            left: Math.max(8, Math.min(
+              window.innerWidth - 232,
+              hoveredHandCard.rect.left + hoveredHandCard.rect.width / 2 - 116
+            )),
+            bottom: window.innerHeight - hoveredHandCard.rect.top + 10,
+          }}
+        >
+          <motion.div
+            initial={{ scale: 0.85, opacity: 0, y: 8 }}
+            animate={{ scale: 1, opacity: 1, y: 0 }}
+            transition={{ type: "spring", duration: 0.2 }}
+            className="shadow-2xl rounded-2xl overflow-hidden border-2 border-white/30"
+          >
+            {hoveredHandCard.imageSrc ? (
+              <img
+                src={hoveredHandCard.imageSrc}
+                alt={hoveredHandCard.name}
+                className="w-[232px] h-[324px] object-cover"
+              />
+            ) : (
+              <div className="w-[232px] h-[324px] bg-card flex items-center justify-center text-muted-foreground text-sm font-bold">
+                {hoveredHandCard.name}
+              </div>
+            )}
+          </motion.div>
+        </div>,
+        document.body
+      )
+    : null;
+
   return (
+    <>
     <div className="min-h-screen bg-background game-table-pattern flex flex-col overflow-hidden text-foreground">
       {/* Background Decor */}
       <div className="fixed inset-0 pointer-events-none opacity-[0.03] z-0 mix-blend-multiply">
@@ -752,9 +797,12 @@ export default function Game() {
                       initial={{ opacity: 0, y: 8 }}
                       animate={{ opacity: isBlocked ? 0.4 : 1, y: 0 }}
                       transition={{ delay: idx * 0.03 }}
-                      whileHover={!isBlocked ? { scale: 2.1, y: -80, zIndex: 100 } : {}}
-                      style={{ position: "relative", transformOrigin: "center bottom" }}
                       onClick={() => !isBlocked && handleCardClick(card)}
+                      onMouseEnter={(e) => {
+                        const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
+                        setHoveredHandCard({ imageSrc, name: card.name, rect });
+                      }}
+                      onMouseLeave={() => setHoveredHandCard(null)}
                       className={cn(
                         "shrink-0 cursor-pointer transition-shadow rounded-xl",
                         isPlayable && "ring-2 ring-primary/60 shadow-md shadow-primary/20 hover:shadow-lg hover:shadow-primary/30",
@@ -1298,5 +1346,8 @@ export default function Game() {
       </AnimatePresence>
 
     </div>
+
+    {handCardPortal}
+    </>
   );
 }
