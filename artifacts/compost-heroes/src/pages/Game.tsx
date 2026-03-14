@@ -96,6 +96,11 @@ export default function Game() {
   // Hand navigation (used in carousel and grid focus)
   const [handFocusIdx, setHandFocusIdx] = useState(0);
 
+  // Rolodex wheel state — tracks how far the wheel has rotated (degrees)
+  const [wheelAngle, setWheelAngle] = useState(0);
+  const wheelDragRef = useRef<{ startX: number; startAngle: number } | null>(null);
+  const wasDraggingRef = useRef(false);
+
   // Password prompt (online games that require a password to join)
   const [joinPassword, setJoinPassword] = useState("");
 
@@ -181,6 +186,15 @@ export default function Game() {
     if (!gameState) return;
     const len = gameState.players.find(p => p.id === localPlayerId)?.hand.length ?? 0;
     setHandFocusIdx(prev => Math.max(0, Math.min(prev, len - 1)));
+  }, [gameState?.players, localPlayerId]);
+
+  // Clamp wheelAngle when hand size changes
+  useEffect(() => {
+    if (!gameState) return;
+    const len = gameState.players.find(p => p.id === localPlayerId)?.hand.length ?? 0;
+    if (len === 0) { setWheelAngle(0); return; }
+    const spread = Math.max(8, Math.min(22, 130 / len));
+    setWheelAngle(a => Math.max(0, Math.min((len - 1) * spread, a)));
   }, [gameState?.players, localPlayerId]);
 
   // Announce new log entries as on-screen banners
@@ -787,45 +801,100 @@ export default function Game() {
           </div>
         </div>
 
-        {/* ── FAN VIEW ── */}
-        {handView === "fan" && (
-          <div className="relative pointer-events-none overflow-visible bg-card/30 backdrop-blur-sm" style={{ height: 148 }}>
-            <div className="relative flex justify-center h-full pointer-events-none">
-              {localPlayerFull.hand.length === 0 && (
-                <div className="absolute bottom-4 text-muted-foreground/40 text-sm italic">No cards in hand</div>
+        {/* ── FAN VIEW (Rolodex wheel) ── */}
+        {handView === "fan" && (() => {
+          const hand = localPlayerFull.hand;
+          const total = hand.length;
+          const PIVOT_R = 300;
+          const PIVOT_BEYOND = 300;   // pivot sits exactly below the container bottom → card bottoms rest there at angle=0
+          const CONTAINER_H = 190;
+          const CARD_W = 112;
+          const spreadDeg = total <= 1 ? 0 : Math.max(8, Math.min(22, 130 / total));
+          const clampedAngle = Math.max(0, Math.min((total - 1) * spreadDeg, wheelAngle));
+          const focusedIdx = Math.round(clampedAngle / (spreadDeg || 1));
+
+          const handleWheelPointerDown = (e: React.PointerEvent<HTMLDivElement>) => {
+            e.currentTarget.setPointerCapture(e.pointerId);
+            wheelDragRef.current = { startX: e.clientX, startAngle: clampedAngle };
+            wasDraggingRef.current = false;
+          };
+          const handleWheelPointerMove = (e: React.PointerEvent<HTMLDivElement>) => {
+            if (!wheelDragRef.current) return;
+            const deltaX = e.clientX - wheelDragRef.current.startX;
+            if (Math.abs(deltaX) > 5) wasDraggingRef.current = true;
+            const TOUCH_PX_PER_DEG = 8;
+            const raw = wheelDragRef.current.startAngle - deltaX / TOUCH_PX_PER_DEG;
+            setWheelAngle(Math.max(0, Math.min((total - 1) * spreadDeg, raw)));
+          };
+          const handleWheelPointerUp = () => {
+            wheelDragRef.current = null;
+            if (spreadDeg === 0) return;
+            setWheelAngle(a => {
+              const snapped = Math.round(a / spreadDeg) * spreadDeg;
+              return Math.max(0, Math.min((total - 1) * spreadDeg, snapped));
+            });
+          };
+
+          return (
+            <div
+              className="relative overflow-visible bg-card/30 backdrop-blur-sm touch-none select-none"
+              style={{ height: CONTAINER_H }}
+              onPointerDown={handleWheelPointerDown}
+              onPointerMove={handleWheelPointerMove}
+              onPointerUp={handleWheelPointerUp}
+              onPointerCancel={handleWheelPointerUp}
+            >
+              {hand.length === 0 && (
+                <div className="absolute bottom-4 left-1/2 -translate-x-1/2 text-muted-foreground/40 text-sm italic">No cards in hand</div>
               )}
-              {localPlayerFull.hand.map((card, idx) => {
-                const total = localPlayerFull.hand.length;
-                const centerIdx = (total - 1) / 2;
-                const offset = idx - centerIdx;
-                const spread = total <= 3 ? 52 : total <= 5 ? 68 : 80;
-                const rotate = offset * (total <= 3 ? 6 : 4);
-                const arcY = Math.abs(offset) * 8;
-                const x = offset * spread;
+              {hand.map((card, idx) => {
+                const slotAngle = idx * spreadDeg - clampedAngle;
+                const rad = (slotAngle * Math.PI) / 180;
+                const cardX = PIVOT_R * Math.sin(rad) - CARD_W / 2;
+                const cardY = -(PIVOT_R * Math.cos(rad) - PIVOT_BEYOND);
+                const progress = Math.max(0, Math.cos(rad));
+                const scale = 0.52 + 0.48 * progress;
+                const opacity = 0.22 + 0.78 * progress;
+                const isFocused = idx === focusedIdx;
+
                 const isPlayPhase = isMyTurn && gameState.phase === "play" && !gameState.pendingDecision;
                 const heroBlocked = card.type === "hero" && gameState.heroPlayedThisTurn;
                 const actionBlocked = card.type === "action" && gameState.heroPlayedThisTurn && gameState.actionPlayedThisTurn;
                 const isPlayable = isPlayPhase && !heroBlocked && !actionBlocked;
+                const isBlocked = heroBlocked || actionBlocked;
                 const imageSrc = card.imageKey ? `${import.meta.env.BASE_URL}assets/${card.imageKey}` : null;
+
                 return (
                   <motion.div
-                    key={`${card.id}-${idx}`}
-                    className="absolute bottom-0 origin-bottom pointer-events-auto"
-                    initial={{ y: 200, opacity: 0 }}
-                    animate={{ x, y: arcY, rotate, opacity: (heroBlocked || actionBlocked) ? 0.45 : 1, zIndex: idx + 1 }}
-                    whileHover={isPlayPhase ? { y: -50, scale: 1.15, rotate: 0, zIndex: 60, transition: { duration: 0.15 } } : {}}
-                    style={{ transformOrigin: "bottom center" }}
+                    key={card.id}
+                    className="absolute bottom-0 pointer-events-auto"
+                    style={{ left: "50%" }}
+                    animate={{
+                      x: cardX,
+                      y: cardY,
+                      rotate: slotAngle,
+                      scale: isBlocked ? scale * 0.82 : scale,
+                      opacity: isBlocked ? opacity * 0.5 : opacity,
+                      zIndex: isFocused ? 20 : Math.max(1, 15 - Math.abs(Math.round(slotAngle / (spreadDeg || 1)))),
+                    }}
+                    transition={{ type: "spring", stiffness: 380, damping: 32, mass: 0.85 }}
+                    onClick={() => {
+                      if (wasDraggingRef.current) { wasDraggingRef.current = false; return; }
+                      if (!isFocused) {
+                        setWheelAngle(idx * spreadDeg);
+                      } else {
+                        handleCardClick(card);
+                      }
+                    }}
                   >
-                    <div className="relative group">
+                    <div className="relative">
                       {imageSrc ? (
-                        <div
-                          onClick={() => handleCardClick(card)}
-                          className={cn(
-                            "w-28 h-40 rounded-xl overflow-hidden shadow-xl border-2 border-white/30",
-                            isPlayable && "cursor-pointer hover:ring-2 hover:ring-primary ring-offset-1",
-                            (heroBlocked || actionBlocked) && "cursor-not-allowed"
-                          )}
-                        >
+                        <div className={cn(
+                          "w-28 h-40 rounded-xl overflow-hidden shadow-xl border-2 transition-colors",
+                          isFocused ? "border-primary/70 shadow-primary/25" : "border-white/20",
+                          !isBlocked && "cursor-pointer",
+                          isBlocked && "cursor-not-allowed",
+                        )}>
                           <img src={imageSrc} alt={card.name} className="w-full h-full object-cover" />
                         </div>
                       ) : (
@@ -833,21 +902,21 @@ export default function Game() {
                           card={card}
                           isFaceDown={false}
                           hoverable={false}
-                          onClick={() => handleCardClick(card)}
                           className={cn(
-                            isPlayable && "cursor-pointer ring-2 ring-transparent hover:ring-primary ring-offset-1",
-                            (heroBlocked || actionBlocked) && "cursor-not-allowed"
+                            isFocused && "shadow-primary/25",
+                            !isBlocked && "cursor-pointer",
+                            isBlocked && "cursor-not-allowed",
                           )}
                         />
                       )}
-                      {isPlayable && (
-                        <div className="absolute -top-7 left-1/2 -translate-x-1/2 bg-primary text-primary-foreground text-[10px] font-bold px-2 py-0.5 rounded-full shadow-lg opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap pointer-events-none z-50">
-                          Play
+                      {isFocused && isPlayable && (
+                        <div className="absolute -top-7 left-1/2 -translate-x-1/2 bg-primary text-primary-foreground text-[10px] font-bold px-2 py-0.5 rounded-full shadow-lg whitespace-nowrap pointer-events-none z-50">
+                          Tap to play
                         </div>
                       )}
-                      {heroBlocked && (
-                        <div className="absolute -top-7 left-1/2 -translate-x-1/2 bg-destructive text-destructive-foreground text-[10px] font-bold px-2 py-0.5 rounded-full shadow-lg opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap pointer-events-none z-50">
-                          1 hero/turn
+                      {isFocused && isBlocked && (
+                        <div className="absolute -top-7 left-1/2 -translate-x-1/2 bg-destructive text-destructive-foreground text-[10px] font-bold px-2 py-0.5 rounded-full shadow-lg whitespace-nowrap pointer-events-none z-50">
+                          {heroBlocked ? "1 hero/turn" : "1 action after hero"}
                         </div>
                       )}
                     </div>
@@ -855,8 +924,8 @@ export default function Game() {
                 );
               })}
             </div>
-          </div>
-        )}
+          );
+        })()}
 
         {/* ── CAROUSEL VIEW ── */}
         {handView === "carousel" && (
