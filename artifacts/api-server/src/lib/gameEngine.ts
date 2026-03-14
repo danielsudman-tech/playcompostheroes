@@ -193,6 +193,21 @@ function cardMatchesStealFunction(card: Card, fn: string): boolean {
   return getEffectiveFunction(card) === fn || cardHasFunctionNatively(card, fn);
 }
 
+/** Returns every pile-slot function this card is allowed to occupy. */
+function getCardValidFunctions(card: Card): string[] {
+  return card.alternateFunctions ?? [card.function];
+}
+
+/** True if the card belongs to the given biological layer. */
+function cardMatchesLayer(card: Card, layer: string): boolean {
+  return card.layer === layer;
+}
+
+/** Returns all cards from a pile that belong to the given biological layer. */
+function getCardsInLayer(pile: Card[], layer: string): Card[] {
+  return pile.filter((c) => cardMatchesLayer(c, layer));
+}
+
 function getHasFunction(player: PlayerState, fn: string): boolean {
   return player.compostPile.some((c) => getEffectiveFunction(c) === fn);
 }
@@ -2098,13 +2113,15 @@ export function moveCardLayer(
   const occupiedFunctions = new Set(
     player.compostPile.filter((c) => c.id !== cardId).map((c) => getEffectiveFunction(c))
   );
-  // Any empty slot (that isn't the card's current slot) is a valid rearrangement target
-  const availableTargets = ALL_HERO_FUNCTIONS.filter(
+  // Only allow slots that this card's layer/function actually permits
+  const cardValidFns = getCardValidFunctions(card);
+  const availableTargets = cardValidFns.filter(
     (fn) => fn !== currentFn && !occupiedFunctions.has(fn)
   );
 
   if (availableTargets.length === 0) {
-    return { state, error: "No empty category slots available to move this card to" };
+    const validList = cardValidFns.join(", ");
+    return { state, error: `${card.name} can only occupy its own function slot(s): ${validList}. No alternate empty slot is available.` };
   }
 
   // If a target function is provided directly (e.g. from drag-and-drop), apply immediately

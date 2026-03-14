@@ -546,6 +546,24 @@ export function getAllCards(): Card[] {
   return ALL_CARDS;
 }
 
+/**
+ * Returns every pile-slot function this card is allowed to occupy.
+ * For single-function cards this is just [card.function].
+ * For multi-function cards (e.g. Mycelial Alchemist) it is alternateFunctions.
+ */
+export function getCardValidFunctions(card: Card): string[] {
+  return card.alternateFunctions ?? [card.function];
+}
+
+/**
+ * Returns the biological layer(s) this card belongs to.
+ * All current cards have at most one layer; the array wrapper keeps callers
+ * forward-compatible with future multi-layer cards.
+ */
+export function getCardLayers(card: Card): string[] {
+  return card.layer ? [card.layer] : [];
+}
+
 // Build deck with image overrides and copies counts.
 // copiesOverrides: cardId → how many copies appear in the deck (default 1, 0 = excluded).
 export function buildDeck(

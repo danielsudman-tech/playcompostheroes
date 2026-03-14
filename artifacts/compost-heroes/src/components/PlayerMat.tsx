@@ -87,6 +87,11 @@ function getEffectiveFn(card: CardState): string {
   return (card as any).chosenFunction ?? card.function ?? "";
 }
 
+/** All pile-slot functions this card is allowed to occupy (based on its layer/function tags). */
+function getCardValidFunctions(card: CardState): string[] {
+  return (card as any).alternateFunctions ?? [card.function ?? ""];
+}
+
 function getCategoryCards(pile: CardState[], matchFn: (fn: string) => boolean) {
   return pile.filter((c) => matchFn(getEffectiveFn(c)));
 }
@@ -181,12 +186,28 @@ function HoverableCard({
             transition={{ duration: 0.15 }}
             style={{ transformOrigin: showBelow ? "top center" : "bottom center" }}
           >
-            <div className="shadow-2xl rounded-xl overflow-hidden border-2 border-white/40">
+            <div className="shadow-2xl rounded-xl overflow-hidden border-2 border-white/40 flex flex-col bg-card">
               {imageSrc ? (
-                <img src={imageSrc} alt={card.name} className="w-56 h-80 object-contain bg-card" />
+                <img src={imageSrc} alt={card.name} className="w-56 h-72 object-contain bg-card" />
               ) : (
                 <GameCard card={card} size="md" hoverable={false} />
               )}
+              {/* Layer + valid-slot metadata footer */}
+              <div className="w-56 px-3 py-2 bg-card border-t border-border flex flex-wrap items-center gap-1.5">
+                {(card as any).layer && (
+                  <span className="text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full bg-muted text-muted-foreground">
+                    Layer: {(card as any).layer}
+                  </span>
+                )}
+                {getCardValidFunctions(card).map((fn) => (
+                  <span
+                    key={fn}
+                    className="text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full bg-primary/10 text-primary"
+                  >
+                    {fn}
+                  </span>
+                ))}
+              </div>
             </div>
           </motion.div>
         </div>,
@@ -392,8 +413,9 @@ export function PlayerMat({
             const draggedCard = draggedCardId ? player.compostPile.find(c => c.id === draggedCardId) : null;
             const draggedCurrentFn = draggedCard ? getEffectiveFn(draggedCard) : null;
             const isCurrentSlot = draggedCard ? cat.match(draggedCurrentFn ?? "") : false;
-            // Any empty slot (other than the card's current slot) is a valid rearrangement target
-            const isValidDropTarget = draggedCard && !isCurrentSlot && !has;
+            // Only highlight slots that the dragged card's layer/function actually permits
+            const draggedValidFns = draggedCard ? getCardValidFunctions(draggedCard) : [];
+            const isValidDropTarget = draggedCard && !isCurrentSlot && !has && draggedValidFns.includes(cat.canonicalFn);
             const isDragOver = dragOverKey === cat.key && isValidDropTarget;
 
             const goNext = (e: React.MouseEvent) => {
