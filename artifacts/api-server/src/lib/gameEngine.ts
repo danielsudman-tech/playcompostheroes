@@ -2069,7 +2069,8 @@ const ALL_HERO_FUNCTIONS = ["Airflow", "Carbon", "Decomposer", "Moisture", "Nitr
 export function moveCardLayer(
   state: GameState,
   playerId: string,
-  cardId: string
+  cardId: string,
+  targetFunction?: string
 ): { state: GameState; error?: string } {
   const player = getPlayer(state, playerId);
   if (!player) return { state, error: "Player not found" };
@@ -2094,6 +2095,27 @@ export function moveCardLayer(
     return { state, error: "No empty category slots available to move this card to" };
   }
 
+  // If a target function is provided directly (e.g. from drag-and-drop), apply immediately
+  if (targetFunction) {
+    if (!(availableTargets as readonly string[]).includes(targetFunction)) {
+      return { state, error: `Cannot move card to ${targetFunction}: slot not available` };
+    }
+    const newPile = player.compostPile.map((c) =>
+      c.id === cardId ? { ...c, chosenFunction: targetFunction, function: targetFunction } : c
+    );
+    const newPlayers = state.players.map((p) =>
+      p.id === playerId ? { ...p, compostPile: newPile } : p
+    );
+    return {
+      state: {
+        ...state,
+        players: newPlayers,
+        log: [...state.log, `${player.name} moved ${card.name} to the ${targetFunction} slot`],
+      },
+    };
+  }
+
+  // Otherwise show a decision modal so the player can pick the target slot
   let s = {
     ...state,
     pendingDecision: {

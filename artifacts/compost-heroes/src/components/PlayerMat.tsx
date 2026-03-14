@@ -4,7 +4,7 @@ import { motion, AnimatePresence } from "framer-motion";
 import { GameCard } from "./GameCard";
 import type { PlayerState, CardState } from "@workspace/api-client-react";
 import { cn } from "@/lib/utils";
-import { User, MoveRight, ChevronLeft, ChevronRight } from "lucide-react";
+import { User, ChevronLeft, ChevronRight } from "lucide-react";
 import { assetUrl } from "@/lib/assetUrl";
 
 interface PlayerMatProps {
@@ -14,7 +14,7 @@ interface PlayerMatProps {
   isActiveTurn: boolean;
   onPlayCard?: (cardId: string) => void;
   onViewPile?: () => void;
-  onMoveLayer?: (cardId: string) => void;
+  onMoveLayer?: (cardId: string, targetFunction?: string) => void;
   className?: string;
   compact?: boolean;
 }
@@ -22,6 +22,7 @@ interface PlayerMatProps {
 const CATEGORIES = [
   {
     key: "moisture",
+    canonicalFn: "Moisture",
     label: "Moisture",
     iconSrc: assetUrl("icon-moisture.png"),
     borderClass: "border-blue-400",
@@ -33,6 +34,7 @@ const CATEGORIES = [
   },
   {
     key: "carbon",
+    canonicalFn: "Carbon",
     label: "Carbon",
     iconSrc: assetUrl("icon-carbon.png"),
     borderClass: "border-amber-400",
@@ -44,6 +46,7 @@ const CATEGORIES = [
   },
   {
     key: "decomposer",
+    canonicalFn: "Decomposer",
     label: "Decomposer",
     iconSrc: assetUrl("icon-decomposer.png"),
     borderClass: "border-orange-400",
@@ -56,6 +59,7 @@ const CATEGORIES = [
   },
   {
     key: "nitrogen",
+    canonicalFn: "Nitrogen",
     label: "Nitrogen",
     iconSrc: assetUrl("icon-nitrogen.png"),
     borderClass: "border-lime-400",
@@ -67,6 +71,7 @@ const CATEGORIES = [
   },
   {
     key: "airflow",
+    canonicalFn: "Airflow",
     label: "Airflow",
     iconSrc: assetUrl("icon-airflow.png"),
     borderClass: "border-cyan-400",
@@ -86,11 +91,24 @@ function getCategoryCards(pile: CardState[], matchFn: (fn: string) => boolean) {
   return pile.filter((c) => matchFn(getEffectiveFn(c)));
 }
 
-// Popup card is w-40 h-56 = 160×224px
-const POPUP_HEIGHT = 232; // 224px card + 8px gap
+const POPUP_HEIGHT = 232;
 const POPUP_GAP = 8;
 
-function HoverableCard({ card, canMove, onMoveLayer }: { card: CardState; canMove?: boolean; onMoveLayer?: () => void }) {
+function HoverableCard({
+  card,
+  canMove,
+  onMoveLayer,
+  draggable: isDraggable,
+  onDragStart,
+  onDragEnd,
+}: {
+  card: CardState;
+  canMove?: boolean;
+  onMoveLayer?: () => void;
+  draggable?: boolean;
+  onDragStart?: (e: React.DragEvent) => void;
+  onDragEnd?: (e: React.DragEvent) => void;
+}) {
   const [hovered, setHovered] = useState(false);
   const [popupPos, setPopupPos] = useState<{ x: number; top: number; bottom: number } | null>(null);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -99,11 +117,7 @@ function HoverableCard({ card, canMove, onMoveLayer }: { card: CardState; canMov
   const handleMouseEnter = () => {
     if (containerRef.current) {
       const rect = containerRef.current.getBoundingClientRect();
-      setPopupPos({
-        x: rect.left + rect.width / 2,
-        top: rect.top,
-        bottom: rect.bottom,
-      });
+      setPopupPos({ x: rect.left + rect.width / 2, top: rect.top, bottom: rect.bottom });
     }
     setHovered(true);
   };
@@ -113,15 +127,17 @@ function HoverableCard({ card, canMove, onMoveLayer }: { card: CardState; canMov
     setPopupPos(null);
   };
 
-  // Decide whether to show the popup above or below the card
   const showBelow = popupPos ? popupPos.top < POPUP_HEIGHT : false;
 
   return (
     <div
       ref={containerRef}
-      className="relative w-full h-full flex items-center justify-center"
+      className={cn("relative w-full h-full flex items-center justify-center", isDraggable && "cursor-grab active:cursor-grabbing")}
       onMouseEnter={handleMouseEnter}
       onMouseLeave={handleMouseLeave}
+      draggable={isDraggable}
+      onDragStart={onDragStart}
+      onDragEnd={onDragEnd}
     >
       {imageSrc ? (
         <img
@@ -129,22 +145,23 @@ function HoverableCard({ card, canMove, onMoveLayer }: { card: CardState; canMov
           alt={card.name}
           className="w-full h-full object-cover rounded-lg"
           style={{ display: "block" }}
+          draggable={false}
         />
       ) : (
         <GameCard card={card} size="xs" hoverable={false} />
       )}
 
-      {canMove && onMoveLayer && (
+      {canMove && onMoveLayer && !isDraggable && (
         <button
           onClick={(e) => { e.stopPropagation(); onMoveLayer(); }}
           className="absolute -bottom-1 -right-1 z-10 bg-primary text-white rounded-full p-0.5 shadow-md hover:bg-primary/80 transition-colors"
           title="Move to another slot"
         >
-          <MoveRight className="w-2.5 h-2.5" />
+          <ChevronRight className="w-2.5 h-2.5" />
         </button>
       )}
 
-      {hovered && popupPos && createPortal(
+      {hovered && popupPos && !isDraggable && createPortal(
         <div
           className="pointer-events-none"
           style={{
@@ -166,11 +183,7 @@ function HoverableCard({ card, canMove, onMoveLayer }: { card: CardState; canMov
           >
             <div className="shadow-2xl rounded-xl overflow-hidden border-2 border-white/40">
               {imageSrc ? (
-                <img
-                  src={imageSrc}
-                  alt={card.name}
-                  className="w-48 h-64 object-contain bg-card"
-                />
+                <img src={imageSrc} alt={card.name} className="w-48 h-64 object-contain bg-card" />
               ) : (
                 <GameCard card={card} size="md" hoverable={false} />
               )}
@@ -197,8 +210,11 @@ export function PlayerMat({
     (cat) => getCategoryCards(player.compostPile, cat.match).length > 0
   ).length;
 
-  // Tracks which card is currently shown for each slot when there are multiple
   const [slotActiveIdx, setSlotActiveIdx] = useState<Record<string, number>>({});
+
+  // Drag-and-drop state (full view only)
+  const [draggedCardId, setDraggedCardId] = useState<string | null>(null);
+  const [dragOverKey, setDragOverKey] = useState<string | null>(null);
 
   if (compact) {
     return (
@@ -227,17 +243,18 @@ export function PlayerMat({
           </h3>
         </div>
 
-        {/* Compact compost pile — 5 slots with tiny card images */}
+        {/* Compact compost pile — 5 slots with card count badges */}
         <div className="grid grid-cols-5 gap-1 mb-2">
           {CATEGORIES.map((cat) => {
             const cards = getCategoryCards(player.compostPile, cat.match);
             const topCard = cards[cards.length - 1] ?? null;
             const has = topCard !== null;
+            const count = cards.length;
             return (
               <div
                 key={cat.key}
                 className={cn(
-                  "rounded-lg border-2 overflow-visible flex flex-col items-center transition-all",
+                  "rounded-lg border-2 overflow-visible flex flex-col items-center transition-all relative",
                   has
                     ? cat.borderClass + " " + cat.bgClass
                     : "border-muted/40 bg-muted/20"
@@ -248,7 +265,7 @@ export function PlayerMat({
                 <div className={cn("pt-0.5 pb-0.5", !has && "opacity-20")}>
                   <img src={cat.iconSrc} alt={cat.label} className="w-2.5 h-2.5 object-contain" draggable={false} />
                 </div>
-                {/* Tiny card slot */}
+                {/* Card slot */}
                 <div className="w-full flex-1 px-0.5 pb-0.5 relative" style={{ minHeight: 36 }}>
                   {has ? (
                     <HoverableCard card={topCard!} />
@@ -257,20 +274,26 @@ export function PlayerMat({
                       <div className={cn("w-2 h-2 rounded-full", cat.emptyDotClass)} />
                     </div>
                   )}
+                  {/* Count badge */}
+                  {count > 1 && (
+                    <div className="absolute -top-1.5 -right-1.5 z-10 w-4 h-4 rounded-full bg-primary text-primary-foreground text-[9px] font-bold flex items-center justify-center shadow-md border border-white">
+                      {count}
+                    </div>
+                  )}
                 </div>
               </div>
             );
           })}
         </div>
 
-        {/* Face-down hand cards */}
-        <div className="flex items-center gap-1 mt-1">
-          <span className="text-[10px] text-muted-foreground font-bold uppercase mr-1">Hand:</span>
-          <div className="flex gap-0.5">
+        {/* Face-down hand cards — vertical stack */}
+        <div className="flex items-start gap-2 mt-1">
+          <span className="text-[10px] text-muted-foreground font-bold uppercase mt-0.5 shrink-0">Hand:</span>
+          <div className="flex flex-col gap-0.5">
             {Array.from({ length: player.hand.length }).map((_, i) => (
               <div
                 key={i}
-                className="w-5 h-7 rounded border border-border bg-secondary/60 shadow-sm"
+                className="w-7 h-4 rounded border border-border bg-secondary/60 shadow-sm"
                 style={{
                   backgroundImage: `url('${assetUrl("card-back.jpg")}')`,
                   backgroundSize: "cover",
@@ -282,6 +305,9 @@ export function PlayerMat({
               <span className="text-[10px] text-muted-foreground/50 italic">Empty</span>
             )}
           </div>
+          {player.hand.length > 0 && (
+            <span className="text-[10px] text-muted-foreground/60 mt-0.5">{player.hand.length} card{player.hand.length !== 1 ? "s" : ""}</span>
+          )}
         </div>
 
         {player.compostPile.length > 0 && (
@@ -296,6 +322,7 @@ export function PlayerMat({
     );
   }
 
+  // Full PlayerMat (local player — desktop)
   return (
     <div
       className={cn(
@@ -345,10 +372,13 @@ export function PlayerMat({
         </div>
       </div>
 
-      {/* COMPOST PILE: 5 Category Slots — image only, hover to enlarge */}
+      {/* COMPOST PILE: 5 Category Slots with drag-and-drop */}
       <div className="px-4 pb-3">
-        <div className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground mb-2">
+        <div className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground mb-2 flex items-center gap-2">
           Compost Pile
+          {isLocalUser && isActiveTurn && (
+            <span className="text-[9px] text-muted-foreground/50 normal-case font-normal">— drag a hero to move it</span>
+          )}
         </div>
         <div className="grid grid-cols-5 gap-2">
           {CATEGORIES.map((cat) => {
@@ -357,6 +387,13 @@ export function PlayerMat({
             const activeCard = cards[activeIdx] ?? null;
             const has = cards.length > 0;
             const multi = cards.length > 1;
+
+            // Determine if this slot is a valid drop target for the dragged card
+            const draggedCard = draggedCardId ? player.compostPile.find(c => c.id === draggedCardId) : null;
+            const draggedCurrentFn = draggedCard ? getEffectiveFn(draggedCard) : null;
+            const isCurrentSlot = draggedCard ? cat.match(draggedCurrentFn ?? "") : false;
+            const isValidDropTarget = draggedCard && !isCurrentSlot && !has;
+            const isDragOver = dragOverKey === cat.key && isValidDropTarget;
 
             const goNext = (e: React.MouseEvent) => {
               e.stopPropagation();
@@ -371,13 +408,32 @@ export function PlayerMat({
               <div
                 key={cat.key}
                 className={cn(
-                  "rounded-xl border-2 flex flex-col items-center transition-all duration-300 overflow-visible",
+                  "rounded-xl border-2 flex flex-col items-center transition-all duration-200 overflow-visible",
                   has
                     ? cat.borderClass + " " + cat.bgClass
-                    : "border-dashed border-muted-foreground/20 bg-muted/10"
+                    : "border-dashed border-muted-foreground/20 bg-muted/10",
+                  isDragOver && "ring-2 ring-primary ring-offset-1 border-primary/60 bg-primary/5 scale-105",
+                  draggedCardId && isValidDropTarget && !isDragOver && "border-primary/30 bg-primary/5 opacity-80",
+                  draggedCardId && !isValidDropTarget && !isCurrentSlot && has && "opacity-40",
                 )}
+                onDragOver={(e) => {
+                  if (isValidDropTarget) {
+                    e.preventDefault();
+                    e.dataTransfer.dropEffect = "move";
+                    setDragOverKey(cat.key);
+                  }
+                }}
+                onDragLeave={() => setDragOverKey(null)}
+                onDrop={(e) => {
+                  e.preventDefault();
+                  setDragOverKey(null);
+                  if (draggedCardId && isValidDropTarget && onMoveLayer) {
+                    onMoveLayer(draggedCardId, cat.canonicalFn);
+                  }
+                  setDraggedCardId(null);
+                }}
               >
-                {/* Slim category label */}
+                {/* Slot header */}
                 <div
                   className={cn(
                     "flex items-center gap-0.5 w-full px-1 py-1 text-[9px] font-bold uppercase tracking-wider rounded-t-lg border-b",
@@ -391,9 +447,22 @@ export function PlayerMat({
                   {multi && (
                     <span className="ml-auto font-bold text-[8px]">{activeIdx + 1}/{cards.length}</span>
                   )}
+                  {/* Count badge on header for multi-card slots */}
+                  {multi && (
+                    <span className="ml-1 bg-primary text-primary-foreground rounded-full w-3.5 h-3.5 flex items-center justify-center text-[8px] font-bold">
+                      {cards.length}
+                    </span>
+                  )}
                 </div>
 
-                {/* Full card display — navigable when multiple cards in slot */}
+                {/* Drop zone indicator */}
+                {isDragOver && (
+                  <div className="absolute inset-0 rounded-xl flex items-center justify-center pointer-events-none z-10">
+                    <div className="text-primary font-bold text-[10px] bg-primary/10 px-1.5 py-0.5 rounded-lg">Drop here</div>
+                  </div>
+                )}
+
+                {/* Card display — navigable when multiple */}
                 <div className="relative w-full h-24" style={{ minHeight: 64 }}>
                   <AnimatePresence mode="wait">
                     {activeCard ? (
@@ -409,6 +478,15 @@ export function PlayerMat({
                           card={activeCard}
                           canMove={isActiveTurn && isLocalUser && (activeCard as any).type === "hero"}
                           onMoveLayer={onMoveLayer ? () => onMoveLayer(activeCard.id) : undefined}
+                          draggable={isActiveTurn && isLocalUser && (activeCard as any).type === "hero"}
+                          onDragStart={(e) => {
+                            e.dataTransfer.effectAllowed = "move";
+                            setDraggedCardId(activeCard.id);
+                          }}
+                          onDragEnd={() => {
+                            setDraggedCardId(null);
+                            setDragOverKey(null);
+                          }}
                         />
                       </motion.div>
                     ) : (

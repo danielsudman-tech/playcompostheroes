@@ -517,10 +517,76 @@ export default function Game() {
           </div>
         </div>
 
-        {/* Center: THE CHALLENGE + Draw/Discard */}
+        {/* Center: Draw/Discard + Ongoing Action */}
         <div className="flex flex-col items-center gap-3 self-center">
 
-          {/* THE CHALLENGE zone — Ongoing Action Card + Hero Effects */}
+          {/* Draw + Discard row — top of center */}
+          <div className="bg-card/90 backdrop-blur-md px-6 py-4 rounded-3xl border shadow-xl flex items-end gap-10">
+
+            {/* Draw Pile */}
+            <div className="flex flex-col items-center gap-2">
+              <div className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground">Draw Pile</div>
+              <div className="relative group" onClick={gameState.phase === 'draw' && isMyTurn ? handleDrawCard : undefined}>
+                <div className={cn(
+                  "absolute inset-0 bg-primary/20 blur-xl rounded-full transition-opacity",
+                  gameState.phase === 'draw' && isMyTurn ? "opacity-100 animate-pulse" : "opacity-0"
+                )} />
+                <GameCard
+                  card={gameState.deck[0]}
+                  isFaceDown
+                  hoverable={gameState.phase === 'draw' && isMyTurn}
+                  className={cn(
+                    "ring-4 ring-transparent transition-all cursor-pointer",
+                    gameState.phase === 'draw' && isMyTurn && "ring-primary shadow-primary/30 shadow-lg -translate-y-2"
+                  )}
+                />
+                <div className="absolute top-1 left-1 w-full h-full bg-secondary/80 border-2 border-secondary-foreground/20 rounded-xl -z-10" />
+                <div className="absolute top-2 left-2 w-full h-full bg-secondary border-2 border-secondary-foreground/20 rounded-xl -z-20" />
+              </div>
+              <div className="flex items-center gap-1.5 bg-background/80 px-3 py-1 rounded-full text-xs font-bold shadow-sm border">
+                <Layers className="w-3 h-3 text-muted-foreground" />
+                {gameState.deck.length} left
+              </div>
+            </div>
+
+            {/* Discard Pile */}
+            <div className="flex flex-col items-center gap-2">
+              <div className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground">Discard Pile</div>
+              <div
+                className={cn("relative group", gameState.discardPile.length > 0 && "cursor-pointer")}
+                onClick={gameState.discardPile.length > 0 ? () => setViewingDiscard(true) : undefined}
+                title={gameState.discardPile.length > 0 ? "Click to browse discard pile" : undefined}
+              >
+                {topCardInDiscard ? (
+                  <motion.div initial={{ scale: 0.8, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} className="relative">
+                    <GameCard card={topCardInDiscard} hoverable={gameState.discardPile.length > 0} />
+                    {gameState.discardPile.length > 0 && (
+                      <div className="absolute inset-0 rounded-xl bg-black/0 group-hover:bg-black/20 transition-colors flex items-center justify-center">
+                        <div className="opacity-0 group-hover:opacity-100 transition-opacity bg-black/70 text-white text-xs font-bold px-2 py-1 rounded-full flex items-center gap-1">
+                          <History className="w-3 h-3" /> Browse
+                        </div>
+                      </div>
+                    )}
+                  </motion.div>
+                ) : (
+                  <div className="w-36 h-52 rounded-xl border-4 border-dashed border-muted-foreground/20 flex flex-col items-center justify-center text-muted-foreground/40 bg-black/5">
+                    <RefreshCcw className="w-8 h-8 mb-2" />
+                    <span className="text-xs font-bold uppercase">Empty</span>
+                  </div>
+                )}
+              </div>
+              <button
+                onClick={gameState.discardPile.length > 0 ? () => setViewingDiscard(true) : undefined}
+                disabled={gameState.discardPile.length === 0}
+                className="bg-background/80 px-3 py-1 rounded-full text-xs font-bold shadow-sm border opacity-80 hover:opacity-100 disabled:cursor-default hover:bg-muted transition-colors"
+              >
+                {gameState.discardPile.length} discarded
+              </button>
+            </div>
+
+          </div>
+
+          {/* Ongoing Action Card + Hero Effects — below draw/discard */}
           <div className="w-full max-w-sm space-y-2">
 
             {/* Ongoing Action Card Slot */}
@@ -604,106 +670,6 @@ export default function Game() {
 
           </div>
 
-          {/* Draw + Discard row */}
-          <div className="bg-card/90 backdrop-blur-md px-6 py-4 rounded-3xl border shadow-xl flex items-end gap-10">
-
-            {/* Draw Pile */}
-            <div className="flex flex-col items-center gap-2">
-              <div className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground">Draw Pile</div>
-              <div className="relative group" onClick={gameState.phase === 'draw' && isMyTurn ? handleDrawCard : undefined}>
-                <div className={cn(
-                  "absolute inset-0 bg-primary/20 blur-xl rounded-full transition-opacity",
-                  gameState.phase === 'draw' && isMyTurn ? "opacity-100 animate-pulse" : "opacity-0"
-                )} />
-                <GameCard
-                  card={gameState.deck[0]}
-                  isFaceDown
-                  hoverable={gameState.phase === 'draw' && isMyTurn}
-                  className={cn(
-                    "ring-4 ring-transparent transition-all cursor-pointer",
-                    gameState.phase === 'draw' && isMyTurn && "ring-primary shadow-primary/30 shadow-lg -translate-y-2"
-                  )}
-                />
-                <div className="absolute top-1 left-1 w-full h-full bg-secondary/80 border-2 border-secondary-foreground/20 rounded-xl -z-10" />
-                <div className="absolute top-2 left-2 w-full h-full bg-secondary border-2 border-secondary-foreground/20 rounded-xl -z-20" />
-              </div>
-              <div className="flex items-center gap-1.5 bg-background/80 px-3 py-1 rounded-full text-xs font-bold shadow-sm border">
-                <Layers className="w-3 h-3 text-muted-foreground" />
-                {gameState.deck.length} left
-              </div>
-            </div>
-
-            {/* Discard Pile */}
-            <div className="flex flex-col items-center gap-2">
-              <div className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground">Discard Pile</div>
-              <div
-                className={cn("relative group", gameState.discardPile.length > 0 && "cursor-pointer")}
-                onClick={gameState.discardPile.length > 0 ? () => setViewingDiscard(true) : undefined}
-                title={gameState.discardPile.length > 0 ? "Click to browse discard pile" : undefined}
-              >
-                {topCardInDiscard ? (
-                  <motion.div initial={{ scale: 0.8, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} className="relative">
-                    <GameCard card={topCardInDiscard} hoverable={gameState.discardPile.length > 0} />
-                    {gameState.discardPile.length > 0 && (
-                      <div className="absolute inset-0 rounded-xl bg-black/0 group-hover:bg-black/20 transition-colors flex items-center justify-center">
-                        <div className="opacity-0 group-hover:opacity-100 transition-opacity bg-black/70 text-white text-xs font-bold px-2 py-1 rounded-full flex items-center gap-1">
-                          <History className="w-3 h-3" /> Browse
-                        </div>
-                      </div>
-                    )}
-                  </motion.div>
-                ) : (
-                  <div className="w-36 h-52 rounded-xl border-4 border-dashed border-muted-foreground/20 flex flex-col items-center justify-center text-muted-foreground/40 bg-black/5">
-                    <RefreshCcw className="w-8 h-8 mb-2" />
-                    <span className="text-xs font-bold uppercase">Empty</span>
-                  </div>
-                )}
-              </div>
-              <button
-                onClick={gameState.discardPile.length > 0 ? () => setViewingDiscard(true) : undefined}
-                disabled={gameState.discardPile.length === 0}
-                className="bg-background/80 px-3 py-1 rounded-full text-xs font-bold shadow-sm border opacity-80 hover:opacity-100 disabled:cursor-default hover:bg-muted transition-colors"
-              >
-                {gameState.discardPile.length} discarded
-              </button>
-            </div>
-
-          </div>
-
-          {/* Turn Controls */}
-          {isMyTurn && gameState.phase !== "game_over" && (
-            <motion.div
-              initial={{ y: 10, opacity: 0 }}
-              animate={{ y: 0, opacity: 1 }}
-              className="bg-primary/10 border border-primary/20 px-4 py-2.5 rounded-2xl flex items-center gap-3 shadow-lg backdrop-blur-md"
-            >
-              {gameState.phase === 'draw' && (
-                <Button size="lg" onClick={handleDrawCard} disabled={actionMutation.isPending} className="font-bold bg-primary hover:bg-primary/90 text-white rounded-xl shadow-md px-8">
-                  {actionMutation.isPending ? <><Loader2 className="w-4 h-4 mr-2 animate-spin" />Drawing…</> : "Draw Card"}
-                </Button>
-              )}
-              {gameState.phase === 'play' && (
-                <>
-                  <span className="font-bold text-primary text-sm">Play a card or skip</span>
-                  <Button
-                    size="lg"
-                    variant="secondary"
-                    onClick={handleEndTurn}
-                    disabled={actionMutation.isPending}
-                    className="font-bold rounded-xl shadow-md"
-                  >
-                    {actionMutation.isPending ? <><Loader2 className="w-4 h-4 mr-2 animate-spin" />...</> : "End Turn"}
-                  </Button>
-                </>
-              )}
-            </motion.div>
-          )}
-
-          {!isMyTurn && gameState.phase !== "game_over" && (
-            <div className="bg-muted/50 border border-border px-5 py-2.5 rounded-2xl text-muted-foreground font-bold flex items-center gap-2 backdrop-blur-md text-sm">
-              <Loader2 className="w-4 h-4 animate-spin" /> Waiting for {currentPlayer.name}…
-            </div>
-          )}
         </div>
 
         {/* Right: Turn Reference (matches mat reference text) */}
@@ -739,21 +705,64 @@ export default function Game() {
       </div>
 
       {/* BOTTOM ROW: Local Player mat (desktop only — mobile uses My Pile tab) */}
-      <div className="relative z-20 pb-52 max-w-3xl mx-auto w-full hidden md:block">
+      <div className="relative z-20 pb-36 max-w-3xl mx-auto w-full hidden md:block">
         <PlayerMat 
           player={localPlayerFull} 
           isCurrentPlayer={isMyTurn}
           isLocalUser={true}
           isActiveTurn={isMyTurn}
           onPlayCard={handlePlayCard}
-          onMoveLayer={(cardId) => actionMutation.mutate({ type: "move_card_layer" as any, playerId: localPlayerId!, cardId })}
+          onMoveLayer={(cardId, targetFunction) => actionMutation.mutate({ type: "move_card_layer" as any, playerId: localPlayerId!, cardId, targetFunction })}
         />
       </div>
 
-      {/* HAND OVERLAY — fixed at screen bottom, with view-mode toggle */}
+      {/* HAND + TURN CONTROLS OVERLAY — fixed at screen bottom */}
       <div className="fixed bottom-0 inset-x-0 z-30 pointer-events-none">
 
-        {/* ── DESKTOP: flat side-by-side row (md+) ── */}
+        {/* ── DESKTOP Turn Controls bar (md+) ── */}
+        {gameState.phase !== "game_over" && (
+          <div className="hidden md:block pointer-events-auto">
+            <AnimatePresence>
+              {isMyTurn && (
+                <motion.div
+                  key="turn-controls"
+                  initial={{ y: 16, opacity: 0 }}
+                  animate={{ y: 0, opacity: 1 }}
+                  exit={{ y: 16, opacity: 0 }}
+                  className="flex items-center justify-center gap-4 px-6 py-2 bg-primary/10 border-t border-primary/20 backdrop-blur-md"
+                >
+                  {gameState.phase === "draw" && (
+                    <Button size="lg" onClick={handleDrawCard} disabled={actionMutation.isPending} className="font-bold bg-primary hover:bg-primary/90 text-white rounded-xl shadow-md px-10">
+                      {actionMutation.isPending ? <><Loader2 className="w-4 h-4 mr-2 animate-spin" />Drawing…</> : "Draw Card"}
+                    </Button>
+                  )}
+                  {gameState.phase === "play" && (
+                    <>
+                      <span className="font-bold text-primary text-sm">Play a card or end your turn</span>
+                      <Button size="lg" variant="secondary" onClick={handleEndTurn} disabled={actionMutation.isPending} className="font-bold rounded-xl shadow-md">
+                        {actionMutation.isPending ? <><Loader2 className="w-4 h-4 mr-2 animate-spin" />…</> : "End Turn"}
+                      </Button>
+                    </>
+                  )}
+                </motion.div>
+              )}
+              {!isMyTurn && (
+                <motion.div
+                  key="waiting"
+                  initial={{ opacity: 0 }}
+                  animate={{ opacity: 1 }}
+                  exit={{ opacity: 0 }}
+                  className="flex items-center justify-center gap-2 px-6 py-2 bg-muted/60 border-t border-border backdrop-blur-md"
+                >
+                  <Loader2 className="w-3.5 h-3.5 animate-spin text-muted-foreground" />
+                  <span className="text-sm text-muted-foreground font-medium">Waiting for {currentPlayer.name}…</span>
+                </motion.div>
+              )}
+            </AnimatePresence>
+          </div>
+        )}
+
+        {/* ── DESKTOP hand row (md+) ── */}
         {(() => {
           const hand = localPlayerFull.hand;
           const isPlayPhase = isMyTurn && gameState.phase === "play" && !gameState.pendingDecision;
@@ -969,6 +978,28 @@ export default function Game() {
                   </button>
                 </div>
               </div>
+
+              {/* ── Mobile Turn Controls — very bottom ── */}
+              {gameState.phase !== "game_over" && isMyTurn && (
+                <div className="bg-primary/10 border-t border-primary/20 px-4 py-2.5 flex items-center justify-center gap-3">
+                  {gameState.phase === "draw" && (
+                    <Button size="default" onClick={handleDrawCard} disabled={actionMutation.isPending} className="font-bold bg-primary hover:bg-primary/90 text-white rounded-xl shadow-md px-8 w-full">
+                      {actionMutation.isPending ? <><Loader2 className="w-4 h-4 mr-2 animate-spin" />Drawing…</> : "Draw Card"}
+                    </Button>
+                  )}
+                  {gameState.phase === "play" && (
+                    <Button size="default" variant="secondary" onClick={handleEndTurn} disabled={actionMutation.isPending} className="font-bold rounded-xl shadow-md w-full">
+                      {actionMutation.isPending ? <><Loader2 className="w-4 h-4 mr-2 animate-spin" />…</> : "End Turn"}
+                    </Button>
+                  )}
+                </div>
+              )}
+              {gameState.phase !== "game_over" && !isMyTurn && (
+                <div className="bg-muted/60 border-t border-border px-4 py-2 flex items-center justify-center gap-2">
+                  <Loader2 className="w-3.5 h-3.5 animate-spin text-muted-foreground" />
+                  <span className="text-sm text-muted-foreground font-medium">Waiting for {currentPlayer.name}…</span>
+                </div>
+              )}
 
             </div>
           );
