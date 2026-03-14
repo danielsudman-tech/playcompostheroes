@@ -4,6 +4,7 @@ import { motion, AnimatePresence } from "framer-motion";
 import { useCreateNewGame, useRooms, type RoomInfo } from "@/hooks/use-game";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { assetUrl } from "@/lib/assetUrl";
 import {
   Users, Trash2, PlusCircle, Settings2, PlayCircle, Wifi, Lock,
   RefreshCcw, LogIn, ChevronRight, Loader2
@@ -175,7 +176,7 @@ export default function Lobby() {
         {/* Title */}
         <div className="text-center mb-6">
           <img
-            src={`${import.meta.env.BASE_URL}assets/card-back.jpg`}
+            src={assetUrl("card-back.jpg")}
             alt="Compost Heroes"
             className="w-40 mx-auto rounded-2xl shadow-2xl ring-4 ring-primary/20 mb-3"
             draggable={false}

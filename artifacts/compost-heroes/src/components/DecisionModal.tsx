@@ -5,14 +5,14 @@ import { Button } from "@/components/ui/button";
 import { GameCard } from "./GameCard";
 import { User, CheckSquare } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { assetUrl } from "@/lib/assetUrl";
 
-const BASE = import.meta.env.BASE_URL;
 const FUNCTION_META: Record<string, { label: string; iconSrc: string; color: string; bg: string }> = {
-  Airflow:    { label: "Airflow",    iconSrc: `${BASE}assets/icon-airflow.png`,    color: "text-cyan-700",   bg: "bg-cyan-50 border-cyan-400" },
-  Carbon:     { label: "Carbon",     iconSrc: `${BASE}assets/icon-carbon.png`,     color: "text-amber-700",  bg: "bg-amber-50 border-amber-400" },
-  Moisture:   { label: "Moisture",   iconSrc: `${BASE}assets/icon-moisture.png`,   color: "text-blue-700",   bg: "bg-blue-50 border-blue-400" },
-  Nitrogen:   { label: "Nitrogen",   iconSrc: `${BASE}assets/icon-nitrogen.png`,   color: "text-lime-700",   bg: "bg-lime-50 border-lime-400" },
-  Decomposer: { label: "Decomposer", iconSrc: `${BASE}assets/icon-decomposer.png`, color: "text-orange-700", bg: "bg-orange-50 border-orange-400" },
+  Airflow:    { label: "Airflow",    iconSrc: assetUrl("icon-airflow.png"),    color: "text-cyan-700",   bg: "bg-cyan-50 border-cyan-400" },
+  Carbon:     { label: "Carbon",     iconSrc: assetUrl("icon-carbon.png"),     color: "text-amber-700",  bg: "bg-amber-50 border-amber-400" },
+  Moisture:   { label: "Moisture",   iconSrc: assetUrl("icon-moisture.png"),   color: "text-blue-700",   bg: "bg-blue-50 border-blue-400" },
+  Nitrogen:   { label: "Nitrogen",   iconSrc: assetUrl("icon-nitrogen.png"),   color: "text-lime-700",   bg: "bg-lime-50 border-lime-400" },
+  Decomposer: { label: "Decomposer", iconSrc: assetUrl("icon-decomposer.png"), color: "text-orange-700", bg: "bg-orange-50 border-orange-400" },
 };
 
 interface DecisionModalProps {
@@ -197,7 +197,7 @@ export function DecisionModal({ decision, gameState, onResolve }: DecisionModalP
                   const isSelected = selectedIds.includes(cardId);
                   const isAnyMulti = isFixedMulti || isOptionalMulti;
                   const imageSrc = card?.imageKey
-                    ? `${import.meta.env.BASE_URL}assets/${card.imageKey}`
+                    ? assetUrl(card.imageKey)
                     : null;
 
                   return (

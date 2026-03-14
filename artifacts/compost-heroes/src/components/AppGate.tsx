@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback, type ReactNode } from "react";
 import { Lock, Loader2 } from "lucide-react";
+import { assetUrl } from "@/lib/assetUrl";
 
 const STORAGE_KEY = "app_auth_password";
 
@@ -94,7 +95,7 @@ export function AppGate({ children }: { children: ReactNode }) {
       <div className="relative z-10 w-full max-w-sm">
         <div className="text-center mb-8">
           <img
-            src={`${import.meta.env.BASE_URL}assets/card-back.jpg`}
+            src={assetUrl("card-back.jpg")}
             alt="Compost Heroes"
             className="w-36 mx-auto rounded-2xl shadow-2xl ring-4 ring-primary/20 mb-4"
             draggable={false}

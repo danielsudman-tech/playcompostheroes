@@ -5,6 +5,7 @@ import { GameCard } from "./GameCard";
 import type { PlayerState, CardState } from "@workspace/api-client-react";
 import { cn } from "@/lib/utils";
 import { User, MoveRight, ChevronLeft, ChevronRight } from "lucide-react";
+import { assetUrl } from "@/lib/assetUrl";
 
 interface PlayerMatProps {
   player: PlayerState;
@@ -22,7 +23,7 @@ const CATEGORIES = [
   {
     key: "moisture",
     label: "Moisture",
-    iconSrc: `${import.meta.env.BASE_URL}assets/icon-moisture.png`,
+    iconSrc: assetUrl("icon-moisture.png"),
     borderClass: "border-blue-400",
     bgClass: "bg-blue-50 dark:bg-blue-950/30",
     headerClass: "bg-blue-100 text-blue-800",
@@ -33,7 +34,7 @@ const CATEGORIES = [
   {
     key: "carbon",
     label: "Carbon",
-    iconSrc: `${import.meta.env.BASE_URL}assets/icon-carbon.png`,
+    iconSrc: assetUrl("icon-carbon.png"),
     borderClass: "border-amber-400",
     bgClass: "bg-amber-50 dark:bg-amber-950/30",
     headerClass: "bg-amber-100 text-amber-800",
@@ -44,7 +45,7 @@ const CATEGORIES = [
   {
     key: "decomposer",
     label: "Decomposer",
-    iconSrc: `${import.meta.env.BASE_URL}assets/icon-decomposer.png`,
+    iconSrc: assetUrl("icon-decomposer.png"),
     borderClass: "border-orange-400",
     bgClass: "bg-orange-50 dark:bg-orange-950/30",
     headerClass: "bg-orange-100 text-orange-800",
@@ -56,7 +57,7 @@ const CATEGORIES = [
   {
     key: "nitrogen",
     label: "Nitrogen",
-    iconSrc: `${import.meta.env.BASE_URL}assets/icon-nitrogen.png`,
+    iconSrc: assetUrl("icon-nitrogen.png"),
     borderClass: "border-lime-400",
     bgClass: "bg-lime-50 dark:bg-lime-950/30",
     headerClass: "bg-lime-100 text-lime-800",
@@ -67,7 +68,7 @@ const CATEGORIES = [
   {
     key: "airflow",
     label: "Airflow",
-    iconSrc: `${import.meta.env.BASE_URL}assets/icon-airflow.png`,
+    iconSrc: assetUrl("icon-airflow.png"),
     borderClass: "border-cyan-400",
     bgClass: "bg-cyan-50 dark:bg-cyan-950/30",
     headerClass: "bg-cyan-100 text-cyan-800",
@@ -85,13 +86,11 @@ function getCategoryCards(pile: CardState[], matchFn: (fn: string) => boolean) {
   return pile.filter((c) => matchFn(getEffectiveFn(c)));
 }
 
-const BASE = import.meta.env.BASE_URL as string;
-
 function HoverableCard({ card, canMove, onMoveLayer }: { card: CardState; canMove?: boolean; onMoveLayer?: () => void }) {
   const [hovered, setHovered] = useState(false);
   const [popupPos, setPopupPos] = useState<{ x: number; y: number } | null>(null);
   const containerRef = useRef<HTMLDivElement>(null);
-  const imageSrc = card.imageKey ? `${BASE}assets/${card.imageKey}` : null;
+  const imageSrc = card.imageKey ? assetUrl(card.imageKey) : null;
 
   const handleMouseEnter = () => {
     if (containerRef.current) {
@@ -263,7 +262,7 @@ export function PlayerMat({
                 key={i}
                 className="w-5 h-7 rounded border border-border bg-secondary/60 shadow-sm"
                 style={{
-                  backgroundImage: `url('${BASE}assets/card-back.jpg')`,
+                  backgroundImage: `url('${assetUrl("card-back.jpg")}')`,
                   backgroundSize: "cover",
                   backgroundPosition: "center",
                 }}

@@ -1,9 +1,8 @@
 import { readFileSync, writeFileSync } from "fs";
-import { join, dirname } from "path";
-import { fileURLToPath } from "url";
+import { join } from "path";
+import { WORKSPACE_ROOT } from "./workspaceRoot.js";
 
-const __dirname = dirname(fileURLToPath(import.meta.url));
-const JSON_PATH = join(__dirname, "imageKeys.json");
+const JSON_PATH = join(WORKSPACE_ROOT, "artifacts/api-server/src/lib/imageKeys.json");
 
 let overrides: Record<string, string> = {};
 

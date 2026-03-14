@@ -3,6 +3,7 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useLocation } from "wouter";
 import { Button } from "@/components/ui/button";
 import { useToast } from "@/hooks/use-toast";
+import { assetUrl } from "@/lib/assetUrl";
 import {
   Upload,
   CheckCircle,
@@ -45,7 +46,7 @@ function CardAdminRow({ card }: { card: AdminCard }) {
   const [uploading, setUploading] = useState(false);
 
   const imageSrc = card.imageKey
-    ? `${import.meta.env.BASE_URL}assets/${card.imageKey}`
+    ? assetUrl(card.imageKey)
     : null;
 
   const copiesMutation = useMutation({

@@ -4,14 +4,14 @@ import type { PlayerState } from "@workspace/api-client-react";
 import { GameCard } from "./GameCard";
 import { cn } from "@/lib/utils";
 import { CheckCircle2 } from "lucide-react";
+import { assetUrl } from "@/lib/assetUrl";
 
-const BASE = import.meta.env.BASE_URL;
 const CATEGORIES = [
-  { label: "Airflow",    iconSrc: `${BASE}assets/icon-airflow.png`,    match: (fn: string) => fn.toLowerCase().includes("air"),     color: "text-cyan-600" },
-  { label: "Carbon",     iconSrc: `${BASE}assets/icon-carbon.png`,     match: (fn: string) => fn.toLowerCase().includes("carbon"),  color: "text-amber-700" },
-  { label: "Moisture",   iconSrc: `${BASE}assets/icon-moisture.png`,   match: (fn: string) => fn.toLowerCase().includes("moisture"),color: "text-blue-600" },
-  { label: "Nitrogen",   iconSrc: `${BASE}assets/icon-nitrogen.png`,   match: (fn: string) => fn.toLowerCase().includes("nitrogen"),color: "text-lime-600" },
-  { label: "Decomposer", iconSrc: `${BASE}assets/icon-decomposer.png`, match: (fn: string) => fn.toLowerCase().includes("decomp") || fn.toLowerCase().includes("fire"), color: "text-orange-600" },
+  { label: "Airflow",    iconSrc: assetUrl("icon-airflow.png"),    match: (fn: string) => fn.toLowerCase().includes("air"),     color: "text-cyan-600" },
+  { label: "Carbon",     iconSrc: assetUrl("icon-carbon.png"),     match: (fn: string) => fn.toLowerCase().includes("carbon"),  color: "text-amber-700" },
+  { label: "Moisture",   iconSrc: assetUrl("icon-moisture.png"),   match: (fn: string) => fn.toLowerCase().includes("moisture"),color: "text-blue-600" },
+  { label: "Nitrogen",   iconSrc: assetUrl("icon-nitrogen.png"),   match: (fn: string) => fn.toLowerCase().includes("nitrogen"),color: "text-lime-600" },
+  { label: "Decomposer", iconSrc: assetUrl("icon-decomposer.png"), match: (fn: string) => fn.toLowerCase().includes("decomp") || fn.toLowerCase().includes("fire"), color: "text-orange-600" },
 ];
 
 interface OpponentPileModalProps {

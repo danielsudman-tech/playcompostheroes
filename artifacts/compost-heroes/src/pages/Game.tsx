@@ -2,6 +2,7 @@ import { useState, useEffect, useRef, useCallback } from "react";
 import { useParams, useLocation } from "wouter";
 import { motion, AnimatePresence } from "framer-motion";
 import confetti from "canvas-confetti";
+import { assetUrl } from "@/lib/assetUrl";
 import { useGameState, useGameAction, useClaimSlot, useGameSse, useJoinRoom, getStoredToken } from "@/hooks/use-game";
 import { WaitingRoom } from "@/components/WaitingRoom";
 import { PlayerMat } from "@/components/PlayerMat";
@@ -257,7 +258,7 @@ export default function Game() {
       <div className="min-h-screen bg-background flex flex-col items-center justify-center p-4">
         <div className="w-full max-w-sm">
           <div className="text-center mb-8">
-            <img src={`${import.meta.env.BASE_URL}assets/card-back.jpg`} alt="Compost Heroes" className="w-24 mx-auto rounded-xl shadow-lg mb-4" draggable={false} />
+            <img src={assetUrl("card-back.jpg")} alt="Compost Heroes" className="w-24 mx-auto rounded-xl shadow-lg mb-4" draggable={false} />
             <h1 className="text-3xl font-display font-bold text-foreground mb-2">Join Room</h1>
             <p className="text-muted-foreground text-sm">Enter your name to join this game.</p>
           </div>
@@ -557,7 +558,7 @@ export default function Game() {
                     {gameState.ongoingActionCard.imageKey ? (
                       <div className="w-12 h-16 rounded-lg overflow-hidden border-2 border-orange-400/40 shrink-0 shadow-md">
                         <img
-                          src={`${import.meta.env.BASE_URL}assets/${gameState.ongoingActionCard.imageKey}`}
+                          src={assetUrl(gameState.ongoingActionCard.imageKey)}
                           alt={gameState.ongoingActionCard.name}
                           className="w-full h-full object-cover"
                         />
@@ -862,7 +863,7 @@ export default function Game() {
                 const actionBlocked = card.type === "action" && gameState.heroPlayedThisTurn && gameState.actionPlayedThisTurn;
                 const isPlayable = isPlayPhase && !heroBlocked && !actionBlocked;
                 const isBlocked = heroBlocked || actionBlocked;
-                const imageSrc = card.imageKey ? `${import.meta.env.BASE_URL}assets/${card.imageKey}` : null;
+                const imageSrc = card.imageKey ? assetUrl(card.imageKey) : null;
 
                 return (
                   <motion.div
@@ -938,7 +939,7 @@ export default function Game() {
               const heroBlocked = card.type === "hero" && gameState.heroPlayedThisTurn;
               const actionBlocked = card.type === "action" && gameState.heroPlayedThisTurn && gameState.actionPlayedThisTurn;
               const isPlayable = isPlayPhase && !heroBlocked && !actionBlocked;
-              const imageSrc = card.imageKey ? `${import.meta.env.BASE_URL}assets/${card.imageKey}` : null;
+              const imageSrc = card.imageKey ? assetUrl(card.imageKey) : null;
               return (
                 <div className="flex items-center gap-2 px-3 py-2">
                   <button
@@ -1024,7 +1025,7 @@ export default function Game() {
                   const heroBlocked = card.type === "hero" && gameState.heroPlayedThisTurn;
                   const actionBlocked = card.type === "action" && gameState.heroPlayedThisTurn && gameState.actionPlayedThisTurn;
                   const isPlayable = isPlayPhase && !heroBlocked && !actionBlocked;
-                  const imageSrc = card.imageKey ? `${import.meta.env.BASE_URL}assets/${card.imageKey}` : null;
+                  const imageSrc = card.imageKey ? assetUrl(card.imageKey) : null;
                   return (
                     <motion.button
                       key={`${card.id}-${idx}`}
@@ -1137,7 +1138,7 @@ export default function Game() {
                   {confirmCard.imageKey ? (
                     <div className="w-24 h-36 rounded-xl overflow-hidden shadow-lg border-2 border-border">
                       <img
-                        src={`${import.meta.env.BASE_URL}assets/${confirmCard.imageKey}`}
+                        src={assetUrl(confirmCard.imageKey)}
                         alt={confirmCard.name}
                         className="w-full h-full object-cover"
                       />
@@ -1283,7 +1284,7 @@ export default function Game() {
                   <div className="grid grid-cols-2 sm:grid-cols-3 gap-4">
                     {[...gameState.discardPile].reverse().map((card, idx) => {
                       const imageSrc = card.imageKey
-                        ? `${import.meta.env.BASE_URL}assets/${card.imageKey}`
+                        ? assetUrl(card.imageKey)
                         : null;
                       return (
                         <div key={`${card.id}-${idx}`} className="flex flex-col gap-2 items-center">

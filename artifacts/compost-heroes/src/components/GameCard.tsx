@@ -3,6 +3,7 @@ import { motion } from "framer-motion";
 import { cn, getFunctionBgClass, getFunctionColor } from "@/lib/utils";
 import type { Card } from "@workspace/api-client-react";
 import { Info } from "lucide-react";
+import { assetUrl } from "@/lib/assetUrl";
 
 interface GameCardProps {
   card: Card;
@@ -49,7 +50,7 @@ export function GameCard({
         )}
       >
         <img
-          src={`${import.meta.env.BASE_URL}assets/card-back.jpg`}
+          src={assetUrl("card-back.jpg")}
           alt="Card back"
           className="w-full h-full object-cover"
           draggable={false}
@@ -59,7 +60,7 @@ export function GameCard({
   }
 
   // Attempt to load image, fallback if none
-  const imageSrc = card.imageKey ? `${import.meta.env.BASE_URL}assets/${card.imageKey}` : null;
+  const imageSrc = card.imageKey ? assetUrl(card.imageKey) : null;
 
   return (
     <motion.div

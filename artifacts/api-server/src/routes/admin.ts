@@ -1,15 +1,14 @@
 import { Router } from "express";
 import { writeFileSync, existsSync, mkdirSync } from "fs";
-import { join, dirname } from "path";
-import { fileURLToPath } from "url";
+import { join } from "path";
 import { getAllCards } from "../lib/cards.js";
 import { getAllOverrides, setImageKeyOverride, removeImageKeyOverride } from "../lib/imageKeyStore.js";
 import { getAllCopies, getCardCopies, setCardCopies } from "../lib/cardCopiesStore.js";
+import { WORKSPACE_ROOT } from "../lib/workspaceRoot.js";
 
-const __dirname = dirname(fileURLToPath(import.meta.url));
-
-// Resolve path to the frontend public/assets directory
-const ASSETS_DIR = join(__dirname, "../../../compost-heroes/public/assets");
+// Resolve path to the frontend public/assets directory using workspace root
+// Works correctly in both dev (tsx) and prod (bundled dist/index.cjs)
+export const ASSETS_DIR = join(WORKSPACE_ROOT, "artifacts/compost-heroes/public/assets");
 
 const router = Router();
 

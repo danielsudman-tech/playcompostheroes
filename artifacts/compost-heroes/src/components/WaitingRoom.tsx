@@ -5,6 +5,7 @@ import { Button } from "@/components/ui/button";
 import { useStartGame } from "@/hooks/use-game";
 import { useToast } from "@/hooks/use-toast";
 import { Copy, Check, Crown, Loader2, Users, Lock } from "lucide-react";
+import { assetUrl } from "@/lib/assetUrl";
 
 interface PlayerSlot {
   id: string;
@@ -62,7 +63,7 @@ export function WaitingRoom({ gameId, players, maxPlayers, playerIndex, token, h
             <span className="w-2 h-2 bg-green-500 rounded-full animate-pulse" />
             Waiting for players
           </div>
-          <img src={`${import.meta.env.BASE_URL}assets/card-back.jpg`} alt="Compost Heroes" className="w-24 mx-auto rounded-xl shadow-lg mb-2" draggable={false} />
+          <img src={assetUrl("card-back.jpg")} alt="Compost Heroes" className="w-24 mx-auto rounded-xl shadow-lg mb-2" draggable={false} />
           <p className="text-muted-foreground text-sm">
             {isHost ? "Share the link below so others can join." : "Waiting for the host to start the game."}
           </p>
