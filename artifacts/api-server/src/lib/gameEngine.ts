@@ -252,6 +252,15 @@ function moistureProtected(player: PlayerState): boolean {
   return player.compostPile.some((c) => c.id === "soggy_saver");
 }
 
+function triggerQuencher(s: GameState, playerId: string, card: Card): GameState {
+  if (getEffectiveFunction(card) !== "Moisture") return s;
+  const owner = getPlayer(s, playerId)!;
+  if (!owner.compostPile.some((c) => c.id === "quencher")) return s;
+  s = drawCard(s, getPlayer(s, playerId)!);
+  addLog(s, `${owner.name} drew 1 card (The Quencher — Moisture card entered compost).`);
+  return s;
+}
+
 function nextPlayerIndex(state: GameState): number {
   return (state.currentPlayerIndex + 1) % state.players.length;
 }
@@ -585,8 +594,11 @@ function resolveHeroInstantEffect(
         .map((pl) => ({
           playerId: pl.id,
           playerName: pl.name,
-          cards: pl.compostPile.map((c) => ({ cardId: c.id, cardName: c.name })),
-        }));
+          cards: pl.compostPile
+            .filter((c) => !(moistureProtected(pl) && getEffectiveFunction(c) === "Moisture"))
+            .map((c) => ({ cardId: c.id, cardName: c.name })),
+        }))
+        .filter((t) => t.cards.length > 0);
       if (targets.length === 0 || p.compostPile.length === 0) {
         addLog(s, `Cannot use Breezy Bandit — no valid targets or your compost is empty.`);
         return s;
@@ -873,15 +885,24 @@ function resolveActionInstantEffect(
     }
 
     // Pile Flip: all players pass their entire compost pile to the left
+    // Soggy Saver owners keep their own Moisture cards; only non-Moisture cards are passed
     case "pile_flip": {
       const n = s.players.length;
-      const compostPiles = s.players.map((pl) => pl.compostPile);
+      const pilesToPass = s.players.map((pl) =>
+        moistureProtected(pl)
+          ? pl.compostPile.filter((c) => getEffectiveFunction(c) !== "Moisture")
+          : pl.compostPile
+      );
+      const keptMoisture = s.players.map((pl) =>
+        moistureProtected(pl)
+          ? pl.compostPile.filter((c) => getEffectiveFunction(c) === "Moisture")
+          : []
+      );
       let newState = { ...s };
       for (let i = 0; i < n; i++) {
-        const leftIdx = (i + 1) % n;
         const pl = newState.players[i];
-        const rightPile = compostPiles[(i + n - 1) % n];
-        const updated = { ...pl, compostPile: rightPile };
+        const receivedPile = pilesToPass[(i + n - 1) % n];
+        const updated = { ...pl, compostPile: [...keptMoisture[i], ...receivedPile] };
         newState = updatePlayer(newState, updated);
       }
       s = newState;
@@ -1006,6 +1027,8 @@ export function playCard(
       // Instant hero effect
       s = resolveHeroInstantEffect(s, getPlayer(s, player.id)!, cardInHand);
     }
+    // Quencher: whenever a Moisture card enters compost, draw 1 extra card
+    s = triggerQuencher(s, player.id, cardInHand);
   } else {
     // Action card — if a hero was played this turn, limit to 1 action card
     if (state.heroPlayedThisTurn && state.actionPlayedThisTurn) {
@@ -1096,13 +1119,12 @@ export function resolveDecision(
       s = updatePlayer(s, updatedPlayer);
       addLog(s, `${player.name} discarded ${card.name} from hand.`);
 
-      // Check Hot Head hero effect for Carbon discards
+      // Check Hot Head hero effect for Carbon discards (only for the player who discarded)
       if (card.function === "Carbon") {
-        for (const pl of s.players) {
-          if (pl.compostPile.some((c) => c.id === "hot_head")) {
-            s = drawCard(s, getPlayer(s, pl.id)!);
-            addLog(s, `${pl.name} drew 1 card (The Hot Head — Carbon discarded).`);
-          }
+        const hotHeadOwner = getPlayer(s, playerId)!;
+        if (hotHeadOwner.compostPile.some((c) => c.id === "hot_head")) {
+          s = drawCard(s, getPlayer(s, playerId)!);
+          addLog(s, `${hotHeadOwner.name} drew 1 card (The Hot Head — Carbon discarded).`);
         }
       }
 
@@ -1245,6 +1267,8 @@ export function resolveDecision(
       } else {
         s = recomputeAllModifiers(s);
       }
+      // Quencher: whenever a Moisture card enters compost, draw 1 extra card
+      s = triggerQuencher(s, playerId, card);
 
       const winner = checkWinCondition(s);
       if (winner) {
@@ -1264,6 +1288,10 @@ export function resolveDecision(
       if (!myCard || !theirPlayer) return { state, error: "Invalid swap cards" };
       const theirCard = theirPlayer.compostPile.find((c) => c.id === theirCardId);
       if (!theirCard) return { state, error: "Their card not found" };
+
+      if (moistureProtected(theirPlayer) && getEffectiveFunction(theirCard) === "Moisture") {
+        return { state, error: `${theirPlayer.name}'s Moisture cards are protected by the Soggy Saver!` };
+      }
 
       const updatedMe = {
         ...player,
@@ -1368,6 +1396,8 @@ export function resolveDecision(
         if (cardToPlay.effectType === "instant") {
           s = resolveHeroInstantEffect(s, getPlayer(s, playerId)!, cardToPlay);
         }
+        // Quencher: whenever a Moisture card enters compost, draw 1 extra card
+        s = triggerQuencher(s, playerId, cardToPlay);
       }
       if (cardIds.length === 0) {
         addLog(s, `${player.name} chose not to play any Moisture/Nitrogen cards.`);
@@ -1402,13 +1432,12 @@ export function resolveDecision(
             discardPile: [card, ...s.discardPile],
           };
 
-          // Hot Head check for Carbon discards
+          // Hot Head check for Carbon discards (only for the player who discarded)
           if (card.function === "Carbon") {
-            for (const pl of s.players) {
-              if (pl.compostPile.some((c) => c.id === "hot_head")) {
-                s = drawCard(s, getPlayer(s, pl.id)!);
-                addLog(s, `${pl.name} drew 1 card (The Hot Head).`);
-              }
+            const hotHeadOwner = getPlayer(s, playerId)!;
+            if (hotHeadOwner.compostPile.some((c) => c.id === "hot_head")) {
+              s = drawCard(s, getPlayer(s, playerId)!);
+              addLog(s, `${hotHeadOwner.name} drew 1 card (The Hot Head — Carbon discarded).`);
             }
           }
         }
@@ -1580,6 +1609,8 @@ export function resolveDecision(
       } else {
         s = resolveHeroInstantEffect(s, getPlayer(s, playerId)!, cardWithChoice);
       }
+      // Quencher: whenever a Moisture card enters compost, draw 1 extra card
+      s = triggerQuencher(s, playerId, cardWithChoice);
 
       // Check win
       const winner = checkWinCondition(s);
