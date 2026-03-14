@@ -1599,8 +1599,7 @@ export function resolveDecision(
       if (cardIdx < 0) return { state, error: "Card not found in compost pile" };
 
       const cardToMove = player.compostPile[cardIdx];
-      const allFns = [cardToMove.function, ...(cardToMove.alternateFunctions ?? [])];
-      if (!allFns.includes(chosenFn)) return { state, error: "Invalid function choice" };
+      if (!(ALL_HERO_FUNCTIONS as readonly string[]).includes(chosenFn)) return { state, error: "Invalid function choice" };
 
       // Ensure the target slot is currently empty (or the same card is there)
       const currentOccupant = player.compostPile.find(
@@ -1878,6 +1877,8 @@ export function activateOngoing(
 // MOVE CARD LAYER (action)
 // Initiates the choose_move_function decision for a multi-layer hero already in compost.
 // ─────────────────────────────────────────────
+const ALL_HERO_FUNCTIONS = ["Airflow", "Carbon", "Decomposer", "Moisture", "Nitrogen"] as const;
+
 export function moveCardLayer(
   state: GameState,
   playerId: string,
@@ -1890,14 +1891,21 @@ export function moveCardLayer(
   const card = player.compostPile.find((c) => c.id === cardId);
   if (!card) return { state, error: "Card not found in compost pile" };
 
-  // Only cards with defined alternate functions can be moved
-  const allFns = [card.function, ...(card.alternateFunctions ?? [])];
-  if (allFns.length <= 1) return { state, error: "This card can only go in one function slot and cannot be moved" };
+  if (card.type !== "hero") return { state, error: "Only hero cards can be moved between slots" };
 
   const currentFn = getEffectiveFunction(card);
-  const availableTargets = allFns.filter((fn) => fn !== currentFn) as string[];
+  // Occupied slots (by other cards) cannot be targeted
+  const occupiedFunctions = new Set(
+    player.compostPile.filter((c) => c.id !== cardId).map((c) => getEffectiveFunction(c))
+  );
+  // Only offer empty slots (not the card's current slot, not occupied by another card)
+  const availableTargets = ALL_HERO_FUNCTIONS.filter(
+    (fn) => fn !== currentFn && !occupiedFunctions.has(fn)
+  );
 
-  if (availableTargets.length === 0) return { state, error: "No available slots to move this card to" };
+  if (availableTargets.length === 0) {
+    return { state, error: "No empty category slots available to move this card to" };
+  }
 
   let s = {
     ...state,
@@ -1905,7 +1913,7 @@ export function moveCardLayer(
       type: "choose_move_function" as const,
       playerId,
       cardId,
-      prompt: `${player.name}: Choose a new function slot for ${card.name}.`,
+      prompt: `${player.name}: Choose a new category slot for ${card.name}.`,
       options: availableTargets.map((fn) => ({ function: fn })),
       meta: { moveCardId: cardId },
     },
