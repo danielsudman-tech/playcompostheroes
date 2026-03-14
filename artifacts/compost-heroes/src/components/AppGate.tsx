@@ -111,6 +111,7 @@ export function AppGate({ children }: { children: ReactNode }) {
             <input
               type="password"
               autoFocus
+              autoComplete="current-password"
               placeholder="Enter password"
               value={password}
               onChange={(e) => { setPassword(e.target.value); setErrorMsg(null); }}
