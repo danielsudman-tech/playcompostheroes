@@ -981,15 +981,23 @@ export default function Game() {
                                 ? <img src={imageSrc} alt={topCard.name} className="w-full h-full object-cover" />
                                 : <GameCard card={topCard} size="xs" hoverable={false} className="w-full h-full" />
                               }
-                              {isMyTurn && localPlayerId && (
+                              {isMyTurn && localPlayerId && (() => {
+                                const validFns: string[] = (topCard as any).alternateFunctions ?? [(topCard as any).function ?? ""];
+                                if (validFns.length <= 1) return null;
+                                const occupiedFns = new Set(pile.filter(c => c.id !== topCard.id).map(c => getEffFn(c as any)));
+                                const currentFn = getEffFn(topCard as any);
+                                const hasAlt = validFns.some(fn => fn !== currentFn && !occupiedFns.has(fn));
+                                if (!hasAlt) return null;
+                                return (
                                 <button
                                   onClick={() => actionMutation.mutate({ type: "move_card_layer" as any, playerId: localPlayerId, cardId: topCard.id })}
                                   className="absolute bottom-0.5 right-0.5 bg-primary/90 text-white rounded-full p-0.5 shadow-md hover:bg-primary transition-colors z-10"
-                                  title="Move to another layer"
+                                  title="Move to another function slot"
                                 >
                                   <MoveRight className="w-2 h-2" />
                                 </button>
-                              )}
+                                );
+                              })()}
                             </div>
                           ) : (
                             <div className={cn("w-2 h-2 rounded-full", cat.emptyDotClass, "opacity-40")} />

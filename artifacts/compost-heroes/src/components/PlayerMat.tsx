@@ -497,11 +497,24 @@ export function PlayerMat({
                         transition={{ type: "spring", duration: 0.25 }}
                         className="absolute inset-0.5"
                       >
+                        {(() => {
+                          const cardValidFns = getCardValidFunctions(activeCard);
+                          const occupiedFns = new Set(
+                            player.compostPile
+                              .filter(c => c.id !== activeCard.id)
+                              .map(c => getEffectiveFn(c))
+                          );
+                          const currentFn = getEffectiveFn(activeCard);
+                          const hasAlternateSlot = cardValidFns.length > 1 &&
+                            cardValidFns.some(fn => fn !== currentFn && !occupiedFns.has(fn));
+                          const isHero = (activeCard as any).type === "hero";
+                          const canMove = isActiveTurn && isLocalUser && isHero && hasAlternateSlot;
+                          return (
                         <HoverableCard
                           card={activeCard}
-                          canMove={isActiveTurn && isLocalUser && (activeCard as any).type === "hero"}
+                          canMove={canMove}
                           onMoveLayer={onMoveLayer ? () => onMoveLayer(activeCard.id) : undefined}
-                          draggable={isActiveTurn && isLocalUser && (activeCard as any).type === "hero"}
+                          draggable={isActiveTurn && isLocalUser && isHero && hasAlternateSlot}
                           onDragStart={(e) => {
                             e.dataTransfer.effectAllowed = "move";
                             setDraggedCardId(activeCard.id);
@@ -511,6 +524,8 @@ export function PlayerMat({
                             setDragOverKey(null);
                           }}
                         />
+                          );
+                        })()}
                       </motion.div>
                     ) : (
                       <div className="absolute inset-0 flex flex-col items-center justify-center gap-1 text-muted-foreground/25">
