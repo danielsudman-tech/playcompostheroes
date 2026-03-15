@@ -1258,8 +1258,8 @@ export default function Game() {
         />
       )}
 
-      {/* DECISION MODAL OVERLAY */}
-      {isMyTurn && gameState.pendingDecision && (
+      {/* DECISION MODAL OVERLAY — never show for bot players */}
+      {isMyTurn && gameState.pendingDecision && !currentPlayer.isBot && (
         <DecisionModal 
           decision={gameState.pendingDecision}
           gameState={gameState}

@@ -2952,14 +2952,26 @@ function botTakeTurn(state: GameState): GameState {
   // 5. Activate ongoing benefit after playing cards (in case conditions changed)
   s = botActivateOngoing(s, player.id);
 
+  // Drain any lingering decisions before ending the turn
+  let drainTries = 0;
+  while (s.pendingDecision && s.pendingDecision.playerId === player.id && drainTries++ < 8) {
+    const before = s.pendingDecision;
+    s = botAutoResolveDecision(s, player.id);
+    if (s.pendingDecision === before) {
+      // Stuck — clear it so endTurn can proceed
+      s = { ...s, pendingDecision: null };
+      break;
+    }
+  }
+
   // 6. End turn
   const endResult = endTurn(s, player.id);
   if (!endResult.error) {
     s = endResult.state;
   } else {
-    // endTurn might fail if there's a pending choose_discard_to_limit
-    if (s.pendingDecision?.type === "choose_discard_to_limit") {
-      s = botAutoResolveDecision(s, player.id);
+    // Last-resort: clear any pending decision and retry endTurn
+    if (s.pendingDecision) {
+      s = { ...s, pendingDecision: null };
       const retry = endTurn(s, player.id);
       if (!retry.error) s = retry.state;
     }
