@@ -1,9 +1,10 @@
 import { readFileSync, writeFileSync } from "fs";
-import { join, dirname } from "path";
-import { fileURLToPath } from "url";
+import { join } from "path";
+import { WORKSPACE_ROOT } from "./workspaceRoot.js";
 
-const __dirname = dirname(fileURLToPath(import.meta.url));
-const JSON_PATH = join(__dirname, "cardCopies.json");
+// Always stored next to the source file — works in both dev (tsx) and prod (bundled dist)
+// because WORKSPACE_ROOT walks up from __dirname until it finds pnpm-workspace.yaml.
+const JSON_PATH = join(WORKSPACE_ROOT, "artifacts/api-server/src/lib/cardCopies.json");
 
 let copies: Record<string, number> = {};
 
