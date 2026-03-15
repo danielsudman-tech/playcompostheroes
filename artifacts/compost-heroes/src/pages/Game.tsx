@@ -1485,8 +1485,23 @@ export default function Game() {
                 </>
               )}
               
-              <div className="flex justify-center gap-4">
-                <Button size="lg" className="font-bold text-lg" onClick={() => setLocation("/")}>
+              <div className="flex flex-col sm:flex-row justify-center gap-3">
+                <Button
+                  size="lg"
+                  className="font-bold text-lg"
+                  disabled={actionMutation.isPending}
+                  onClick={() => {
+                    const pid = localPlayerId ?? gameState.players[0]?.id;
+                    if (pid) actionMutation.mutate({ type: "reset_game" as any, playerId: pid });
+                  }}
+                >
+                  {actionMutation.isPending ? (
+                    <><Loader2 className="w-5 h-5 mr-2 animate-spin" />Resetting…</>
+                  ) : (
+                    "Play Again"
+                  )}
+                </Button>
+                <Button size="lg" variant="outline" className="font-bold text-lg" onClick={() => setLocation("/")}>
                   Return to Lobby
                 </Button>
               </div>

@@ -420,7 +420,14 @@ router.post("/games/:gameId/action", async (req, res) => {
         const botIndices = state.players
           .map((p, i) => ((p as any).isBot ? i : -1))
           .filter((i) => i >= 0);
-        let newState = createGameState(createGameId(), playerNames, state.mode as "facilitator" | "standalone", botIndices);
+        const botSkillLevels: Record<number, string> = {};
+        state.players.forEach((p, i) => {
+          if ((p as any).isBot && (p as any).botSkillLevel) {
+            botSkillLevels[i] = (p as any).botSkillLevel;
+          }
+        });
+        // Reuse the same gameId so the URL and React Query cache stay valid
+        let newState = createGameState(gameId, playerNames, state.mode as "facilitator" | "standalone", botIndices, botSkillLevels);
         newState = runBotTurnsIfNeeded(newState);
         await storeGame(newState);
         broadcast(newState.gameId, newState);
