@@ -216,6 +216,22 @@ export function sendKickedEvent(gameId: string, token: string): void {
   }
 }
 
+export async function sendNudgeEvent(gameId: string, targetPlayerIndex: number, fromName: string): Promise<void> {
+  const result = await pool.query(
+    `SELECT token FROM compost_game_tokens WHERE game_id = $1 AND player_index = $2`,
+    [gameId, targetPlayerIndex]
+  );
+  if (result.rows.length === 0) return;
+  const targetToken = result.rows[0].token as string;
+  const clients = sseClientsByToken.get(gameId);
+  if (!clients) return;
+  const res = clients.get(targetToken);
+  if (!res) return;
+  try {
+    res.write(`event: nudge\ndata: ${JSON.stringify({ from: fromName })}\n\n`);
+  } catch {}
+}
+
 export function broadcastToGame(
   gameId: string,
   state: GameState,

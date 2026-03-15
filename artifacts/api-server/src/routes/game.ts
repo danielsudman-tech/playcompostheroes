@@ -29,6 +29,7 @@ import {
   removePlayerTokenByIndex,
   removeSseClient,
   sendKickedEvent,
+  sendNudgeEvent,
   setGamePassword,
   storeGame,
 } from "../lib/gameStore.js";
@@ -345,6 +346,27 @@ router.get("/games/:gameId/events", async (req, res) => {
     clearInterval(ping);
     removeSseClient(gameId, token);
   });
+});
+
+// POST /api/games/:gameId/nudge — poke the current player when it's their turn
+router.post("/games/:gameId/nudge", async (req, res) => {
+  const { gameId } = req.params as { gameId: string };
+  const { token, targetPlayerIndex } = req.body as { token?: string; targetPlayerIndex?: number };
+
+  if (!token || targetPlayerIndex === undefined) {
+    res.status(400).json({ error: "token and targetPlayerIndex required" });
+    return;
+  }
+
+  const state = await getGame(gameId);
+  if (!state) { res.status(404).json({ error: "Game not found" }); return; }
+
+  const senderIndex = await getPlayerIndexForToken(gameId, token);
+  if (senderIndex === undefined || senderIndex === null) { res.status(403).json({ error: "Invalid token" }); return; }
+
+  const senderName = state.players[senderIndex]?.name ?? "Someone";
+  await sendNudgeEvent(gameId, targetPlayerIndex, senderName);
+  res.json({ ok: true });
 });
 
 // POST /api/games/:gameId/action — perform a game action

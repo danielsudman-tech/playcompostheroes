@@ -108,9 +108,12 @@ export function useGameSse(
   gameId: string | null,
   token: string | null,
   isOnline: boolean,
-  onKicked?: () => void
+  onKicked?: () => void,
+  onNudge?: (from: string) => void
 ) {
   const queryClient = useQueryClient();
+  const onNudgeRef = useRef(onNudge);
+  onNudgeRef.current = onNudge;
 
   useEffect(() => {
     if (!gameId || !token || !isOnline) return;
@@ -128,6 +131,13 @@ export function useGameSse(
     source.addEventListener("kicked", () => {
       source.close();
       onKicked?.();
+    });
+
+    source.addEventListener("nudge", (e) => {
+      try {
+        const data = JSON.parse((e as MessageEvent).data);
+        onNudgeRef.current?.(data.from ?? "Someone");
+      } catch {}
     });
 
     source.onerror = () => {

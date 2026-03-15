@@ -31,6 +31,7 @@ import {
   ChevronRight,
   Lock,
   MoveRight,
+  Bell,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -64,7 +65,13 @@ export default function Game() {
     toast({ title: "You were removed from the room", variant: "destructive" });
     setLocation("/");
   }, [gameId, toast, setLocation]);
-  useGameSse(gameId || null, localToken, isOnline && !!localToken, handleKicked);
+  useGameSse(gameId || null, localToken, isOnline && !!localToken, handleKicked, (from) => {
+    toast({
+      title: "It's your turn! 🌱",
+      description: `${from} is waiting for you to play.`,
+      duration: 6000,
+    });
+  });
 
   // 5. Join-form state (for waiting-room newcomers)
   const joinRoom = useJoinRoom(gameId || null);
@@ -531,18 +538,38 @@ export default function Game() {
 
       {/* TOP ROW: Opponents */}
       <div className="relative z-10 flex-none p-4 pb-0 flex justify-center gap-4 overflow-x-auto">
-        {opponents.map(opp => (
-          <PlayerMat 
-            key={opp.id} 
-            player={opp} 
-            isCurrentPlayer={opp.id === currentPlayer.id}
-            isLocalUser={false}
-            isActiveTurn={opp.id === currentPlayer.id}
-            onViewPile={() => setViewingOpponent(opp)}
-            compact
-            className="w-full max-w-[300px] shrink-0"
-          />
-        ))}
+        {opponents.map(opp => {
+          const oppIndex = gameState.players.findIndex(p => p.id === opp.id);
+          const isOppTurn = opp.id === currentPlayer.id;
+          return (
+            <div key={opp.id} className="flex flex-col items-center gap-1 w-full max-w-[300px] shrink-0">
+              <PlayerMat 
+                player={opp} 
+                isCurrentPlayer={isOppTurn}
+                isLocalUser={false}
+                isActiveTurn={isOppTurn}
+                onViewPile={() => setViewingOpponent(opp)}
+                compact
+                className="w-full"
+              />
+              {isOnline && !isMyTurn && isOppTurn && localToken && (
+                <button
+                  className="flex items-center gap-1.5 text-[11px] font-semibold text-muted-foreground hover:text-foreground border border-border rounded-full px-3 py-0.5 bg-card/80 hover:bg-card transition-colors active:scale-95"
+                  onClick={() => {
+                    fetch(`/api/games/${gameId}/nudge`, {
+                      method: "POST",
+                      headers: { "Content-Type": "application/json" },
+                      body: JSON.stringify({ token: localToken, targetPlayerIndex: oppIndex }),
+                    }).catch(() => {});
+                  }}
+                >
+                  <Bell className="w-3 h-3" />
+                  Nudge {opp.name}
+                </button>
+              )}
+            </div>
+          );
+        })}
       </div>
 
       {/* MIDDLE ROW: Board — matches physical mat layout. pb-96 on mobile keeps content above the stacked hand+pile overlay */}
@@ -1035,7 +1062,7 @@ export default function Game() {
 
               {/* ── ONGOING ACTION CARD (mobile) ── */}
               {gameState.ongoingActionCard && (
-                <div className="bg-orange-500/10 border-t border-orange-400/30 px-3 py-2 flex items-center gap-2">
+                <div className="bg-orange-50 dark:bg-orange-950/70 border-t border-orange-300/60 dark:border-orange-700/50 px-3 py-2 flex items-center gap-2">
                   <CircleDot className="w-3.5 h-3.5 text-orange-500 shrink-0" />
                   {gameState.ongoingActionCard.imageKey && (
                     <div className="w-8 h-11 rounded overflow-hidden border border-orange-400/40 shrink-0">

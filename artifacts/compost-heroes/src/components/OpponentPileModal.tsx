@@ -1,3 +1,4 @@
+import { useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { X } from "lucide-react";
 import type { PlayerState } from "@workspace/api-client-react";
@@ -20,6 +21,8 @@ interface OpponentPileModalProps {
 }
 
 export function OpponentPileModal({ player, onClose }: OpponentPileModalProps) {
+  const [zoomedCard, setZoomedCard] = useState<PlayerState["compostPile"][0] | null>(null);
+
   const collected = CATEGORIES.filter(cat =>
     player.compostPile.some(c => cat.match(c.function || ""))
   ).length;
@@ -31,8 +34,26 @@ export function OpponentPileModal({ player, onClose }: OpponentPileModalProps) {
         animate={{ opacity: 1 }}
         exit={{ opacity: 0 }}
         className="fixed inset-0 z-40 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4"
-        onClick={onClose}
+        onClick={zoomedCard ? () => setZoomedCard(null) : onClose}
       >
+        {/* Zoomed card lightbox */}
+        <AnimatePresence>
+          {zoomedCard && (
+            <motion.div
+              key="zoom"
+              initial={{ opacity: 0, scale: 0.8 }}
+              animate={{ opacity: 1, scale: 1 }}
+              exit={{ opacity: 0, scale: 0.8 }}
+              transition={{ type: "spring", duration: 0.25 }}
+              className="absolute inset-0 z-50 flex items-center justify-center p-6"
+              onClick={(e) => { e.stopPropagation(); setZoomedCard(null); }}
+            >
+              <GameCard card={zoomedCard} size="lg" />
+              <p className="absolute bottom-10 text-xs text-white/60 font-medium">Tap anywhere to close</p>
+            </motion.div>
+          )}
+        </AnimatePresence>
+
         <motion.div
           initial={{ scale: 0.92, y: 24, opacity: 0 }}
           animate={{ scale: 1, y: 0, opacity: 1 }}
@@ -45,7 +66,7 @@ export function OpponentPileModal({ player, onClose }: OpponentPileModalProps) {
           <div className="flex items-center justify-between px-5 py-4 border-b">
             <div>
               <h2 className="font-display font-bold text-xl">{player.name}'s Compost Pile</h2>
-              <p className="text-sm text-muted-foreground">{collected}/5 categories collected</p>
+              <p className="text-sm text-muted-foreground">{collected}/5 categories · tap a card to enlarge</p>
             </div>
             <button
               onClick={onClose}
@@ -74,7 +95,14 @@ export function OpponentPileModal({ player, onClose }: OpponentPileModalProps) {
                   {has && (
                     <div className="flex flex-wrap gap-3">
                       {cards.map(card => (
-                        <GameCard key={card.id} card={card} size="sm" hoverable />
+                        <button
+                          key={card.id}
+                          className="focus:outline-none rounded-xl active:scale-95 transition-transform hover:ring-2 hover:ring-primary/40"
+                          onClick={() => setZoomedCard(card)}
+                          title="Tap to enlarge"
+                        >
+                          <GameCard card={card} size="sm" hoverable />
+                        </button>
                       ))}
                     </div>
                   )}
