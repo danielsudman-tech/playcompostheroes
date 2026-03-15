@@ -961,6 +961,16 @@ export default function Game() {
                     const topCard = cards[cards.length - 1] ?? null;
                     const has = topCard !== null;
                     const imageSrc = topCard?.imageKey ? assetUrl(topCard.imageKey) : null;
+
+                    // All cards in this slot that can be moved to a different function slot
+                    const movableCards = !isMyTurn || !localPlayerId ? [] : cards.filter(card => {
+                      const validFns: string[] = (card as any).alternateFunctions ?? [(card as any).function ?? ""];
+                      if (validFns.length <= 1) return false;
+                      const occupiedFns = new Set(pile.filter(c => c.id !== card.id).map(c => getEffFn(c as any)));
+                      const currentFn = getEffFn(card as any);
+                      return validFns.some(fn => fn !== currentFn && !occupiedFns.has(fn));
+                    });
+
                     return (
                       <div
                         key={cat.key}
@@ -970,10 +980,13 @@ export default function Game() {
                         )}
                       >
                         <div className={cn(
-                          "px-1 py-0.5 text-[8px] font-bold uppercase tracking-wide truncate border-b",
+                          "px-1 py-0.5 text-[8px] font-bold uppercase tracking-wide border-b flex items-center justify-between gap-0.5",
                           has ? `${cat.headerClass} border-current/20` : "bg-transparent text-muted-foreground/30 border-transparent"
                         )}>
-                          {cat.label}
+                          <span className="truncate">{cat.label}</span>
+                          {cards.length > 1 && (
+                            <span className="shrink-0 text-[7px] font-bold opacity-60">×{cards.length}</span>
+                          )}
                         </div>
                         <div className="flex-1 flex items-center justify-center" style={{ minHeight: 64 }}>
                           {has && topCard ? (
@@ -982,23 +995,16 @@ export default function Game() {
                                 ? <img src={imageSrc} alt={topCard.name} className="w-full h-full object-cover" />
                                 : <GameCard card={topCard} size="xs" hoverable={false} className="w-full h-full" />
                               }
-                              {isMyTurn && localPlayerId && (() => {
-                                const validFns: string[] = (topCard as any).alternateFunctions ?? [(topCard as any).function ?? ""];
-                                if (validFns.length <= 1) return null;
-                                const occupiedFns = new Set(pile.filter(c => c.id !== topCard.id).map(c => getEffFn(c as any)));
-                                const currentFn = getEffFn(topCard as any);
-                                const hasAlt = validFns.some(fn => fn !== currentFn && !occupiedFns.has(fn));
-                                if (!hasAlt) return null;
-                                return (
+                              {/* Move button for the top card */}
+                              {movableCards.some(c => c.id === topCard.id) && (
                                 <button
-                                  onClick={() => actionMutation.mutate({ type: "move_card_layer" as any, playerId: localPlayerId, cardId: topCard.id })}
-                                  className="absolute bottom-0.5 right-0.5 bg-primary/90 text-white rounded-full p-0.5 shadow-md hover:bg-primary transition-colors z-10"
-                                  title="Move to another function slot"
+                                  onClick={() => actionMutation.mutate({ type: "move_card_layer" as any, playerId: localPlayerId!, cardId: topCard.id })}
+                                  className="absolute bottom-0.5 right-0.5 bg-primary/90 text-white rounded-full p-0.5 shadow-md active:scale-90 z-10"
+                                  title={`Move ${topCard.name} to another slot`}
                                 >
                                   <MoveRight className="w-2 h-2" />
                                 </button>
-                                );
-                              })()}
+                              )}
                             </div>
                           ) : (
                             <div className={cn("w-2 h-2 rounded-full", cat.emptyDotClass, "opacity-40")} />
@@ -1009,6 +1015,18 @@ export default function Game() {
                             {topCard.name}
                           </div>
                         )}
+                        {/* Move buttons for buried cards (not the top card) */}
+                        {movableCards.filter(c => c.id !== topCard?.id).map(card => (
+                          <button
+                            key={card.id}
+                            onClick={() => actionMutation.mutate({ type: "move_card_layer" as any, playerId: localPlayerId!, cardId: card.id })}
+                            className="w-full flex items-center justify-center gap-0.5 px-0.5 py-0.5 bg-primary/10 border-t border-primary/20 text-primary active:bg-primary/20 transition-colors"
+                            title={`Move ${card.name} to another slot`}
+                          >
+                            <MoveRight className="w-2 h-2 shrink-0" />
+                            <span className="text-[7px] font-bold truncate">{card.name}</span>
+                          </button>
+                        ))}
                       </div>
                     );
                   })}
