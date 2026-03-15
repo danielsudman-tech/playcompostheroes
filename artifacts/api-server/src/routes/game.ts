@@ -12,6 +12,7 @@ import {
   removePlayerFromRoom,
   resolveDecision,
   runBotTurnsIfNeeded,
+  type BotSkillLevel,
   type GameState,
 } from "../lib/gameEngine.js";
 import {
@@ -80,13 +81,14 @@ router.get("/rooms", async (_req, res) => {
 
 // POST /api/games — create a new game
 router.post("/games", async (req, res) => {
-  const { playerNames, mode, password, hostName, maxPlayers, botPlayerIndices } = req.body as {
+  const { playerNames, mode, password, hostName, maxPlayers, botPlayerIndices, botSkillLevels } = req.body as {
     playerNames?: string[];
     mode: "facilitator" | "standalone" | "online";
     password?: string;
     hostName?: string;
     maxPlayers?: number;
     botPlayerIndices?: number[];
+    botSkillLevels?: Record<number, BotSkillLevel>;
   };
 
   if (mode !== "facilitator" && mode !== "standalone" && mode !== "online") {
@@ -130,7 +132,16 @@ router.post("/games", async (req, res) => {
   const validBotIndices = Array.isArray(botPlayerIndices)
     ? botPlayerIndices.filter((i) => typeof i === "number" && i >= 0 && i < playerNames.length)
     : [];
-  let state = createGameState(gameId, playerNames, mode, validBotIndices);
+  const validSkillLevels: Record<number, BotSkillLevel> = {};
+  if (botSkillLevels && typeof botSkillLevels === "object") {
+    for (const [k, v] of Object.entries(botSkillLevels)) {
+      const idx = Number(k);
+      if (!isNaN(idx) && (v === "easy" || v === "medium" || v === "hard")) {
+        validSkillLevels[idx] = v;
+      }
+    }
+  }
+  let state = createGameState(gameId, playerNames, mode, validBotIndices, validSkillLevels);
   state = runBotTurnsIfNeeded(state);
   await storeGame(state);
 

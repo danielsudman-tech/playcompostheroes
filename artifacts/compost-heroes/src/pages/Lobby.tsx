@@ -108,9 +108,12 @@ export default function Lobby() {
   const [tab, setTab] = useState<"create" | "browse">("create");
   const [mode, setMode] = useState<"standalone" | "facilitator" | "online">("standalone");
 
+  type SkillLevel = "easy" | "medium" | "hard";
+
   // Pass & Play / Facilitator fields
   const [players, setPlayers] = useState<string[]>(["Player 1", "Player 2"]);
   const [botPlayers, setBotPlayers] = useState<boolean[]>([false, false]);
+  const [botSkillLevels, setBotSkillLevels] = useState<SkillLevel[]>(["medium", "medium"]);
 
   // Online (waiting room) fields
   const [hostName, setHostName] = useState("");
@@ -121,12 +124,14 @@ export default function Lobby() {
     if (players.length < 4) {
       setPlayers([...players, `Player ${players.length + 1}`]);
       setBotPlayers([...botPlayers, false]);
+      setBotSkillLevels([...botSkillLevels, "medium"]);
     }
   };
   const handleRemovePlayer = (i: number) => {
     if (players.length > 2) {
       setPlayers(players.filter((_, idx) => idx !== i));
       setBotPlayers(botPlayers.filter((_, idx) => idx !== i));
+      setBotSkillLevels(botSkillLevels.filter((_, idx) => idx !== i));
     }
   };
   const handleUpdateName = (i: number, name: string) => {
@@ -149,6 +154,11 @@ export default function Lobby() {
       nameCopy[i] = `Bot ${i + 1}`;
       setPlayers(nameCopy);
     }
+  };
+  const handleSetBotSkill = (i: number, level: SkillLevel) => {
+    const next = [...botSkillLevels];
+    next[i] = level;
+    setBotSkillLevels(next);
   };
 
   const handleStartGame = () => {
@@ -176,8 +186,10 @@ export default function Lobby() {
     const botPlayerIndices = botPlayers
       .map((isBot, i) => (isBot ? i : -1))
       .filter((i) => i >= 0);
+    const skillLevels: Record<number, SkillLevel> = {};
+    botPlayerIndices.forEach((i) => { skillLevels[i] = botSkillLevels[i] ?? "medium"; });
     createGame.mutate(
-      { playerNames: validPlayers, mode, botPlayerIndices },
+      { playerNames: validPlayers, mode, botPlayerIndices, botSkillLevels: skillLevels },
       {
         onSuccess: (data) => setLocation(`/game/${data.gameId}`),
         onError: (err) => toast({ title: "Failed to create game", description: err.message, variant: "destructive" }),
@@ -326,41 +338,70 @@ export default function Lobby() {
                     </div>
                     <div className="space-y-3">
                       {players.map((player, i) => (
-                        <motion.div key={i} initial={{ opacity: 0, x: -20 }} animate={{ opacity: 1, x: 0 }} className="flex gap-2 items-center">
-                          <div className="relative flex-1">
-                            <Input
-                              value={player}
-                              onChange={(e) => handleUpdateName(i, e.target.value)}
-                              placeholder={`Player ${i + 1}`}
-                              disabled={botPlayers[i]}
-                              className={`h-12 border-2 focus-visible:ring-primary/20 text-lg font-medium transition-colors ${
-                                botPlayers[i]
-                                  ? "bg-violet-50 dark:bg-violet-950/20 border-violet-300 dark:border-violet-700 text-violet-700 dark:text-violet-300"
-                                  : "bg-background/50"
-                              }`}
-                            />
-                          </div>
-                          <Button
-                            variant="outline"
-                            size="sm"
-                            title={botPlayers[i] ? "Switch to human player" : "Switch to bot player"}
-                            className={`h-12 w-12 shrink-0 transition-all ${
-                              botPlayers[i]
-                                ? "border-violet-400 bg-violet-100 dark:bg-violet-950/30 text-violet-600 dark:text-violet-400 hover:bg-violet-200 dark:hover:bg-violet-900/40"
-                                : "border-border text-muted-foreground hover:border-primary/50 hover:text-primary"
-                            }`}
-                            onClick={() => handleToggleBot(i)}
-                          >
-                            {botPlayers[i] ? <Bot className="w-5 h-5" /> : <User className="w-5 h-5" />}
-                          </Button>
-                          {players.length > 2 && (
+                        <motion.div key={i} initial={{ opacity: 0, x: -20 }} animate={{ opacity: 1, x: 0 }} className="space-y-1.5">
+                          <div className="flex gap-2 items-center">
+                            <div className="relative flex-1">
+                              <Input
+                                value={player}
+                                onChange={(e) => handleUpdateName(i, e.target.value)}
+                                placeholder={`Player ${i + 1}`}
+                                disabled={botPlayers[i]}
+                                className={`h-12 border-2 focus-visible:ring-primary/20 text-lg font-medium transition-colors ${
+                                  botPlayers[i]
+                                    ? "bg-violet-50 dark:bg-violet-950/20 border-violet-300 dark:border-violet-700 text-violet-700 dark:text-violet-300"
+                                    : "bg-background/50"
+                                }`}
+                              />
+                            </div>
                             <Button
                               variant="outline"
-                              className="h-12 w-12 shrink-0 text-destructive hover:bg-destructive/10 hover:border-destructive"
-                              onClick={() => handleRemovePlayer(i)}
+                              size="sm"
+                              title={botPlayers[i] ? "Switch to human player" : "Switch to bot player"}
+                              className={`h-12 w-12 shrink-0 transition-all ${
+                                botPlayers[i]
+                                  ? "border-violet-400 bg-violet-100 dark:bg-violet-950/30 text-violet-600 dark:text-violet-400 hover:bg-violet-200 dark:hover:bg-violet-900/40"
+                                  : "border-border text-muted-foreground hover:border-primary/50 hover:text-primary"
+                              }`}
+                              onClick={() => handleToggleBot(i)}
                             >
-                              <Trash2 className="w-5 h-5" />
+                              {botPlayers[i] ? <Bot className="w-5 h-5" /> : <User className="w-5 h-5" />}
                             </Button>
+                            {players.length > 2 && (
+                              <Button
+                                variant="outline"
+                                className="h-12 w-12 shrink-0 text-destructive hover:bg-destructive/10 hover:border-destructive"
+                                onClick={() => handleRemovePlayer(i)}
+                              >
+                                <Trash2 className="w-5 h-5" />
+                              </Button>
+                            )}
+                          </div>
+                          {botPlayers[i] && (
+                            <motion.div
+                              initial={{ opacity: 0, height: 0 }}
+                              animate={{ opacity: 1, height: "auto" }}
+                              exit={{ opacity: 0, height: 0 }}
+                              className="flex gap-1 pl-0.5"
+                            >
+                              {(["easy", "medium", "hard"] as const).map((lvl) => {
+                                const active = (botSkillLevels[i] ?? "medium") === lvl;
+                                const labels: Record<string, string> = { easy: "Easy", medium: "Medium", hard: "Hard" };
+                                const colors: Record<string, string> = {
+                                  easy: active ? "border-green-400 bg-green-50 text-green-700 dark:bg-green-950/30 dark:text-green-400" : "border-border text-muted-foreground hover:border-green-300 hover:text-green-600",
+                                  medium: active ? "border-amber-400 bg-amber-50 text-amber-700 dark:bg-amber-950/30 dark:text-amber-400" : "border-border text-muted-foreground hover:border-amber-300 hover:text-amber-600",
+                                  hard: active ? "border-red-400 bg-red-50 text-red-700 dark:bg-red-950/30 dark:text-red-400" : "border-border text-muted-foreground hover:border-red-300 hover:text-red-600",
+                                };
+                                return (
+                                  <button
+                                    key={lvl}
+                                    onClick={() => handleSetBotSkill(i, lvl)}
+                                    className={`flex-1 py-1 rounded-lg border text-xs font-bold transition-all ${colors[lvl]}`}
+                                  >
+                                    {labels[lvl]}
+                                  </button>
+                                );
+                              })}
+                            </motion.div>
                           )}
                         </motion.div>
                       ))}

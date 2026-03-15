@@ -191,6 +191,7 @@ export function useCreateNewGame() {
       hostName?: string;
       maxPlayers?: number;
       botPlayerIndices?: number[];
+      botSkillLevels?: Record<number, "easy" | "medium" | "hard">;
     }) => {
       const r = await fetch("/api/games", {
         method: "POST",

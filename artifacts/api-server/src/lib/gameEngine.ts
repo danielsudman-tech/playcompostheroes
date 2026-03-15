@@ -2,6 +2,8 @@ import { Card, buildDeck, WIN_FUNCTIONS, getAllCards } from "./cards.js";
 import { getAllOverrides } from "./imageKeyStore.js";
 import { getAllCopies } from "./cardCopiesStore.js";
 
+export type BotSkillLevel = "easy" | "medium" | "hard";
+
 export interface PlayerState {
   id: string;
   name: string;
@@ -11,6 +13,7 @@ export interface PlayerState {
   maxHandSize: number;
   drawsExtraCard: boolean;
   isBot: boolean;
+  botSkillLevel?: BotSkillLevel;
 }
 
 export interface ActiveModifier {
@@ -1947,7 +1950,8 @@ export function createGameState(
   gameId: string,
   playerNames: string[],
   mode: "facilitator" | "standalone",
-  botPlayerIndices: number[] = []
+  botPlayerIndices: number[] = [],
+  botSkillLevels: Record<number, BotSkillLevel> = {}
 ): GameState {
   const deck = shuffle(buildDeck(getAllOverrides(), getAllCopies()));
   const players: PlayerState[] = playerNames.map((name, i) => ({
@@ -1959,6 +1963,9 @@ export function createGameState(
     maxHandSize: 5,
     drawsExtraCard: false,
     isBot: botPlayerIndices.includes(i),
+    botSkillLevel: botPlayerIndices.includes(i)
+      ? (botSkillLevels[i] ?? "medium")
+      : undefined,
   }));
 
   let state: GameState = {
@@ -2245,71 +2252,725 @@ export function addPlayerToRoom(
 // ─────────────────────────────────────────────
 
 /**
- * Execute a single bot turn: draw → maybe play best hero → end turn.
- * Returns the new state (which will be at the next player's draw phase).
+ * ─── BOT HELPERS ────────────────────────────────────────────────────────────
+ */
+
+/** How many of the 5 WIN_FUNCTIONS does a player already have covered in their pile? */
+function pileFillCount(player: PlayerState): number {
+  const covered = new Set(player.compostPile.map((c) => getEffectiveFunction(c)));
+  return WIN_FUNCTIONS.filter((f) => covered.has(f)).length;
+}
+
+/** Returns WIN_FUNCTIONS not yet covered by this player's compost pile */
+function missingFunctions(player: PlayerState): string[] {
+  const covered = new Set(player.compostPile.map((c) => getEffectiveFunction(c)));
+  return WIN_FUNCTIONS.filter((f) => !covered.has(f));
+}
+
+/** Pick the opponent with the most progress (most unique WIN_FUNCTIONS in pile) */
+function mostDangerousOpponent(state: GameState, selfId: string): PlayerState | null {
+  const opponents = state.players.filter((p) => p.id !== selfId);
+  if (opponents.length === 0) return null;
+  return opponents.reduce((best, p) => pileFillCount(p) >= pileFillCount(best) ? p : best);
+}
+
+/**
+ * Score how useful a card is to keep for this player (higher = keep it).
+ * Used for discard decisions.
+ */
+function cardKeepScore(card: Card, player: PlayerState): number {
+  const missing = new Set(missingFunctions(player));
+  if (card.type === "hero") {
+    const fns = [card.function, ...(card.alternateFunctions ?? [])];
+    if (fns.some((f) => missing.has(f))) return 100;    // fills a missing slot
+    if (fns.some((f) => WIN_FUNCTIONS.includes(f as any))) return 40;  // fills any hero slot (duplicate)
+    return 10;
+  }
+  // Actions: generally worth keeping, slight preference for powerful ones
+  const actionScores: Record<string, number> = {
+    time_warp: 80, rainstorm: 60, high_heat_gamble: 50,
+    hot_pile_bonus: 55, critical_mass: 50, nitrogen_boost: 45,
+    rot_regrow: 40, carbon_sink: 45, dry_spell: 30,
+    critter_raid: 25, stinky_pile: 25, pile_flip: 15,
+    plastic_contamination: 20, worm_party: 20, spread_nutrients: 20,
+    soggy_pile: 15, rot_roulette: 35, anaerobic_pocket: 20,
+  };
+  return actionScores[card.id] ?? 20;
+}
+
+/** Sort hand by ascending keep score (index 0 = best to discard first) */
+function sortByDiscardFirst(cards: Card[], player: PlayerState): Card[] {
+  return [...cards].sort((a, b) => cardKeepScore(a, player) - cardKeepScore(b, player));
+}
+
+/** Pick best hero from a list to fill this player's missing functions */
+function pickBestHero(cards: Card[], player: PlayerState): { card: Card; chosenFn: string } | null {
+  const missing = missingFunctions(player);
+  let best: { card: Card; chosenFn: string } | null = null;
+
+  for (const card of cards) {
+    if (card.type !== "hero") continue;
+    const validFns = [...new Set([card.function, ...(card.alternateFunctions ?? [])])];
+    const matchMissing = validFns.filter((f) => missing.includes(f));
+    if (matchMissing.length > 0) {
+      if (!best) best = { card, chosenFn: matchMissing[0] };
+      // Prefer multi-function cards that match
+      if (matchMissing.length > (best ? 1 : 0)) best = { card, chosenFn: matchMissing[0] };
+    }
+  }
+  return best;
+}
+
+/**
+ * Score an action card to decide if a bot should play it.
+ * Returns 0 or negative if the bot should not play it.
+ */
+function scoreActionCard(
+  card: Card,
+  state: GameState,
+  player: PlayerState,
+  level: BotSkillLevel
+): number {
+  if (card.type !== "action") return 0;
+
+  const covered = new Set(player.compostPile.map((c) => getEffectiveFunction(c)));
+  const hasMoisture = covered.has("Moisture");
+  const hasNitrogen = covered.has("Nitrogen");
+  const hasDecomposer = covered.has("Decomposer");
+  const carbonCount = player.compostPile.filter((c) => getEffectiveFunction(c) === "Carbon").length;
+  const decomposerCount = player.compostPile.filter((c) => getEffectiveFunction(c) === "Decomposer").length;
+  const nitrogenInHand = player.hand.filter((c) => c.function === "Nitrogen").length;
+  const handSize = player.hand.length;
+  const opponents = state.players.filter((p) => p.id !== player.id);
+  const danger = mostDangerousOpponent(state, player.id);
+
+  switch (card.id) {
+    case "time_warp":
+      return 90; // Always play — extra turn is always good
+
+    case "rainstorm":
+      return 75; // Draw 2 is nearly always worth it
+
+    case "high_heat_gamble": {
+      // Draw 3 if risk is acceptable: skip next turn if no Decomposer
+      const decomposersInHand = player.hand.filter((c) => c.function === "Decomposer").length;
+      if (decomposersInHand > 0) return 65;
+      if (level === "hard" && pileFillCount(player) >= 3) return 20; // risky late-game
+      if (level === "medium") return 40; // take the gamble
+      return 0;
+    }
+
+    case "hot_pile_bonus":
+      if (decomposerCount >= 2) return 70; // draws an extra card every turn
+      return 0;
+
+    case "critical_mass": {
+      const pile = player.compostPile;
+      const hasDoubleLayer = pile.some((c1, i) =>
+        pile.some((c2, j) => j !== i && c1.layer === c2.layer && c1.layer !== null)
+      );
+      return hasDoubleLayer ? 60 : 0;
+    }
+
+    case "nitrogen_boost":
+      return nitrogenInHand >= 1 ? 55 : 0; // discard 1 N → draw 2
+
+    case "rot_regrow":
+      // Worth it only if we have 3+ cards to discard and discard pile has useful cards
+      if (handSize < 3) return 0;
+      {
+        const usefulInDiscard = state.discardPile.some(
+          (c) => c.type === "hero" && missingFunctions(player).includes(c.function)
+        );
+        return usefulInDiscard ? 55 : (handSize >= 4 ? 30 : 0);
+      }
+
+    case "dry_spell":
+      // Good if we have Moisture (we're immune to the hand-size penalty)
+      return hasMoisture ? 45 : 0;
+
+    case "carbon_sink":
+      if (carbonCount < 2) return 0;
+      {
+        const opponentHasNitrogen = opponents.some((p) =>
+          p.compostPile.some((c) => getEffectiveFunction(c) === "Nitrogen")
+        );
+        if (!opponentHasNitrogen) return 0;
+        // Extra value if we need Nitrogen
+        return covered.has("Nitrogen") ? 35 : 70;
+      }
+
+    case "critter_raid":
+      // Discards Nitrogen from all players' hands — good if we have none at risk
+      // We can't see opponents' hands, but it's likely someone has Nitrogen
+      return nitrogenInHand === 0 ? 35 : 5; // hurts us less than opponents on average
+
+    case "stinky_pile":
+      // Each player discards 1 Nitrogen from compost — good if opponents have it, we don't
+      {
+        const oppHasNitrogen = opponents.some((p) =>
+          p.compostPile.some((c) => getEffectiveFunction(c) === "Nitrogen")
+        );
+        if (!oppHasNitrogen) return 0;
+        return hasNitrogen ? 10 : 40; // much better if it doesn't hurt us
+      }
+
+    case "soggy_pile":
+      // Each player discards 1 Moisture or Nitrogen from compost
+      {
+        const oppCount = opponents.filter((p) =>
+          p.compostPile.some((c) => {
+            const fn = getEffectiveFunction(c);
+            return fn === "Moisture" || fn === "Nitrogen";
+          })
+        ).length;
+        const weGetHurt = (hasMoisture || hasNitrogen) ? 1 : 0;
+        const netBenefit = oppCount - weGetHurt;
+        if (level === "hard" && netBenefit > 0) return 35;
+        if (level === "medium" && !hasMoisture && !hasNitrogen && oppCount > 0) return 30;
+        return 0;
+      }
+
+    case "spread_nutrients":
+      // Give 1 to each player, draw same back — good for cycling weak cards
+      if (handSize < opponents.length + 1) return 0;
+      {
+        const weakCards = sortByDiscardFirst(player.hand, player).slice(0, opponents.length);
+        const avgWeakScore = weakCards.reduce((s, c) => s + cardKeepScore(c, player), 0) / weakCards.length;
+        return avgWeakScore < 30 ? 35 : 10;
+      }
+
+    case "worm_party":
+      // Pass 1 card to left — use to pass away our least useful card
+      {
+        const weakest = sortByDiscardFirst(player.hand, player)[0];
+        if (!weakest) return 0;
+        return cardKeepScore(weakest, player) < 25 ? 30 : 5;
+      }
+
+    case "anaerobic_pocket":
+      // Discard 1 Airflow from our OWN compost — very costly unless we have 2+ Airflow
+      if (level !== "hard") return 0; // only hard bots consider this
+      {
+        const airflowCount = player.compostPile.filter((c) => getEffectiveFunction(c) === "Airflow").length;
+        if (airflowCount < 2) return 0; // can't afford to lose our only Airflow
+        if (!danger) return 0;
+        return pileFillCount(danger) >= 4 ? 45 : 0; // only use if opponent is very close to winning
+      }
+
+    case "pile_flip":
+      // All piles pass left — generally dangerous, hard bots only
+      if (level !== "hard") return 0;
+      {
+        if (!danger) return 0;
+        const ourFill = pileFillCount(player);
+        const theirFill = pileFillCount(danger);
+        // Only beneficial if we'd gain from the pile on our right
+        const rightPlayer = state.players[(state.currentPlayerIndex + state.players.length - 1) % state.players.length];
+        if (rightPlayer.id === player.id) return 0;
+        const rightFill = pileFillCount(rightPlayer);
+        return (theirFill > ourFill + 1 && rightFill >= ourFill) ? 40 : 0;
+      }
+
+    case "plastic_contamination":
+      // Block ALL hero card play — use only when opponent is about to win
+      if (level !== "hard") return 0;
+      {
+        if (!danger) return 0;
+        return pileFillCount(danger) >= 4 ? 60 : 0;
+      }
+
+    case "rot_roulette":
+      // Draw 5, discard 3, keep 2, play 1 — medium/hard only
+      if (level === "easy") return 0;
+      return 40;
+
+    default:
+      return 0;
+  }
+}
+
+/**
+ * Auto-resolve a pending decision for a bot player. Returns the new state,
+ * or the same state (with decision cleared) if no valid choice can be made.
+ */
+function botAutoResolveDecision(state: GameState, playerId: string): GameState {
+  const decision = state.pendingDecision;
+  if (!decision || decision.playerId !== playerId) return state;
+
+  const player = getPlayer(state, playerId)!;
+  const missing = new Set(missingFunctions(player));
+  const opts = (decision.options ?? []) as Array<Record<string, unknown>>;
+
+  switch (decision.type) {
+    // ── choose_function: multi-function hero was played, pick the function ───
+    case "choose_function": {
+      // Pick the function that fills a missing pile slot; otherwise first option
+      const best = opts.find((o) => missing.has(o.function as string));
+      const fn = best ? (best.function as string) : (opts[0]?.function as string);
+      if (!fn) return state;
+      const r = resolveDecision(state, playerId, { function: fn });
+      return r.error ? state : r.state;
+    }
+
+    // ── choose_move_function: moving a multi-function hero to different slot ─
+    case "choose_move_function": {
+      const best = opts.find((o) => missing.has(o.function as string));
+      const fn = best ? (best.function as string) : (opts[0]?.function as string);
+      if (!fn) return state;
+      const r = resolveDecision(state, playerId, { function: fn });
+      return r.error ? state : r.state;
+    }
+
+    // ── choose_discard_to_limit: discard least useful cards ─────────────────
+    case "choose_discard_to_limit": {
+      const count = (decision.meta?.count as number) ?? 1;
+      const toDiscard = sortByDiscardFirst(
+        opts.map((o) => player.hand.find((c) => c.id === o.cardId)).filter(Boolean) as Card[],
+        player
+      ).slice(0, count);
+      let s = state;
+      for (const card of toDiscard) {
+        const r = resolveDecision(s, playerId, { cardId: card.id });
+        if (!r.error) s = r.state;
+      }
+      return s;
+    }
+
+    // ── choose_target_player: pick opponent to skip (anaerobic_pocket) ───────
+    case "choose_target_player": {
+      const danger = mostDangerousOpponent(state, playerId);
+      const target = danger ?? state.players.find((p) => p.id !== playerId);
+      if (!target) return state;
+      const r = resolveDecision(state, playerId, { targetPlayerId: target.id });
+      return r.error ? state : r.state;
+    }
+
+    // ── choose_card_from_compost: discard a card from our compost ────────────
+    case "choose_card_from_compost": {
+      // Discard the least valuable card from our compost
+      const pile = player.compostPile;
+      if (pile.length === 0) return state;
+      // For anaerobic_pocket: must pick Airflow, pick the one that is least missed
+      const candidates = opts.map((o) => pile.find((c) => c.id === o.cardId)).filter(Boolean) as Card[];
+      const toDiscard = sortByDiscardFirst(candidates, player)[0];
+      if (!toDiscard) return state;
+      const r = resolveDecision(state, playerId, { cardId: toDiscard.id });
+      return r.error ? state : r.state;
+    }
+
+    // ── choose_card_from_discard: take a card from discard into hand ─────────
+    case "choose_card_from_discard": {
+      // Prefer heroes filling missing functions
+      const cards = opts.map((o) => state.discardPile.find((c) => c.id === o.cardId)).filter(Boolean) as Card[];
+      const best = pickBestHero(cards, player);
+      const chosen = best?.card ?? cards[0];
+      if (!chosen) return state;
+      const r = resolveDecision(state, playerId, { cardId: chosen.id });
+      return r.error ? state : r.state;
+    }
+
+    // ── choose_hero_from_discard: pick hero from discard to place in compost ─
+    case "choose_hero_from_discard": {
+      const heroes = opts.map((o) => state.discardPile.find((c) => c.id === o.cardId)).filter(Boolean) as Card[];
+      const best = pickBestHero(heroes, player);
+      const chosen = best?.card ?? heroes[0];
+      if (!chosen) return state;
+      const r = resolveDecision(state, playerId, { cardId: chosen.id });
+      return r.error ? state : r.state;
+    }
+
+    // ── choose_opponent_for_steal: carbon_sink — pick opponent with N we need ─
+    case "choose_opponent_for_steal": {
+      const targets = opts as Array<{ playerId: string }>;
+      if (targets.length === 0) return state;
+      // Prefer to steal from the most dangerous opponent
+      const danger = mostDangerousOpponent(state, playerId);
+      const preferred = danger
+        ? (targets.find((t) => t.playerId === danger.id) ?? targets[0])
+        : targets[0];
+      const r = resolveDecision(state, playerId, { targetPlayerId: preferred.playerId });
+      return r.error ? state : r.state;
+    }
+
+    // ── choose_steal_card: pick which card to steal ───────────────────────────
+    case "choose_steal_card": {
+      const cards = opts as Array<{ cardId: string; cardName: string }>;
+      if (cards.length === 0) return state;
+      // Pick card filling our missing function, or first option
+      const targetId = decision.meta?.targetPlayerId as string;
+      const targetPlayer = getPlayer(state, targetId);
+      const targetCards = targetPlayer
+        ? cards.map((o) => targetPlayer.compostPile.find((c) => c.id === o.cardId)).filter(Boolean) as Card[]
+        : [];
+      const best = pickBestHero(targetCards, player);
+      const chosen = best?.card ?? targetCards[0];
+      const r = resolveDecision(state, playerId, { cardId: chosen?.id ?? cards[0].cardId });
+      return r.error ? state : r.state;
+    }
+
+    // ── choose_worm_party_card: pass least useful card to the left ────────────
+    case "choose_worm_party_card": {
+      const cards = opts.map((o) => player.hand.find((c) => c.id === o.cardId)).filter(Boolean) as Card[];
+      const toPass = sortByDiscardFirst(cards, player)[0];
+      if (!toPass) return state;
+      const r = resolveDecision(state, playerId, { cardId: toPass.id });
+      return r.error ? state : r.state;
+    }
+
+    // ── choose_discard_for_spread: give 1 card to each other player ───────────
+    case "choose_discard_for_spread": {
+      const othersCount = (decision.meta?.othersIds as string[])?.length ?? 1;
+      const cards = sortByDiscardFirst(player.hand, player).slice(0, othersCount);
+      const cardIds = cards.map((c) => c.id);
+      if (cardIds.length < othersCount) return state;
+      const r = resolveDecision(state, playerId, { cardIds });
+      return r.error ? state : r.state;
+    }
+
+    // ── choose_rainstorm_play: optionally play Moisture/Nitrogen to compost ───
+    case "choose_rainstorm_play": {
+      const eligible = opts as Array<{ cardId: string }>;
+      // Play cards that fill missing pile functions
+      const toPlay = eligible
+        .map((o) => player.hand.find((c) => c.id === o.cardId))
+        .filter((c): c is Card => !!c && missing.has(c.function));
+      const r = resolveDecision(state, playerId, { cardIds: toPlay.map((c) => c.id) });
+      return r.error ? state : r.state;
+    }
+
+    // ── choose_rot_roulette_keep: pick 2 best of the drawn cards ─────────────
+    case "choose_rot_roulette_keep": {
+      const drawn = opts as Array<{ cardId: string }>;
+      const drawnCards = drawn
+        .map((o) => state.players.flatMap((p) => p.hand).find((c) => c.id === o.cardId) ??
+          state.deck.find((c) => c.id === o.cardId))
+        .filter(Boolean) as Card[];
+
+      // Sort by keep score (descending) and pick top 2
+      const sorted = [...drawnCards].sort((a, b) => cardKeepScore(b, player) - cardKeepScore(a, player));
+      const keepIds = sorted.slice(0, 2).map((c) => c.id);
+      if (keepIds.length === 0) {
+        // Fallback: keep first 2 from options
+        const fallback = drawn.slice(0, 2).map((o) => o.cardId);
+        const fr = resolveDecision(state, playerId, { keepIds: fallback });
+        return fr.error ? state : fr.state;
+      }
+      const r = resolveDecision(state, playerId, { keepIds });
+      if (!r.error) {
+        // Now must play 1 of the kept cards
+        let s = r.state;
+        if (s.pendingDecision?.type === "choose_card_from_hand") {
+          s = botAutoResolveDecision(s, playerId);
+        }
+        return s;
+      }
+      return state;
+    }
+
+    // ── choose_card_from_hand: play 1 card from hand (rot roulette final step) ─
+    case "choose_card_from_hand": {
+      const handCards = opts
+        .map((o) => player.hand.find((c) => c.id === o.cardId))
+        .filter(Boolean) as Card[];
+      // Prefer heroes filling missing functions
+      const best = pickBestHero(handCards, player);
+      const chosen = best?.card ?? handCards[0];
+      if (!chosen) return state;
+      const r = resolveDecision(state, playerId, { cardId: chosen.id });
+      if (!r.error) {
+        let s = r.state;
+        // Might trigger choose_function if hero has alternate functions
+        if (s.pendingDecision?.type === "choose_function") {
+          s = botAutoResolveDecision(s, playerId);
+        }
+        return s;
+      }
+      return state;
+    }
+
+    // ── choose_nitrogen_boost_discard: discard 1 N from hand → draw 2 ────────
+    case "choose_nitrogen_boost_discard": {
+      const nCards = opts
+        .map((o) => player.hand.find((c) => c.id === o.cardId))
+        .filter(Boolean) as Card[];
+      // Discard the least valuable Nitrogen card we have
+      const toDiscard = sortByDiscardFirst(nCards, player)[0];
+      if (!toDiscard) return state;
+      const r = resolveDecision(state, playerId, { cardId: toDiscard.id });
+      return r.error ? state : r.state;
+    }
+
+    // ── choose_rot_regrow_discard: discard 3 cards to activate rot_regrow ─────
+    case "choose_rot_regrow_discard": {
+      const toDiscard = sortByDiscardFirst(player.hand, player).slice(0, 3);
+      if (toDiscard.length < 3) return state;
+      const r = resolveDecision(state, playerId, { cardIds: toDiscard.map((c) => c.id) });
+      return r.error ? state : r.state;
+    }
+
+    // ── choose_rot_regrow_take: pick 1 card from discard pile ────────────────
+    case "choose_rot_regrow_take": {
+      const available = opts
+        .map((o) => state.discardPile.find((c) => c.id === o.cardId))
+        .filter(Boolean) as Card[];
+      const best = pickBestHero(available, player);
+      const chosen = best?.card ?? available.find((c) => c.type === "hero") ?? available[0];
+      if (!chosen) return state;
+      const r = resolveDecision(state, playerId, { cardId: chosen.id });
+      return r.error ? state : r.state;
+    }
+
+    // ── under-web swap: give hand card, take discard card ────────────────────
+    case "choose_under_web_hand_card": {
+      const toSwap = sortByDiscardFirst(player.hand, player)[0];
+      if (!toSwap) return state;
+      const r = resolveDecision(state, playerId, { cardId: toSwap.id });
+      if (!r.error) {
+        let s = r.state;
+        if (s.pendingDecision?.type === "choose_under_web_discard_card") {
+          s = botAutoResolveDecision(s, playerId);
+        }
+        return s;
+      }
+      return state;
+    }
+
+    case "choose_under_web_discard_card": {
+      const available = opts
+        .map((o) => state.discardPile.find((c) => c.id === o.cardId))
+        .filter(Boolean) as Card[];
+      const best = pickBestHero(available, player);
+      const chosen = best?.card ?? available[0];
+      if (!chosen) return state;
+      const r = resolveDecision(state, playerId, { cardId: chosen.id });
+      return r.error ? state : r.state;
+    }
+
+    // ── breezy swap (swap compost with opponent) ──────────────────────────────
+    case "choose_swap_opponent_breezy": {
+      const targets = opts as Array<{ playerId: string }>;
+      const danger = mostDangerousOpponent(state, playerId);
+      const preferred = danger
+        ? (targets.find((t) => t.playerId === danger.id) ?? targets[0])
+        : targets[0];
+      const r = resolveDecision(state, playerId, { targetPlayerId: preferred.playerId });
+      return r.error ? state : r.state;
+    }
+
+    case "choose_swap_their_card_breezy": {
+      const theirId = decision.meta?.theirPlayerId as string;
+      const them = getPlayer(state, theirId);
+      if (!them) return state;
+      const theirCards = opts
+        .map((o) => them.compostPile.find((c) => c.id === o.cardId))
+        .filter(Boolean) as Card[];
+      const best = pickBestHero(theirCards, player);
+      const chosen = best?.card ?? theirCards[0];
+      if (!chosen) return state;
+      const r = resolveDecision(state, playerId, { cardId: chosen.id });
+      return r.error ? state : r.state;
+    }
+
+    case "choose_swap_my_card_breezy": {
+      // Give away the duplicate function we already have covered
+      const covered = new Set(player.compostPile.map((c) => getEffectiveFunction(c)));
+      const myCards = opts
+        .map((o) => player.compostPile.find((c) => c.id === o.cardId))
+        .filter(Boolean) as Card[];
+      // Find card with a function we have MORE than once (a duplicate)
+      const fnCounts = new Map<string, number>();
+      for (const c of player.compostPile) {
+        const fn = getEffectiveFunction(c);
+        fnCounts.set(fn, (fnCounts.get(fn) ?? 0) + 1);
+      }
+      const duplicateCard = myCards.find((c) => (fnCounts.get(getEffectiveFunction(c)) ?? 0) > 1);
+      const toGive = duplicateCard ?? sortByDiscardFirst(myCards, player)[0];
+      if (!toGive) return state;
+      const r = resolveDecision(state, playerId, { cardId: toGive.id });
+      return r.error ? state : r.state;
+    }
+
+    case "choose_compost_to_swap_breezy": {
+      const myCardId = (opts[0] as any)?.myCardId as string;
+      const theirCardId = (opts[0] as any)?.theirCardId as string;
+      const theirPlayerId = (opts[0] as any)?.theirPlayerId as string;
+      if (!myCardId || !theirCardId || !theirPlayerId) return state;
+      const r = resolveDecision(state, playerId, { myCardId, theirCardId, theirPlayerId });
+      return r.error ? state : r.state;
+    }
+
+    // ── card_from_opponent_compost (steal from a specific opponent) ───────────
+    case "choose_card_from_opponent_compost": {
+      const targetId = decision.meta?.targetPlayerId as string;
+      const target = getPlayer(state, targetId);
+      if (!target) return state;
+      const targetCards = opts
+        .map((o) => target.compostPile.find((c) => c.id === o.cardId))
+        .filter(Boolean) as Card[];
+      const best = pickBestHero(targetCards, player);
+      const chosen = best?.card ?? targetCards[0];
+      if (!chosen) return state;
+      const r = resolveDecision(state, playerId, { cardId: chosen.id });
+      return r.error ? state : r.state;
+    }
+
+    // ── soggy pile discard (individual player chooses which to discard) ───────
+    case "choose_soggy_pile_discard": {
+      const pile = player.compostPile;
+      if (pile.length === 0) return state;
+      const candidates = opts.map((o) => pile.find((c) => c.id === o.cardId)).filter(Boolean) as Card[];
+      const toDiscard = sortByDiscardFirst(candidates, player)[0];
+      if (!toDiscard) return state;
+      const r = resolveDecision(state, playerId, { cardId: toDiscard.id });
+      return r.error ? state : r.state;
+    }
+
+    // ── swap card to/from compost (generic) ───────────────────────────────────
+    case "choose_card_to_swap_compost": {
+      const candidates = opts
+        .map((o) => player.compostPile.find((c) => c.id === o.cardId))
+        .filter(Boolean) as Card[];
+      const toSwap = sortByDiscardFirst(candidates, player)[0];
+      if (!toSwap) return state;
+      const r = resolveDecision(state, playerId, { cardId: toSwap.id });
+      return r.error ? state : r.state;
+    }
+
+    default:
+      // Unknown decision type — clear it to prevent game from getting stuck
+      return { ...state, pendingDecision: null };
+  }
+}
+
+/**
+ * Try to activate the ongoing action card benefit for a bot. Returns new state.
+ */
+function botActivateOngoing(state: GameState, playerId: string): GameState {
+  if (!state.ongoingActionCard) return state;
+  if (state.ongoingBenefitUsedThisTurn) return state;
+  if (state.pendingDecision) return state;
+  if (state.phase !== "play") return state;
+
+  const player = getPlayer(state, playerId)!;
+  const ongoing = state.ongoingActionCard;
+
+  // Check if activation is beneficial
+  let shouldActivate = false;
+  switch (ongoing.id) {
+    case "hot_pile_bonus": {
+      const decomp = player.compostPile.filter((c) => getEffectiveFunction(c) === "Decomposer").length;
+      shouldActivate = decomp >= 2;
+      break;
+    }
+    case "critical_mass": {
+      const pile = player.compostPile;
+      shouldActivate = pile.some((c1, i) =>
+        pile.some((c2, j) => j !== i && c1.layer === c2.layer && c1.layer !== null)
+      );
+      break;
+    }
+    case "nitrogen_boost": {
+      const nCount = player.hand.filter((c) => c.function === "Nitrogen").length;
+      shouldActivate = nCount > 0;
+      break;
+    }
+    case "rot_regrow": {
+      shouldActivate = player.hand.length >= 3;
+      break;
+    }
+  }
+
+  if (!shouldActivate) return state;
+
+  const result = activateOngoing(state, playerId);
+  if (result.error) return state;
+  let s = result.state;
+  // Resolve any pending decision from the activation
+  if (s.pendingDecision && s.pendingDecision.playerId === playerId) {
+    s = botAutoResolveDecision(s, playerId);
+  }
+  return s;
+}
+
+/**
+ * Execute a single bot turn: draw → activate ongoing → play hero → play action → end turn.
+ * Difficulty levels:
+ *   easy   — only plays hero cards (original behaviour)
+ *   medium — also plays low-risk action cards that draw cards / give extra turns
+ *   hard   — full strategic play including aggressive action cards
  */
 function botTakeTurn(state: GameState): GameState {
   const player = state.players[state.currentPlayerIndex];
   if (!player.isBot) return state;
+
+  const level: BotSkillLevel = player.botSkillLevel ?? "medium";
 
   // 1. Draw card
   let s = drawCard(state, player);
   s = { ...s, phase: "play" };
   addLog(s, `${player.name} (Bot) drew a card.`);
 
-  // 2. Find best hero to play (fills a missing function in their pile)
+  // 2. Activate ongoing benefit early (hot_pile_bonus draws an extra card)
+  s = botActivateOngoing(s, player.id);
+
+  // 3. Find and play best hero
   const updatedPlayer = getPlayer(s, player.id)!;
-  const coveredFunctions = new Set(
-    updatedPlayer.compostPile.map((c) => getEffectiveFunction(c))
-  );
-  const missingFunctions = WIN_FUNCTIONS.filter((f) => !coveredFunctions.has(f));
+  const heroChoice = pickBestHero(updatedPlayer.hand, updatedPlayer);
 
-  let bestHero: Card | null = null;
-  let bestChosenFn: string | null = null;
-
-  for (const card of updatedPlayer.hand) {
-    if (card.type !== "hero") continue;
-    const validFns = [...new Set([card.function, ...(card.alternateFunctions ?? [])])];
-    const matchMissing = validFns.filter((f) => (missingFunctions as string[]).includes(f));
-    if (matchMissing.length > 0) {
-      bestHero = card;
-      bestChosenFn = matchMissing[0];
-      break;
-    }
-    // If no missing function match, but card fills a slot we don't have at all,
-    // still a candidate (lower priority)
-    if (!bestHero && validFns.some((f) => !(coveredFunctions as Set<string>).has(f))) {
-      bestHero = card;
-      bestChosenFn = validFns.find((f) => !(coveredFunctions as Set<string>).has(f)) ?? null;
-    }
-  }
-
-  if (bestHero) {
-    const playResult = playCard(s, player.id, bestHero.id);
+  if (heroChoice && !s.actionPlayedThisTurn && !s.heroPlayedThisTurn) {
+    const playResult = playCard(s, player.id, heroChoice.card.id);
     if (!playResult.error) {
       s = playResult.state;
-      // Resolve choose_function decision if triggered (multi-function hero)
-      if (s.pendingDecision?.type === "choose_function" && bestChosenFn) {
-        const resolveResult = resolveDecision(s, player.id, { function: bestChosenFn });
-        if (!resolveResult.error) s = resolveResult.state;
+      // Resolve any pending decision from playing the hero
+      let tries = 0;
+      while (s.pendingDecision && s.pendingDecision.playerId === player.id && tries++ < 6) {
+        s = botAutoResolveDecision(s, player.id);
       }
     }
   }
 
-  // 3. End turn
-  const endResult = endTurn(s, player.id);
-  if (!endResult.error) s = endResult.state;
-  else {
-    // If endTurn hit choose_discard_to_limit, auto-discard excess cards (least useful first)
-    if (s.pendingDecision?.type === "choose_discard_to_limit") {
-      const count = (s.pendingDecision.meta?.count as number) ?? 1;
-      const toDiscard = s.pendingDecision.options!.slice(0, count) as { cardId: string }[];
-      let rs = s;
-      for (const opt of toDiscard) {
-        const rr = resolveDecision(rs, player.id, { cardId: opt.cardId });
-        if (!rr.error) rs = rr.state;
+  // 4. Play the best action card (medium/hard only)
+  if (level !== "easy" && !s.actionPlayedThisTurn && s.phase === "play") {
+    const currentP = getPlayer(s, player.id)!;
+    let bestAction: Card | null = null;
+    let bestScore = 5; // threshold — must beat this to play
+
+    for (const card of currentP.hand) {
+      if (card.type !== "action") continue;
+      const score = scoreActionCard(card, s, currentP, level);
+      if (score > bestScore) {
+        bestScore = score;
+        bestAction = card;
       }
-      s = rs;
+    }
+
+    if (bestAction) {
+      const playResult = playCard(s, player.id, bestAction.id);
+      if (!playResult.error) {
+        s = playResult.state;
+        // Resolve all decisions triggered by the action
+        let tries = 0;
+        while (s.pendingDecision && s.pendingDecision.playerId === player.id && tries++ < 8) {
+          s = botAutoResolveDecision(s, player.id);
+        }
+      }
+    }
+  }
+
+  // 5. Activate ongoing benefit after playing cards (in case conditions changed)
+  s = botActivateOngoing(s, player.id);
+
+  // 6. End turn
+  const endResult = endTurn(s, player.id);
+  if (!endResult.error) {
+    s = endResult.state;
+  } else {
+    // endTurn might fail if there's a pending choose_discard_to_limit
+    if (s.pendingDecision?.type === "choose_discard_to_limit") {
+      s = botAutoResolveDecision(s, player.id);
+      const retry = endTurn(s, player.id);
+      if (!retry.error) s = retry.state;
     }
   }
 
