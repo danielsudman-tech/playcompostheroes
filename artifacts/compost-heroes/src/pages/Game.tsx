@@ -504,7 +504,7 @@ export default function Game() {
 
   return (
     <>
-    <div className="min-h-screen bg-background game-table-pattern flex flex-col overflow-hidden text-foreground">
+    <div className="min-h-screen bg-background game-table-pattern flex flex-col overflow-x-hidden md:overflow-hidden text-foreground">
       {/* Background Decor */}
       <div className="fixed inset-0 pointer-events-none opacity-[0.03] z-0 mix-blend-multiply">
          <img src={`${import.meta.env.BASE_URL}images/wood-bg.png`} className="w-full h-full object-cover" alt="" />
@@ -574,8 +574,8 @@ export default function Game() {
         })}
       </div>
 
-      {/* MIDDLE ROW: Board — matches physical mat layout. pb-96 on mobile keeps content above the stacked hand+pile overlay */}
-      <div className="relative z-10 flex-1 flex flex-row gap-4 px-4 py-2 pb-96 md:pb-2 items-stretch justify-center">
+      {/* MIDDLE ROW: Board — matches physical mat layout. On mobile: auto height + pb-[520px] keeps content scrollable above fixed overlay. */}
+      <div className="relative z-10 md:flex-1 flex flex-row gap-4 px-4 py-2 pb-[520px] md:pb-2 items-stretch justify-center">
 
         {/* Left: Activity Log */}
         <div className="hidden lg:flex flex-col w-56 bg-card/80 backdrop-blur-md border border-border shadow-inner rounded-xl overflow-hidden self-center" style={{ maxHeight: 320 }}>
