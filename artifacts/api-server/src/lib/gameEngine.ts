@@ -2529,12 +2529,8 @@ function botAutoResolveDecision(state: GameState, playerId: string): GameState {
         opts.map((o) => player.hand.find((c) => c.id === o.cardId)).filter(Boolean) as Card[],
         player
       ).slice(0, count);
-      let s = state;
-      for (const card of toDiscard) {
-        const r = resolveDecision(s, playerId, { cardId: card.id });
-        if (!r.error) s = r.state;
-      }
-      return s;
+      const r = resolveDecision(state, playerId, { cardIds: toDiscard.map((c) => c.id) });
+      return r.error ? state : r.state;
     }
 
     // ── choose_target_player: pick opponent to skip (anaerobic_pocket) ───────
@@ -2649,14 +2645,9 @@ function botAutoResolveDecision(state: GameState, playerId: string): GameState {
 
       // Sort by keep score (descending) and pick top 2
       const sorted = [...drawnCards].sort((a, b) => cardKeepScore(b, player) - cardKeepScore(a, player));
-      const keepIds = sorted.slice(0, 2).map((c) => c.id);
-      if (keepIds.length === 0) {
-        // Fallback: keep first 2 from options
-        const fallback = drawn.slice(0, 2).map((o) => o.cardId);
-        const fr = resolveDecision(state, playerId, { keepIds: fallback });
-        return fr.error ? state : fr.state;
-      }
-      const r = resolveDecision(state, playerId, { keepIds });
+      const keepCardIds = sorted.slice(0, 2).map((c) => c.id);
+      const finalKeepIds = keepCardIds.length >= 2 ? keepCardIds : drawn.slice(0, 2).map((o) => o.cardId);
+      const r = resolveDecision(state, playerId, { keepCardIds: finalKeepIds });
       if (!r.error) {
         // Now must play 1 of the kept cards
         let s = r.state;
