@@ -1,16 +1,38 @@
-import { Router } from "express";
+import { Router, type Request, type Response, type NextFunction } from "express";
 import { writeFileSync, existsSync, mkdirSync } from "fs";
 import { join } from "path";
 import { getAllCards } from "../lib/cards.js";
 import { getAllOverrides, setImageKeyOverride, removeImageKeyOverride } from "../lib/imageKeyStore.js";
 import { getAllCopies, getCardCopies, setCardCopies } from "../lib/cardCopiesStore.js";
 import { WORKSPACE_ROOT } from "../lib/workspaceRoot.js";
+import { pool } from "@workspace/db";
 
 // Resolve path to the frontend public/assets directory using workspace root
 // Works correctly in both dev (tsx) and prod (bundled dist/index.cjs)
 export const ASSETS_DIR = join(WORKSPACE_ROOT, "artifacts/compost-heroes/public/assets");
 
 const router = Router();
+
+// ── Admin auth middleware ──────────────────────────────────────────────────────
+
+function requireAdmin(req: Request, res: Response, next: NextFunction) {
+  const adminPassword = process.env.APP_PASSWORD;
+  if (!adminPassword) {
+    // No password configured — open access (dev fallback)
+    next();
+    return;
+  }
+  const supplied =
+    (req.headers["x-admin-key"] as string | undefined) ??
+    (req.query.adminKey as string | undefined);
+  if (!supplied || supplied !== adminPassword) {
+    res.status(401).json({ error: "Unauthorized" });
+    return;
+  }
+  next();
+}
+
+router.use("/admin", requireAdmin);
 
 // GET /api/admin/cards — list all cards with current image keys and copy counts
 router.get("/admin/cards", (_req, res) => {
@@ -93,6 +115,42 @@ router.delete("/admin/cards/:cardId/image", (req, res) => {
   const { cardId } = req.params;
   removeImageKeyOverride(cardId);
   res.json({ success: true });
+});
+
+// GET /api/admin/users — list all registered users with stats
+router.get("/admin/users", async (_req, res) => {
+  try {
+    const result = await pool.query<{
+      id: string;
+      email: string;
+      name: string;
+      organization: string | null;
+      role: string | null;
+      created_at: string;
+      session_count: string;
+    }>(
+      `SELECT u.id, u.email, u.name, u.organization, u.role, u.created_at,
+              COUNT(s.token) AS session_count
+       FROM compost_users u
+       LEFT JOIN compost_user_sessions s ON s.user_id = u.id
+       GROUP BY u.id
+       ORDER BY u.created_at DESC`
+    );
+    res.json(
+      result.rows.map((r) => ({
+        id: r.id,
+        email: r.email,
+        name: r.name,
+        organization: r.organization,
+        role: r.role,
+        createdAt: r.created_at,
+        sessionCount: parseInt(r.session_count, 10),
+      }))
+    );
+  } catch (err) {
+    console.error("[admin users]", err);
+    res.status(500).json({ error: "Failed to fetch users" });
+  }
 });
 
 export default router;

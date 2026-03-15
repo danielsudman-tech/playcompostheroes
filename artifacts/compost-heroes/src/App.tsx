@@ -11,12 +11,11 @@ import { ErrorBoundary } from "./components/ErrorBoundary";
 
 const queryClient = new QueryClient();
 
-function Router() {
+function GameRouter() {
   return (
     <Switch>
       <Route path="/" component={Lobby} />
       <Route path="/game/:gameId" component={Game} />
-      <Route path="/admin" component={Admin} />
       <Route component={NotFound} />
     </Switch>
   );
@@ -25,18 +24,23 @@ function Router() {
 function App() {
   return (
     <ErrorBoundary>
-      <AppGate>
-        <QueryClientProvider client={queryClient}>
-          <TooltipProvider>
-            <WouterRouter base={import.meta.env.BASE_URL.replace(/\/$/, "")}>
-              <ErrorBoundary>
-                <Router />
-              </ErrorBoundary>
-            </WouterRouter>
-            <Toaster />
-          </TooltipProvider>
-        </QueryClientProvider>
-      </AppGate>
+      <QueryClientProvider client={queryClient}>
+        <TooltipProvider>
+          <WouterRouter base={import.meta.env.BASE_URL.replace(/\/$/, "")}>
+            <ErrorBoundary>
+              <Switch>
+                <Route path="/admin" component={Admin} />
+                <Route>
+                  <AppGate>
+                    <GameRouter />
+                  </AppGate>
+                </Route>
+              </Switch>
+            </ErrorBoundary>
+          </WouterRouter>
+          <Toaster />
+        </TooltipProvider>
+      </QueryClientProvider>
     </ErrorBoundary>
   );
 }
