@@ -4,6 +4,7 @@ import { useParams, useLocation } from "wouter";
 import { motion, AnimatePresence } from "framer-motion";
 import confetti from "canvas-confetti";
 import { assetUrl } from "@/lib/assetUrl";
+import compostHeroesLogo from "@assets/Compost_Heroes_Logo_no_background_1773537933517.png";
 import { useGameState, useGameAction, useClaimSlot, useGameSse, useJoinRoom, getStoredToken } from "@/hooks/use-game";
 import { WaitingRoom } from "@/components/WaitingRoom";
 import { PlayerMat } from "@/components/PlayerMat";
@@ -1395,11 +1396,29 @@ export default function Game() {
               className="bg-card w-full max-w-lg rounded-3xl shadow-2xl p-8 text-center relative overflow-hidden"
             >
               <div className="absolute top-0 left-0 w-full h-2 bg-gradient-to-r from-primary via-secondary to-primary" />
-              <Trophy className="w-24 h-24 text-yellow-500 mx-auto mb-6 drop-shadow-md" />
-              <h2 className="text-5xl font-display font-bold text-foreground mb-2">Game Over!</h2>
-              <p className="text-2xl text-muted-foreground mb-8">
-                <strong className="text-primary">{gameState.players.find(p => p.id === gameState.winner)?.name ?? gameState.winner}</strong> has completed their Compost Pile!
-              </p>
+              <img
+                src={compostHeroesLogo}
+                alt="Compost Heroes"
+                className="w-56 mx-auto mb-4 drop-shadow-xl"
+                draggable={false}
+              />
+              {localPlayerId === gameState.winner ? (
+                <>
+                  <h2 className="text-4xl font-display font-bold text-primary mb-2">You're a Compost Hero!</h2>
+                  <p className="text-xl text-muted-foreground mb-8">
+                    Your pile is complete — well composted!
+                  </p>
+                </>
+              ) : (
+                <>
+                  <h2 className="text-4xl font-display font-bold text-foreground mb-2">
+                    <strong className="text-primary">{gameState.players.find(p => p.id === gameState.winner)?.name ?? "Someone"}</strong> is a Compost Hero!
+                  </h2>
+                  <p className="text-xl text-muted-foreground mb-8">
+                    Their compost pile is complete!
+                  </p>
+                </>
+              )}
               
               <div className="flex justify-center gap-4">
                 <Button size="lg" className="font-bold text-lg" onClick={() => setLocation("/")}>

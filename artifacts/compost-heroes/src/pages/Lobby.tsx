@@ -5,6 +5,8 @@ import { useCreateNewGame, useRooms, type RoomInfo } from "@/hooks/use-game";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { assetUrl } from "@/lib/assetUrl";
+import compostHeroesLogo from "@assets/Compost_Heroes_Logo_no_background_1773537933517.png";
+import greenCampsLogo from "@assets/Green_Camps_Logo_no_background_1773537933517.png";
 import {
   Users, Trash2, PlusCircle, Settings2, PlayCircle, Wifi, Lock,
   RefreshCcw, LogIn, ChevronRight, Loader2, Bot, User
@@ -214,12 +216,21 @@ export default function Lobby() {
         {/* Title */}
         <div className="text-center mb-6">
           <img
-            src={assetUrl("card-back.jpg")}
+            src={compostHeroesLogo}
             alt="Compost Heroes"
-            className="w-40 mx-auto rounded-2xl shadow-2xl ring-4 ring-primary/20 mb-3"
+            className="w-72 mx-auto mb-2 drop-shadow-xl"
             draggable={false}
           />
-          <p className="text-muted-foreground font-medium">The card game of soil and strategy</p>
+          <p className="text-muted-foreground font-medium mb-3">The card game of soil and strategy</p>
+          <div className="flex items-center justify-center gap-2 opacity-70">
+            <span className="text-xs text-muted-foreground font-medium tracking-wide">A Project of</span>
+            <img
+              src={greenCampsLogo}
+              alt="Green Camps"
+              className="h-7 object-contain"
+              draggable={false}
+            />
+          </div>
         </div>
 
         {/* Tab bar */}
