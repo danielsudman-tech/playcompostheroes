@@ -93,7 +93,7 @@ function getCardValidFunctions(card: CardState): string[] {
 }
 
 function getCategoryCards(pile: CardState[], matchFn: (fn: string) => boolean) {
-  return pile.filter((c) => matchFn(getEffectiveFn(c)));
+  return pile.filter((c) => c != null && matchFn(getEffectiveFn(c)));
 }
 
 const POPUP_HEIGHT = 320;

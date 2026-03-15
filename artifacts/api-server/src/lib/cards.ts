@@ -579,9 +579,8 @@ export function buildDeck(
   const deck: Card[] = [];
   for (const c of ALL_CARDS) {
     const copies = copiesOverrides[c.id] ?? 1;
-    const card: Card = { ...c, imageKey: imageOverrides[c.id] ?? c.imageKey };
     for (let i = 0; i < copies; i++) {
-      deck.push(card);
+      deck.push({ ...c, imageKey: imageOverrides[c.id] ?? c.imageKey });
     }
   }
   return deck;

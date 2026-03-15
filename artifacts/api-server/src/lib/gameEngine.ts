@@ -2,6 +2,12 @@ import { Card, buildDeck, WIN_FUNCTIONS, getAllCards } from "./cards.js";
 import { getAllOverrides } from "./imageKeyStore.js";
 import { getAllCopies } from "./cardCopiesStore.js";
 
+function removeOneById<T extends { id: string }>(arr: T[], id: string): T[] {
+  const idx = arr.findIndex((c) => c.id === id);
+  if (idx === -1) return arr;
+  return [...arr.slice(0, idx), ...arr.slice(idx + 1)];
+}
+
 export type BotSkillLevel = "easy" | "medium" | "hard";
 
 export interface PlayerState {
@@ -679,7 +685,7 @@ function applyWormParty(state: GameState, activePlayerId: string, chosenCardId: 
   // Remove cards from hands
   for (const { fromId, card: passedCard } of passCards) {
     const pl = getPlayer(s, fromId)!;
-    s = updatePlayer(s, { ...pl, hand: pl.hand.filter((c) => c.id !== passedCard.id) });
+    s = updatePlayer(s, { ...pl, hand: removeOneById(pl.hand, passedCard.id) });
   }
 
   // Give cards to the player on the left (i+1)
@@ -849,7 +855,7 @@ function resolveActionInstantEffect(
           const toDiscard = candidates[0];
           const updated = {
             ...pl,
-            compostPile: pl.compostPile.filter((c) => c.id !== toDiscard.id),
+            compostPile: removeOneById(pl.compostPile, toDiscard.id),
           };
           s = {
             ...s,
@@ -1047,7 +1053,7 @@ export function playCard(
   // Remove card from hand
   let updatedPlayer = {
     ...player,
-    hand: player.hand.filter((c) => c.id !== cardId),
+    hand: removeOneById(player.hand, cardId),
   };
   let s = updatePlayer(state, updatedPlayer);
 
@@ -1176,7 +1182,7 @@ export function resolveDecision(
 
       const updatedPlayer = {
         ...player,
-        hand: player.hand.filter((c) => c.id !== chosenCardId),
+        hand: removeOneById(player.hand, chosenCardId),
       };
       s = {
         ...s,
@@ -1211,7 +1217,7 @@ export function resolveDecision(
       };
       s = {
         ...s,
-        discardPile: s.discardPile.filter((c) => c.id !== chosenCardId),
+        discardPile: removeOneById(s.discardPile, chosenCardId),
       };
       s = updatePlayer(s, updatedPlayer);
       addLog(s, `${player.name} took ${card.name} from discard pile into hand.`);
@@ -1226,7 +1232,7 @@ export function resolveDecision(
 
       const updatedPlayer = {
         ...player,
-        compostPile: player.compostPile.filter((c) => c.id !== chosenCardId),
+        compostPile: removeOneById(player.compostPile, chosenCardId),
       };
       s = {
         ...s,
@@ -1282,7 +1288,7 @@ export function resolveDecision(
         const card = validCards[0];
         const updatedTarget = {
           ...targetPlayer,
-          compostPile: targetPlayer.compostPile.filter((c) => c.id !== card.id),
+          compostPile: removeOneById(targetPlayer.compostPile, card.id),
         };
         s = updatePlayer(s, updatedTarget);
         const stealToCompost = decision.meta?.stealToCompost as boolean;
@@ -1328,7 +1334,7 @@ export function resolveDecision(
 
       s = updatePlayer(s, {
         ...targetPlayer,
-        compostPile: targetPlayer.compostPile.filter((c) => c.id !== chosenCardId),
+        compostPile: removeOneById(targetPlayer.compostPile, chosenCardId),
       });
       const stealToCompost = decision.meta?.stealToCompost as boolean;
       if (stealToCompost) {
@@ -1405,11 +1411,11 @@ export function resolveDecision(
       }
       s = updatePlayer(s, {
         ...player,
-        compostPile: [...player.compostPile.filter((c) => c.id !== myCardId), theirCard],
+        compostPile: [...removeOneById(player.compostPile, myCardId), theirCard],
       });
       s = updatePlayer(s, {
         ...theirPlayer,
-        compostPile: [...theirPlayer.compostPile.filter((c) => c.id !== theirCardId), myCard],
+        compostPile: [...removeOneById(theirPlayer.compostPile, theirCardId), myCard],
       });
       addLog(s, `${player.name} swapped ${myCard.name} with ${theirPlayer.name}'s ${theirCard.name}.`);
       return { state: s };
@@ -1443,7 +1449,7 @@ export function resolveDecision(
       };
       s = {
         ...s,
-        discardPile: s.discardPile.filter((c) => c.id !== chosenCardId),
+        discardPile: removeOneById(s.discardPile, chosenCardId),
       };
       s = updatePlayer(s, updatedPlayer);
       addLog(s, `${player.name} placed ${card.name} from discard into compost (Actinomycetes).`);
@@ -1483,14 +1489,14 @@ export function resolveDecision(
       const updatedMe = {
         ...player,
         compostPile: [
-          ...player.compostPile.filter((c) => c.id !== myCardId),
+          ...removeOneById(player.compostPile, myCardId),
           theirCard,
         ],
       };
       const updatedThem = {
         ...theirPlayer,
         compostPile: [
-          ...theirPlayer.compostPile.filter((c) => c.id !== theirCardId),
+          ...removeOneById(theirPlayer.compostPile, theirCardId),
           myCard,
         ],
       };
@@ -1523,7 +1529,7 @@ export function resolveDecision(
       // Remove my card from hand
       const updatedPlayer = {
         ...player,
-        hand: player.hand.filter((c) => c.id !== chosenId),
+        hand: removeOneById(player.hand, chosenId),
       };
       s = {
         ...s,
@@ -1544,7 +1550,7 @@ export function resolveDecision(
       };
       s = {
         ...s,
-        discardPile: s.discardPile.filter((c) => c.id !== chosenId),
+        discardPile: removeOneById(s.discardPile, chosenId),
       };
       s = updatePlayer(s, updatedPlayer);
       addLog(
@@ -1574,7 +1580,7 @@ export function resolveDecision(
 
         const updated = {
           ...currentPlayer,
-          hand: currentPlayer.hand.filter((c) => c.id !== cid),
+          hand: removeOneById(currentPlayer.hand, cid),
           compostPile: [...currentPlayer.compostPile, cardToPlay],
         };
         s = updatePlayer(s, updated);
@@ -1612,7 +1618,7 @@ export function resolveDecision(
         if (card) {
           currentPlayer = {
             ...currentPlayer,
-            hand: currentPlayer.hand.filter((c) => c.id !== cid),
+            hand: removeOneById(currentPlayer.hand, cid),
           };
           s = {
             ...s,
@@ -1665,7 +1671,7 @@ export function resolveDecision(
 
         currentPlayer = {
           ...currentPlayer,
-          hand: currentPlayer.hand.filter((c) => c.id !== cid),
+          hand: removeOneById(currentPlayer.hand, cid),
         };
         const receiver = getPlayer(s, receiverId)!;
         const updatedReceiver = {
@@ -1696,7 +1702,7 @@ export function resolveDecision(
 
       const updatedPlayer = {
         ...player,
-        hand: player.hand.filter((c) => c.id !== chosenId),
+        hand: removeOneById(player.hand, chosenId),
       };
       s = {
         ...s,
@@ -1748,7 +1754,7 @@ export function resolveDecision(
       if (!card) return { state, error: "Card not found in discard pile" };
 
       const updatedPlayer = { ...player, hand: [...player.hand, card] };
-      s = { ...s, discardPile: s.discardPile.filter((c) => c.id !== chosenId) };
+      s = { ...s, discardPile: removeOneById(s.discardPile, chosenId) };
       s = updatePlayer(s, updatedPlayer);
       addLog(s, `${player.name} took ${card.name} from discard pile (Rot & Regrow).`);
       return { state: s };

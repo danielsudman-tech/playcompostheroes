@@ -25,6 +25,8 @@ export function GameCard({
   const [isFlipped, setIsFlipped] = useState(isFaceDown);
   const [showDetails, setShowDetails] = useState(false);
 
+  if (!card) return null;
+
   // Derive styles
   const bgClass = getFunctionBgClass(card.function || "Action");
   const color = getFunctionColor(card.function || "Action");

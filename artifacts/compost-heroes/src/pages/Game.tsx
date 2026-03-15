@@ -834,7 +834,7 @@ export default function Game() {
                 {hand.length === 0 && (
                   <div className="py-4 text-muted-foreground/40 text-sm italic">No cards in hand</div>
                 )}
-                {hand.map((card, idx) => {
+                {hand.filter(c => c != null).map((card, idx) => {
                   const heroBlocked = card.type === "hero" && (gameState.heroPlayedThisTurn || gameState.actionPlayedThisTurn);
                   const actionBlocked = card.type === "action" && gameState.actionPlayedThisTurn;
                   const isPlayable = isPlayPhase && !heroBlocked && !actionBlocked;
@@ -957,7 +957,7 @@ export default function Game() {
                 </div>
                 <div className="px-2 pt-1.5 pb-2 grid grid-cols-5 gap-1.5">
                   {categories.map((cat) => {
-                    const cards = pile.filter((c) => cat.match(getEffFn(c)));
+                    const cards = pile.filter((c) => c != null && cat.match(getEffFn(c)));
                     const topCard = cards[cards.length - 1] ?? null;
                     const has = topCard !== null;
                     const imageSrc = topCard?.imageKey ? assetUrl(topCard.imageKey) : null;
@@ -1040,7 +1040,7 @@ export default function Game() {
                     {hand.length === 0 && (
                       <div className="flex-1 flex items-center justify-center py-4 text-muted-foreground/50 text-sm italic">No cards in hand</div>
                     )}
-                    {hand.map((card, idx) => {
+                    {hand.filter(c => c != null).map((card, idx) => {
                       const heroBlocked = card.type === "hero" && (gameState.heroPlayedThisTurn || gameState.actionPlayedThisTurn);
                       const actionBlocked = card.type === "action" && gameState.actionPlayedThisTurn;
                       const isBlocked = heroBlocked || actionBlocked;
