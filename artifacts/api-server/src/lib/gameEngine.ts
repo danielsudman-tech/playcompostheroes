@@ -2969,12 +2969,35 @@ function botTakeTurn(state: GameState): GameState {
 }
 
 /**
- * While the current player is a bot and the game is in draw phase,
- * execute their turn automatically. Call after any state mutation that
- * might have advanced the turn.
+ * If there is a pendingDecision targeting a bot player, auto-resolve it.
+ * This handles cases where a human action creates a decision for a bot victim
+ * (e.g. Soggy Pile forcing each bot to choose a card to discard from their compost).
+ * Returns the new state after resolving as many bot decisions as possible.
  */
-export function runBotTurnsIfNeeded(state: GameState): GameState {
+function drainBotDecisions(state: GameState): GameState {
   let s = state;
+  let tries = 0;
+  while (s.pendingDecision && tries++ < 12) {
+    const dec = s.pendingDecision;
+    const target = s.players.find((p) => p.id === dec.playerId);
+    if (!target?.isBot) break; // decision is for a human — stop
+    const before = s.pendingDecision;
+    s = botAutoResolveDecision(s, dec.playerId);
+    // If decision didn't change we're stuck — clear it and move on
+    if (s.pendingDecision === before) {
+      s = { ...s, pendingDecision: null };
+      break;
+    }
+  }
+  return s;
+}
+
+export function runBotTurnsIfNeeded(state: GameState): GameState {
+  // First: resolve any pending decision that targets a bot (victim decisions
+  // created by a human player's action card)
+  let s = drainBotDecisions(state);
+
+  // Then: run full bot turns while it's a bot's draw phase
   let iterations = 0;
   while (
     s.phase === "draw" &&
@@ -2983,6 +3006,8 @@ export function runBotTurnsIfNeeded(state: GameState): GameState {
     iterations < 20
   ) {
     s = botTakeTurn(s);
+    // After each bot turn, drain any victim decisions targeting other bots
+    s = drainBotDecisions(s);
     iterations++;
     if (s.phase === "game_over") break;
   }
