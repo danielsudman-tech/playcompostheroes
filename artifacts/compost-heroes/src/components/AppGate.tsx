@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, createContext, useContext, type ReactNode } from "react";
-import { Loader2, User, Mail, Building2, ChevronDown, Leaf } from "lucide-react";
+import { Loader2, User, Mail, Building2, ChevronDown, Leaf, Lock, Eye, EyeOff } from "lucide-react";
 import compostHeroesLogo from "@assets/Compost_Heroes_Logo_no_background_1773537933517.png";
 import greenCampsLogo from "@assets/Green_Camps_Logo_no_background_1773537933517.png";
 
@@ -23,7 +23,8 @@ export function useCurrentUser(): RegisteredUser | null {
   return useContext(UserContext).user;
 }
 
-type Status = "loading" | "registered" | "unregistered" | "submitting";
+type Status = "loading" | "registered" | "idle" | "submitting";
+type Mode = "signin" | "register";
 
 const ROLES = [
   { value: "", label: "Select your role (optional)" },
@@ -34,14 +35,60 @@ const ROLES = [
   { value: "Other", label: "Other" },
 ];
 
+function PasswordInput({
+  value,
+  onChange,
+  placeholder,
+  autoComplete,
+}: {
+  value: string;
+  onChange: (v: string) => void;
+  placeholder: string;
+  autoComplete?: string;
+}) {
+  const [show, setShow] = useState(false);
+  return (
+    <div className="relative">
+      <Lock className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground/60 pointer-events-none" />
+      <input
+        type={show ? "text" : "password"}
+        autoComplete={autoComplete}
+        placeholder={placeholder}
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        className="w-full h-12 pl-9 pr-10 rounded-xl border-2 border-border bg-background/50 text-sm focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary"
+        required
+        minLength={6}
+      />
+      <button
+        type="button"
+        onClick={() => setShow((s) => !s)}
+        className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground/60 hover:text-muted-foreground"
+        tabIndex={-1}
+      >
+        {show ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+      </button>
+    </div>
+  );
+}
+
 export function AppGate({ children }: { children: ReactNode }) {
   const [status, setStatus] = useState<Status>("loading");
   const [user, setUser] = useState<RegisteredUser | null>(null);
-  const [name, setName] = useState("");
-  const [email, setEmail] = useState("");
-  const [organization, setOrganization] = useState("");
-  const [role, setRole] = useState("");
+  const [mode, setMode] = useState<Mode>("signin");
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
+
+  // Sign-in fields
+  const [siEmail, setSiEmail] = useState("");
+  const [siPassword, setSiPassword] = useState("");
+
+  // Register fields
+  const [regName, setRegName] = useState("");
+  const [regEmail, setRegEmail] = useState("");
+  const [regPassword, setRegPassword] = useState("");
+  const [regConfirm, setRegConfirm] = useState("");
+  const [regOrg, setRegOrg] = useState("");
+  const [regRole, setRegRole] = useState("");
 
   const validateToken = useCallback(async (token: string): Promise<RegisteredUser | null> => {
     try {
@@ -68,31 +115,30 @@ export function AppGate({ children }: { children: ReactNode }) {
         }
         localStorage.removeItem(STORAGE_KEY);
       }
-      if (!cancelled) setStatus("unregistered");
+      if (!cancelled) setStatus("idle");
     })();
     return () => { cancelled = true; };
   }, [validateToken]);
 
-  const handleSubmit = async (e: React.FormEvent) => {
+  function switchMode(m: Mode) {
+    setMode(m);
+    setErrorMsg(null);
+  }
+
+  const handleSignIn = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!name.trim() || !email.trim()) return;
     setStatus("submitting");
     setErrorMsg(null);
     try {
-      const r = await fetch("/api/auth/register", {
+      const r = await fetch("/api/auth/login", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          name: name.trim(),
-          email: email.trim(),
-          organization: organization.trim() || undefined,
-          role: role || undefined,
-        }),
+        body: JSON.stringify({ email: siEmail.trim(), password: siPassword }),
       });
       const data = await r.json() as { token?: string; user?: RegisteredUser; error?: string };
       if (!r.ok || !data.token || !data.user) {
-        setErrorMsg(data.error ?? "Something went wrong, please try again");
-        setStatus("unregistered");
+        setErrorMsg(data.error ?? "Sign in failed, please try again");
+        setStatus("idle");
         return;
       }
       localStorage.setItem(STORAGE_KEY, data.token);
@@ -100,7 +146,46 @@ export function AppGate({ children }: { children: ReactNode }) {
       setStatus("registered");
     } catch {
       setErrorMsg("Could not connect — please try again");
-      setStatus("unregistered");
+      setStatus("idle");
+    }
+  };
+
+  const handleRegister = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (regPassword !== regConfirm) {
+      setErrorMsg("Passwords do not match");
+      return;
+    }
+    if (regPassword.length < 6) {
+      setErrorMsg("Password must be at least 6 characters");
+      return;
+    }
+    setStatus("submitting");
+    setErrorMsg(null);
+    try {
+      const r = await fetch("/api/auth/register", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          name: regName.trim(),
+          email: regEmail.trim(),
+          password: regPassword,
+          organization: regOrg.trim() || undefined,
+          role: regRole || undefined,
+        }),
+      });
+      const data = await r.json() as { token?: string; user?: RegisteredUser; error?: string };
+      if (!r.ok || !data.token || !data.user) {
+        setErrorMsg(data.error ?? "Registration failed, please try again");
+        setStatus("idle");
+        return;
+      }
+      localStorage.setItem(STORAGE_KEY, data.token);
+      setUser(data.user);
+      setStatus("registered");
+    } catch {
+      setErrorMsg("Could not connect — please try again");
+      setStatus("idle");
     }
   };
 
@@ -130,83 +215,175 @@ export function AppGate({ children }: { children: ReactNode }) {
             className="w-56 mx-auto mb-3 drop-shadow-xl"
             draggable={false}
           />
-          <p className="text-foreground font-semibold text-lg">Create a free account to play</p>
-          <p className="text-muted-foreground text-sm mt-1">Join the composting adventure!</p>
         </div>
 
-        <form
-          onSubmit={handleSubmit}
-          className="bg-card/80 backdrop-blur-xl rounded-3xl shadow-xl border border-border p-6 space-y-4"
-        >
-          <div className="relative">
-            <User className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground/60 pointer-events-none" />
-            <input
-              type="text"
-              autoFocus
-              autoComplete="name"
-              placeholder="Your name *"
-              value={name}
-              onChange={(e) => { setName(e.target.value); setErrorMsg(null); }}
-              className="w-full h-12 pl-9 pr-4 rounded-xl border-2 border-border bg-background/50 text-sm focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary"
-              required
-            />
-          </div>
-
-          <div className="relative">
-            <Mail className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground/60 pointer-events-none" />
-            <input
-              type="email"
-              autoComplete="email"
-              placeholder="Email address *"
-              value={email}
-              onChange={(e) => { setEmail(e.target.value); setErrorMsg(null); }}
-              className="w-full h-12 pl-9 pr-4 rounded-xl border-2 border-border bg-background/50 text-sm focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary"
-              required
-            />
-          </div>
-
-          <div className="relative">
-            <Building2 className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground/60 pointer-events-none" />
-            <input
-              type="text"
-              autoComplete="organization"
-              placeholder="School / Organization (optional)"
-              value={organization}
-              onChange={(e) => setOrganization(e.target.value)}
-              className="w-full h-12 pl-9 pr-4 rounded-xl border-2 border-border bg-background/50 text-sm focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary"
-            />
-          </div>
-
-          <div className="relative">
-            <Leaf className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground/60 pointer-events-none" />
-            <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground/60 pointer-events-none" />
-            <select
-              value={role}
-              onChange={(e) => setRole(e.target.value)}
-              className="w-full h-12 pl-9 pr-8 rounded-xl border-2 border-border bg-background/50 text-sm focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary appearance-none"
+        <div className="bg-card/80 backdrop-blur-xl rounded-3xl shadow-xl border border-border overflow-hidden">
+          {/* Tab bar */}
+          <div className="flex border-b border-border">
+            <button
+              type="button"
+              onClick={() => switchMode("signin")}
+              className={`flex-1 py-3 text-sm font-bold transition-colors ${
+                mode === "signin"
+                  ? "bg-primary/10 text-primary border-b-2 border-primary"
+                  : "text-muted-foreground hover:text-foreground"
+              }`}
             >
-              {ROLES.map((r) => (
-                <option key={r.value} value={r.value}>{r.label}</option>
-              ))}
-            </select>
+              Sign In
+            </button>
+            <button
+              type="button"
+              onClick={() => switchMode("register")}
+              className={`flex-1 py-3 text-sm font-bold transition-colors ${
+                mode === "register"
+                  ? "bg-primary/10 text-primary border-b-2 border-primary"
+                  : "text-muted-foreground hover:text-foreground"
+              }`}
+            >
+              Register
+            </button>
           </div>
 
-          {errorMsg && (
-            <p className="text-xs text-destructive text-center font-medium">{errorMsg}</p>
+          {/* Sign In form */}
+          {mode === "signin" && (
+            <form onSubmit={handleSignIn} className="p-6 space-y-4">
+              <p className="text-sm text-muted-foreground text-center">Welcome back, hero!</p>
+
+              <div className="relative">
+                <Mail className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground/60 pointer-events-none" />
+                <input
+                  type="email"
+                  autoFocus
+                  autoComplete="email"
+                  placeholder="Email address"
+                  value={siEmail}
+                  onChange={(e) => { setSiEmail(e.target.value); setErrorMsg(null); }}
+                  className="w-full h-12 pl-9 pr-4 rounded-xl border-2 border-border bg-background/50 text-sm focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary"
+                  required
+                />
+              </div>
+
+              <PasswordInput
+                value={siPassword}
+                onChange={(v) => { setSiPassword(v); setErrorMsg(null); }}
+                placeholder="Password"
+                autoComplete="current-password"
+              />
+
+              {errorMsg && (
+                <p className="text-xs text-destructive text-center font-medium">{errorMsg}</p>
+              )}
+
+              <button
+                type="submit"
+                disabled={!siEmail.trim() || !siPassword}
+                className="w-full h-12 rounded-xl bg-primary text-primary-foreground font-bold text-base hover:bg-primary/90 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                Sign In
+              </button>
+
+              <p className="text-center text-xs text-muted-foreground">
+                New here?{" "}
+                <button type="button" onClick={() => switchMode("register")} className="text-primary font-semibold hover:underline">
+                  Create an account
+                </button>
+              </p>
+            </form>
           )}
 
-          <button
-            type="submit"
-            disabled={!name.trim() || !email.trim()}
-            className="w-full h-12 rounded-xl bg-primary text-primary-foreground font-bold text-base hover:bg-primary/90 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-          >
-            Let's Play!
-          </button>
+          {/* Register form */}
+          {mode === "register" && (
+            <form onSubmit={handleRegister} className="p-6 space-y-4">
+              <p className="text-sm text-muted-foreground text-center">Join the composting adventure!</p>
 
-          <p className="text-center text-xs text-muted-foreground">
-            Already registered? Enter your email and name again to sign back in.
-          </p>
-        </form>
+              <div className="relative">
+                <User className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground/60 pointer-events-none" />
+                <input
+                  type="text"
+                  autoFocus
+                  autoComplete="name"
+                  placeholder="Your name *"
+                  value={regName}
+                  onChange={(e) => { setRegName(e.target.value); setErrorMsg(null); }}
+                  className="w-full h-12 pl-9 pr-4 rounded-xl border-2 border-border bg-background/50 text-sm focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary"
+                  required
+                />
+              </div>
+
+              <div className="relative">
+                <Mail className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground/60 pointer-events-none" />
+                <input
+                  type="email"
+                  autoComplete="email"
+                  placeholder="Email address *"
+                  value={regEmail}
+                  onChange={(e) => { setRegEmail(e.target.value); setErrorMsg(null); }}
+                  className="w-full h-12 pl-9 pr-4 rounded-xl border-2 border-border bg-background/50 text-sm focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary"
+                  required
+                />
+              </div>
+
+              <PasswordInput
+                value={regPassword}
+                onChange={(v) => { setRegPassword(v); setErrorMsg(null); }}
+                placeholder="Choose a password *"
+                autoComplete="new-password"
+              />
+
+              <PasswordInput
+                value={regConfirm}
+                onChange={(v) => { setRegConfirm(v); setErrorMsg(null); }}
+                placeholder="Confirm password *"
+                autoComplete="new-password"
+              />
+
+              <div className="relative">
+                <Building2 className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground/60 pointer-events-none" />
+                <input
+                  type="text"
+                  autoComplete="organization"
+                  placeholder="School / Organization (optional)"
+                  value={regOrg}
+                  onChange={(e) => setRegOrg(e.target.value)}
+                  className="w-full h-12 pl-9 pr-4 rounded-xl border-2 border-border bg-background/50 text-sm focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary"
+                />
+              </div>
+
+              <div className="relative">
+                <Leaf className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground/60 pointer-events-none" />
+                <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground/60 pointer-events-none" />
+                <select
+                  value={regRole}
+                  onChange={(e) => setRegRole(e.target.value)}
+                  className="w-full h-12 pl-9 pr-8 rounded-xl border-2 border-border bg-background/50 text-sm focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary appearance-none"
+                >
+                  {ROLES.map((r) => (
+                    <option key={r.value} value={r.value}>{r.label}</option>
+                  ))}
+                </select>
+              </div>
+
+              {errorMsg && (
+                <p className="text-xs text-destructive text-center font-medium">{errorMsg}</p>
+              )}
+
+              <button
+                type="submit"
+                disabled={!regName.trim() || !regEmail.trim() || !regPassword || !regConfirm}
+                className="w-full h-12 rounded-xl bg-primary text-primary-foreground font-bold text-base hover:bg-primary/90 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                Create Account
+              </button>
+
+              <p className="text-center text-xs text-muted-foreground">
+                Already have an account?{" "}
+                <button type="button" onClick={() => switchMode("signin")} className="text-primary font-semibold hover:underline">
+                  Sign in
+                </button>
+              </p>
+            </form>
+          )}
+        </div>
 
         <div className="flex items-center justify-center gap-2 mt-5 opacity-60">
           <span className="text-xs text-muted-foreground">A Project of</span>

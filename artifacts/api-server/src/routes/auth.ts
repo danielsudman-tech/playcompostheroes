@@ -1,5 +1,5 @@
 import { Router, type IRouter } from "express";
-import { registerOrLoginUser, getUserByToken } from "../lib/userStore.js";
+import { registerUser, loginUser, getUserByToken } from "../lib/userStore.js";
 
 const router: IRouter = Router();
 
@@ -8,9 +8,10 @@ router.get("/auth/config", (_req, res) => {
 });
 
 router.post("/auth/register", async (req, res) => {
-  const { email, name, organization, role } = req.body as {
+  const { email, name, password, organization, role } = req.body as {
     email?: string;
     name?: string;
+    password?: string;
     organization?: string;
     role?: string;
   };
@@ -19,18 +20,51 @@ router.post("/auth/register", async (req, res) => {
     res.status(400).json({ error: "Name and email are required" });
     return;
   }
-
   if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim())) {
     res.status(400).json({ error: "Please enter a valid email address" });
     return;
   }
+  if (!password || password.length < 6) {
+    res.status(400).json({ error: "Password must be at least 6 characters" });
+    return;
+  }
 
   try {
-    const result = await registerOrLoginUser(email, name, organization, role);
-    res.json({ token: result.token, user: result.user, isNew: result.isNew });
-  } catch (err) {
-    console.error("[auth register]", err);
-    res.status(500).json({ error: "Registration failed, please try again" });
+    const result = await registerUser(email, name, password, organization, role);
+    res.json({ token: result.token, user: result.user });
+  } catch (err: unknown) {
+    const e = err as { code?: string; message?: string };
+    if (e.code === "EMAIL_EXISTS") {
+      res.status(409).json({ error: e.message });
+    } else {
+      console.error("[auth register]", err);
+      res.status(500).json({ error: "Registration failed, please try again" });
+    }
+  }
+});
+
+router.post("/auth/login", async (req, res) => {
+  const { email, password } = req.body as {
+    email?: string;
+    password?: string;
+  };
+
+  if (!email?.trim() || !password) {
+    res.status(400).json({ error: "Email and password are required" });
+    return;
+  }
+
+  try {
+    const result = await loginUser(email, password);
+    res.json({ token: result.token, user: result.user });
+  } catch (err: unknown) {
+    const e = err as { code?: string; message?: string };
+    if (e.code === "USER_NOT_FOUND" || e.code === "WRONG_PASSWORD" || e.code === "NO_PASSWORD") {
+      res.status(401).json({ error: e.message });
+    } else {
+      console.error("[auth login]", err);
+      res.status(500).json({ error: "Login failed, please try again" });
+    }
   }
 });
 

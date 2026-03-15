@@ -1,4 +1,5 @@
 import { pool } from "@workspace/db";
+import bcrypt from "bcryptjs";
 
 export interface CompostUser {
   id: string;
@@ -17,38 +18,56 @@ function generateToken(): string {
   );
 }
 
-export async function registerOrLoginUser(
+async function createSession(userId: string): Promise<string> {
+  const token = generateToken();
+  await pool.query(
+    `INSERT INTO compost_user_sessions (token, user_id) VALUES ($1, $2)`,
+    [token, userId]
+  );
+  return token;
+}
+
+export async function registerUser(
   email: string,
   name: string,
+  password: string,
   organization?: string,
   role?: string
-): Promise<{ token: string; user: CompostUser; isNew: boolean }> {
-  const userResult = await pool.query<{
+): Promise<{ token: string; user: CompostUser }> {
+  const normalizedEmail = email.toLowerCase().trim();
+
+  // Check if email already exists
+  const existing = await pool.query<{ id: string }>(
+    `SELECT id FROM compost_users WHERE email = $1`,
+    [normalizedEmail]
+  );
+  if (existing.rows.length > 0) {
+    throw Object.assign(new Error("That email is already registered. Please sign in instead."), { code: "EMAIL_EXISTS" });
+  }
+
+  const passwordHash = await bcrypt.hash(password, 12);
+
+  const result = await pool.query<{
     id: string;
     email: string;
     name: string;
     organization: string | null;
     role: string | null;
     created_at: string;
-    is_new: boolean;
   }>(
-    `INSERT INTO compost_users (id, email, name, organization, role)
-     VALUES (gen_random_uuid()::text, $1, $2, $3, $4)
-     ON CONFLICT (email) DO UPDATE
-       SET name = EXCLUDED.name,
-           organization = COALESCE(EXCLUDED.organization, compost_users.organization),
-           role = COALESCE(EXCLUDED.role, compost_users.role)
-     RETURNING id, email, name, organization, role, created_at,
-               (xmax = '0') AS is_new`,
+    `INSERT INTO compost_users (id, email, name, organization, role, password_hash)
+     VALUES (gen_random_uuid()::text, $1, $2, $3, $4, $5)
+     RETURNING id, email, name, organization, role, created_at`,
     [
-      email.toLowerCase().trim(),
+      normalizedEmail,
       name.trim(),
       organization?.trim() || null,
       role?.trim() || null,
+      passwordHash,
     ]
   );
 
-  const row = userResult.rows[0];
+  const row = result.rows[0];
   const user: CompostUser = {
     id: row.id,
     email: row.email,
@@ -58,13 +77,56 @@ export async function registerOrLoginUser(
     createdAt: row.created_at,
   };
 
-  const token = generateToken();
-  await pool.query(
-    `INSERT INTO compost_user_sessions (token, user_id) VALUES ($1, $2)`,
-    [token, user.id]
+  const token = await createSession(user.id);
+  return { token, user };
+}
+
+export async function loginUser(
+  email: string,
+  password: string
+): Promise<{ token: string; user: CompostUser }> {
+  const normalizedEmail = email.toLowerCase().trim();
+
+  const result = await pool.query<{
+    id: string;
+    email: string;
+    name: string;
+    organization: string | null;
+    role: string | null;
+    created_at: string;
+    password_hash: string | null;
+  }>(
+    `SELECT id, email, name, organization, role, created_at, password_hash
+     FROM compost_users WHERE email = $1`,
+    [normalizedEmail]
   );
 
-  return { token, user, isNew: row.is_new };
+  if (result.rows.length === 0) {
+    throw Object.assign(new Error("No account found with that email. Please register first."), { code: "USER_NOT_FOUND" });
+  }
+
+  const row = result.rows[0];
+
+  if (!row.password_hash) {
+    throw Object.assign(new Error("This account was created before passwords were added. Please register again to set a password."), { code: "NO_PASSWORD" });
+  }
+
+  const match = await bcrypt.compare(password, row.password_hash);
+  if (!match) {
+    throw Object.assign(new Error("Incorrect password. Please try again."), { code: "WRONG_PASSWORD" });
+  }
+
+  const user: CompostUser = {
+    id: row.id,
+    email: row.email,
+    name: row.name,
+    organization: row.organization,
+    role: row.role,
+    createdAt: row.created_at,
+  };
+
+  const token = await createSession(user.id);
+  return { token, user };
 }
 
 export async function getUserByToken(token: string): Promise<CompostUser | null> {
