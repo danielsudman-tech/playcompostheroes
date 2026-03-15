@@ -1298,6 +1298,11 @@ export function resolveDecision(
             compostPile: [...getPlayer(s, playerId)!.compostPile, card],
           });
           addLog(s, `${player.name} took ${card.name} from ${targetPlayer.name}'s compost into their own compost.`);
+          const winner = checkWinCondition(s);
+          if (winner) {
+            s = { ...s, winner, phase: "game_over" };
+            addLog(s, `🎉 ${getPlayer(s, winner)!.name} wins!`);
+          }
         } else {
           s = updatePlayer(s, {
             ...getPlayer(s, playerId)!,
@@ -1343,6 +1348,11 @@ export function resolveDecision(
           compostPile: [...getPlayer(s, playerId)!.compostPile, card],
         });
         addLog(s, `${player.name} took ${card.name} from ${targetPlayer.name}'s compost into their own compost.`);
+        const winner = checkWinCondition(s);
+        if (winner) {
+          s = { ...s, winner, phase: "game_over" };
+          addLog(s, `🎉 ${getPlayer(s, winner)!.name} wins!`);
+        }
       } else {
         s = updatePlayer(s, {
           ...getPlayer(s, playerId)!,
@@ -1418,6 +1428,13 @@ export function resolveDecision(
         compostPile: [...removeOneById(theirPlayer.compostPile, theirCardId), myCard],
       });
       addLog(s, `${player.name} swapped ${myCard.name} with ${theirPlayer.name}'s ${theirCard.name}.`);
+      {
+        const winner = checkWinCondition(s);
+        if (winner) {
+          s = { ...s, winner, phase: "game_over" };
+          addLog(s, `🎉 ${getPlayer(s, winner)!.name} wins!`);
+        }
+      }
       return { state: s };
     }
 
