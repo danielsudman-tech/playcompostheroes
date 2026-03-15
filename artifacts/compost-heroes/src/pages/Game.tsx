@@ -29,6 +29,7 @@ import {
   Wifi,
   ChevronLeft,
   ChevronRight,
+  ChevronDown,
   Lock,
   MoveRight,
   Bell,
@@ -124,6 +125,7 @@ export default function Game() {
   } | null>(null);
   // Desktop hand area expanded state — all cards grow when mouse enters the row
   const [isHandHovered, setIsHandHovered] = useState(false);
+  const [handMinimized, setHandMinimized] = useState(false);
 
   // Sound effect utility (Web Audio API — no external files needed)
   const playSound = useCallback((type: "draw" | "play_action" | "play_hero" | "error") => {
@@ -1109,15 +1111,21 @@ export default function Game() {
 
               {/* ── HAND ── */}
               <div className="bg-card/90 backdrop-blur-md border-t border-border/60">
-                <div className="flex items-center justify-between px-3 py-1 border-b border-border/40">
+                <button
+                  className="w-full flex items-center justify-between px-3 py-1 border-b border-border/40 active:bg-muted/30 transition-colors"
+                  onClick={() => setHandMinimized(m => !m)}
+                >
                   <span className="text-[11px] font-bold text-muted-foreground uppercase tracking-wide">Hand · {hand.length}/{localPlayerFull.maxHandSize}</span>
-                  {isMyTurn && (
-                    <span className="text-[11px] font-semibold text-primary">
-                      {gameState.phase === "draw" ? "Draw a card first" : isPlayPhase ? "Tap to play" : ""}
-                    </span>
-                  )}
-                </div>
-                <div className="relative flex items-center gap-1 px-2 py-2">
+                  <div className="flex items-center gap-2">
+                    {isMyTurn && !handMinimized && (
+                      <span className="text-[11px] font-semibold text-primary">
+                        {gameState.phase === "draw" ? "Draw a card first" : isPlayPhase ? "Tap to play" : ""}
+                      </span>
+                    )}
+                    <ChevronDown className={cn("w-3.5 h-3.5 text-muted-foreground transition-transform duration-200", handMinimized && "rotate-180")} />
+                  </div>
+                </button>
+                {!handMinimized && <div className="relative flex items-center gap-1 px-2 py-2">
                   <button
                     onClick={() => scrollByCard(-1)}
                     className="shrink-0 w-7 h-7 rounded-full border border-border bg-background/80 flex items-center justify-center shadow-sm z-10"
@@ -1184,7 +1192,7 @@ export default function Game() {
                   >
                     <ChevronRight className="w-3.5 h-3.5" />
                   </button>
-                </div>
+                </div>}
               </div>
 
               {/* ── Mobile Turn Controls — very bottom ── */}
