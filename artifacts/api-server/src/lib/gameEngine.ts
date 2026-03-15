@@ -2223,6 +2223,32 @@ export function removePlayerFromRoom(
   };
 }
 
+export function addBotToRoom(
+  state: GameState,
+  botName: string,
+  skillLevel: BotSkillLevel = "medium"
+): { state: GameState; playerIndex: number } | { state: GameState; error: string } {
+  if (state.phase !== "waiting") return { state, error: "Game already started" };
+  if (state.players.length >= (state.maxPlayers ?? 4)) return { state, error: "Room is full" };
+
+  const playerIndex = state.players.length;
+  const newBot: PlayerState = {
+    id: `bot_${playerIndex}_${Math.random().toString(36).slice(2, 6)}`,
+    name: botName,
+    hand: [],
+    compostPile: [],
+    skipsNextTurn: false,
+    maxHandSize: 5,
+    drawsExtraCard: false,
+    isBot: true,
+    botSkillLevel: skillLevel,
+  };
+  return {
+    state: { ...state, players: [...state.players, newBot] },
+    playerIndex,
+  };
+}
+
 export function addPlayerToRoom(
   state: GameState,
   playerName: string

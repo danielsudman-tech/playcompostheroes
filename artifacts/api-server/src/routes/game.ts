@@ -1,6 +1,7 @@
 import { Router, type IRouter } from "express";
 import {
   activateOngoing,
+  addBotToRoom,
   addPlayerToRoom,
   createGameState,
   createWaitingRoom,
@@ -256,9 +257,12 @@ router.post("/games/:gameId/join", async (req, res) => {
 // POST /api/games/:gameId/start — host launches the game
 router.post("/games/:gameId/start", async (req, res) => {
   const { gameId } = req.params as { gameId: string };
-  const { token } = req.body as { token?: string };
+  const { token, botSlots } = req.body as {
+    token?: string;
+    botSlots?: Array<{ name: string; skillLevel?: string }>;
+  };
 
-  const state = await getGame(gameId);
+  let state = await getGame(gameId);
   if (!state) {
     res.status(404).json({ error: "Game not found" });
     return;
@@ -272,16 +276,33 @@ router.post("/games/:gameId/start", async (req, res) => {
     return;
   }
 
+  // Add bot players to fill empty slots before launching
+  if (botSlots && botSlots.length > 0) {
+    for (const bot of botSlots) {
+      const result = addBotToRoom(
+        state,
+        bot.name || "Bot",
+        (bot.skillLevel as BotSkillLevel) || "medium"
+      );
+      if ("error" in result) {
+        res.status(400).json({ error: result.error });
+        return;
+      }
+      state = result.state;
+    }
+  }
+
   const launched = launchGame(state);
   if (launched.error) {
     res.status(400).json({ error: launched.error });
     return;
   }
 
-  await storeGame(launched.state);
-  broadcastToGame(gameId, launched.state, serializeState);
+  const launchedState = runBotTurnsIfNeeded(launched.state);
+  await storeGame(launchedState);
+  broadcastToGame(gameId, launchedState, serializeState);
 
-  res.json(serializeState(launched.state, viewerIndex));
+  res.json(serializeState(launchedState, viewerIndex));
 });
 
 // GET /api/games/:gameId/events — SSE real-time stream

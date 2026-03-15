@@ -280,14 +280,19 @@ export function useJoinRoom(gameId: string | null) {
 
 // ── Start a waiting-room game (host only) ─────────────────────────────────────
 
+export interface BotSlotPayload {
+  name: string;
+  skillLevel: "easy" | "medium" | "hard";
+}
+
 export function useStartGame(gameId: string | null, token?: string | null) {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: async () => {
+    mutationFn: async (botSlots?: BotSlotPayload[]) => {
       const r = await fetch(`/api/games/${gameId}/start`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ token }),
+        body: JSON.stringify({ token, botSlots }),
       });
       if (!r.ok) {
         const err = await r.json();

@@ -4,12 +4,17 @@ import { motion } from "framer-motion";
 import { Button } from "@/components/ui/button";
 import { useStartGame, useLeaveRoom } from "@/hooks/use-game";
 import { useToast } from "@/hooks/use-toast";
-import { Copy, Check, Crown, Loader2, Users, Lock, LogOut, UserX } from "lucide-react";
+import { Copy, Check, Crown, Loader2, Users, Lock, LogOut, UserX, Bot, Plus, X } from "lucide-react";
 import { assetUrl } from "@/lib/assetUrl";
 
 interface PlayerSlot {
   id: string;
   name: string;
+}
+
+export interface BotSlot {
+  name: string;
+  skillLevel: "easy" | "medium" | "hard";
 }
 
 interface WaitingRoomProps {
@@ -21,10 +26,25 @@ interface WaitingRoomProps {
   hasPassword?: boolean;
 }
 
+const SKILL_COLORS: Record<string, string> = {
+  easy: "text-green-600 bg-green-50 border-green-200 hover:bg-green-100",
+  medium: "text-amber-600 bg-amber-50 border-amber-200 hover:bg-amber-100",
+  hard: "text-red-600 bg-red-50 border-red-200 hover:bg-red-100",
+};
+
+const SKILL_LABELS: Record<string, string> = {
+  easy: "Easy",
+  medium: "Medium",
+  hard: "Hard",
+};
+
+const BOT_NAMES = ["Compost Carl", "Worm Wendy", "Rot Rita", "Pile Pete", "Mulch Max", "Decay Dana"];
+
 export function WaitingRoom({ gameId, players, maxPlayers, playerIndex, token, hasPassword }: WaitingRoomProps) {
   const [, setLocation] = useLocation();
   const { toast } = useToast();
   const [copied, setCopied] = useState(false);
+  const [botSlots, setBotSlots] = useState<BotSlot[]>([]);
   const startGame = useStartGame(gameId, token);
   const leaveRoom = useLeaveRoom(gameId, token);
 
@@ -33,6 +53,10 @@ export function WaitingRoom({ gameId, players, maxPlayers, playerIndex, token, h
   const shareUrl = `${window.location.origin}${import.meta.env.BASE_URL}game/${gameId}`.replace(/\/+\//, "/");
   const roomCode = gameId.toUpperCase();
 
+  const totalCount = players.length + botSlots.length;
+  const emptySlots = Math.max(0, maxPlayers - totalCount);
+  const canStart = isHost && totalCount >= 2;
+
   const handleCopy = () => {
     navigator.clipboard.writeText(shareUrl).then(() => {
       setCopied(true);
@@ -40,8 +64,27 @@ export function WaitingRoom({ gameId, players, maxPlayers, playerIndex, token, h
     });
   };
 
+  const handleAddBot = () => {
+    if (totalCount >= maxPlayers) return;
+    const botNumber = botSlots.length + 1;
+    const defaultName = BOT_NAMES[(botSlots.length) % BOT_NAMES.length] ?? `Bot ${botNumber}`;
+    setBotSlots((prev) => [...prev, { name: defaultName, skillLevel: "medium" }]);
+  };
+
+  const handleRemoveBot = (idx: number) => {
+    setBotSlots((prev) => prev.filter((_, i) => i !== idx));
+  };
+
+  const handleBotSkill = (idx: number, level: "easy" | "medium" | "hard") => {
+    setBotSlots((prev) => prev.map((b, i) => i === idx ? { ...b, skillLevel: level } : b));
+  };
+
+  const handleBotName = (idx: number, name: string) => {
+    setBotSlots((prev) => prev.map((b, i) => i === idx ? { ...b, name } : b));
+  };
+
   const handleStart = () => {
-    startGame.mutate(undefined, {
+    startGame.mutate(botSlots.length > 0 ? botSlots : undefined, {
       onError: (err) => toast({ title: "Can't start yet", description: err.message, variant: "destructive" }),
     });
   };
@@ -66,9 +109,6 @@ export function WaitingRoom({ gameId, players, maxPlayers, playerIndex, token, h
       onError: (err) => toast({ title: "Couldn't kick player", description: err.message, variant: "destructive" }),
     });
   };
-
-  const emptySlots = Math.max(0, maxPlayers - players.length);
-  const canStart = isHost && players.length >= 2;
 
   return (
     <div className="min-h-screen bg-background relative overflow-hidden flex flex-col items-center justify-center p-4">
@@ -132,15 +172,16 @@ export function WaitingRoom({ gameId, players, maxPlayers, playerIndex, token, h
           )}
         </div>
 
-        {/* Player list */}
+        {/* Player + Bot list */}
         <div className="bg-card/80 backdrop-blur-xl rounded-3xl shadow-xl border border-border p-6 space-y-3">
           <div className="flex items-center justify-between">
             <label className="text-xs font-bold text-muted-foreground uppercase tracking-wider flex items-center gap-2">
-              <Users className="w-3.5 h-3.5" /> Players ({players.length}/{maxPlayers})
+              <Users className="w-3.5 h-3.5" /> Players ({totalCount}/{maxPlayers})
             </label>
           </div>
 
           <div className="space-y-2">
+            {/* Human players */}
             {players.map((p, i) => {
               const isMe = i === playerIndex;
               const canKick = isHost && !isMe;
@@ -179,19 +220,81 @@ export function WaitingRoom({ gameId, players, maxPlayers, playerIndex, token, h
               );
             })}
 
+            {/* Bot slots (host only) */}
+            {isHost && botSlots.map((bot, bi) => (
+              <motion.div
+                key={`bot-${bi}`}
+                initial={{ opacity: 0, x: -16 }}
+                animate={{ opacity: 1, x: 0 }}
+                className="rounded-2xl border-2 border-dashed border-violet-300/60 bg-violet-50/30 px-4 py-3 space-y-2"
+              >
+                <div className="flex items-center gap-3">
+                  <span className="w-7 h-7 rounded-full bg-violet-100 flex items-center justify-center text-violet-500 shrink-0">
+                    <Bot className="w-3.5 h-3.5" />
+                  </span>
+                  <input
+                    value={bot.name}
+                    onChange={(e) => handleBotName(bi, e.target.value)}
+                    className="flex-1 text-sm font-semibold bg-transparent border-b border-violet-200 focus:outline-none focus:border-violet-400 text-foreground placeholder:text-muted-foreground"
+                    placeholder="Bot name…"
+                  />
+                  <button
+                    onClick={() => handleRemoveBot(bi)}
+                    className="w-6 h-6 rounded-lg flex items-center justify-center text-muted-foreground hover:text-destructive hover:bg-destructive/10 transition-colors"
+                  >
+                    <X className="w-3.5 h-3.5" />
+                  </button>
+                </div>
+                <div className="flex items-center gap-1.5 pl-10">
+                  <span className="text-[10px] text-muted-foreground uppercase tracking-wide font-bold mr-1">Skill:</span>
+                  {(["easy", "medium", "hard"] as const).map((lvl) => (
+                    <button
+                      key={lvl}
+                      onClick={() => handleBotSkill(bi, lvl)}
+                      className={`text-[10px] font-bold border rounded-full px-2.5 py-0.5 uppercase tracking-wide transition-colors ${
+                        bot.skillLevel === lvl
+                          ? SKILL_COLORS[lvl]
+                          : "text-muted-foreground bg-muted/20 border-border hover:bg-muted/40"
+                      }`}
+                    >
+                      {SKILL_LABELS[lvl]}
+                    </button>
+                  ))}
+                </div>
+              </motion.div>
+            ))}
+
+            {/* Empty slots */}
             {Array.from({ length: emptySlots }).map((_, i) => (
               <div
                 key={`empty-${i}`}
                 className="flex items-center gap-3 rounded-2xl px-4 py-3 border-2 border-dashed border-border/50 opacity-50"
               >
                 <span className="w-7 h-7 rounded-full bg-muted flex items-center justify-center text-muted-foreground text-xs font-bold shrink-0">
-                  {players.length + i + 1}
+                  {totalCount + i + 1}
                 </span>
-                <span className="text-sm text-muted-foreground italic">Waiting for player…</span>
-                <span className="w-2 h-2 bg-muted rounded-full ml-auto" />
+                <span className="text-sm text-muted-foreground italic flex-1">Waiting for player…</span>
+                {isHost && i === 0 && (
+                  <button
+                    onClick={handleAddBot}
+                    className="flex items-center gap-1 text-[10px] font-bold text-violet-600 bg-violet-50 border border-violet-200 rounded-full px-2.5 py-1 hover:bg-violet-100 transition-colors"
+                  >
+                    <Plus className="w-2.5 h-2.5" /> Add Bot
+                  </button>
+                )}
               </div>
             ))}
           </div>
+
+          {/* Add bot button when all slots show bots */}
+          {isHost && emptySlots === 0 && botSlots.length > 0 && totalCount < maxPlayers && (
+            <button
+              onClick={handleAddBot}
+              className="w-full flex items-center justify-center gap-1.5 text-xs font-bold text-violet-600 border-2 border-dashed border-violet-300/60 rounded-2xl py-2.5 hover:bg-violet-50/50 transition-colors"
+            >
+              <Plus className="w-3.5 h-3.5" /> Add another bot
+            </button>
+          )}
         </div>
 
         {/* Actions */}
@@ -207,7 +310,7 @@ export function WaitingRoom({ gameId, players, maxPlayers, playerIndex, token, h
                 {startGame.isPending ? (
                   <span className="flex items-center gap-2"><Loader2 className="w-5 h-5 animate-spin" /> Starting…</span>
                 ) : (
-                  `Start Game (${players.length} player${players.length !== 1 ? "s" : ""})`
+                  `Start Game (${totalCount} player${totalCount !== 1 ? "s" : ""})`
                 )}
               </Button>
               {!canStart && (
