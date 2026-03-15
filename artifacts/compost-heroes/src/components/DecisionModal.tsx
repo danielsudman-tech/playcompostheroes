@@ -253,7 +253,10 @@ export function DecisionModal({ decision, gameState, onResolve }: DecisionModalP
 
             {isFunctionSelection && (
               <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
-                {options.map((opt: any, i: number) => {
+                {[...options].sort((a: any, b: any) => {
+                  const ORDER = ["Moisture", "Carbon", "Decomposer", "Nitrogen", "Airflow"];
+                  return (ORDER.indexOf(a.function) ?? 99) - (ORDER.indexOf(b.function) ?? 99);
+                }).map((opt: any, i: number) => {
                   const fn = opt.function as string;
                   const meta = FUNCTION_META[fn] ?? { label: fn, iconSrc: null, color: "text-muted-foreground", bg: "bg-muted border-border" };
                   return (
