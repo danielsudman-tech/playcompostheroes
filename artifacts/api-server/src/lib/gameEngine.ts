@@ -447,7 +447,7 @@ function resolveHeroInstantEffect(
       addLog(s, `Mycelial Alchemist: All players discard 1 Decomposer from compost.`);
       for (const pl of s.players) {
         const decomposerIdx = pl.compostPile.findIndex(
-          (c) => c.function === "Decomposer"
+          (c) => getEffectiveFunction(c) === "Decomposer"
         );
         if (decomposerIdx >= 0) {
           const discarded = pl.compostPile[decomposerIdx];
@@ -720,7 +720,7 @@ function resolveActionInstantEffect(
   switch (card.id) {
     // Anaerobic Pocket: discard 1 Airflow from compost, then choose opponent to skip
     case "anaerobic_pocket": {
-      const airflowCards = p.compostPile.filter((c) => c.function === "Airflow");
+      const airflowCards = p.compostPile.filter((c) => getEffectiveFunction(c) === "Airflow");
       if (airflowCards.length === 0) {
         addLog(s, `${p.name} has no Airflow cards in compost to discard for Anaerobic Pocket.`);
         return s;
@@ -746,12 +746,12 @@ function resolveActionInstantEffect(
         return s;
       }
       const targets = s.players
-        .filter((pl) => pl.id !== p.id && pl.compostPile.some((c) => c.function === "Nitrogen"))
+        .filter((pl) => pl.id !== p.id && pl.compostPile.some((c) => getEffectiveFunction(c) === "Nitrogen"))
         .map((pl) => ({
           playerId: pl.id,
           playerName: pl.name,
           cards: pl.compostPile
-            .filter((c) => c.function === "Nitrogen")
+            .filter((c) => getEffectiveFunction(c) === "Nitrogen")
             .map((c) => ({ cardId: c.id, cardName: c.name })),
         }));
       if (targets.length === 0) {
@@ -847,8 +847,8 @@ function resolveActionInstantEffect(
           continue;
         }
         const candidates = pl.compostPile.filter((c) => {
-          if (c.function === "Moisture" && moistureProtected(pl)) return false;
-          return c.function === "Moisture" || c.function === "Nitrogen";
+          if (getEffectiveFunction(c) === "Moisture" && moistureProtected(pl)) return false;
+          return getEffectiveFunction(c) === "Moisture" || getEffectiveFunction(c) === "Nitrogen";
         });
         if (candidates.length > 0) {
           // Auto discard first eligible
@@ -1428,6 +1428,8 @@ export function resolveDecision(
         compostPile: [...removeOneById(theirPlayer.compostPile, theirCardId), myCard],
       });
       addLog(s, `${player.name} swapped ${myCard.name} with ${theirPlayer.name}'s ${theirCard.name}.`);
+      // Quencher: if the received card is Moisture, draw 1 extra card
+      s = triggerQuencher(s, playerId, theirCard);
       {
         const winner = checkWinCondition(s);
         if (winner) {
@@ -1523,6 +1525,15 @@ export function resolveDecision(
         s,
         `${player.name} swapped ${myCard.name} with ${theirPlayer.name}'s ${theirCard.name}.`
       );
+      // Quencher: if the received card is Moisture, draw 1 extra card
+      s = triggerQuencher(s, playerId, theirCard);
+      {
+        const winner = checkWinCondition(s);
+        if (winner) {
+          s = { ...s, winner, phase: "game_over" };
+          addLog(s, `🎉 ${getPlayer(s, winner)!.name} wins!`);
+        }
+      }
       return { state: s };
     }
 
@@ -1791,6 +1802,17 @@ export function resolveDecision(
       s = { ...s, discardPile: [...toDiscard, ...s.discardPile] };
       s = updatePlayer(s, updatedPlayer);
       addLog(s, `${player.name} discarded ${toDiscard.map((c) => c.name).join(", ")} to meet hand limit.`);
+
+      // Hot Head: draw 1 card for each Carbon card discarded here
+      for (const discarded of toDiscard) {
+        if (discarded.function === "Carbon") {
+          const currentP = getPlayer(s, playerId)!;
+          if (currentP.compostPile.some((c) => c.id === "hot_head")) {
+            s = drawCard(s, getPlayer(s, playerId)!);
+            addLog(s, `${player.name} drew 1 card (The Hot Head — Carbon discarded).`);
+          }
+        }
+      }
 
       // Now advance the turn
       s = advanceTurnState(s);
