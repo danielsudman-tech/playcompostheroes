@@ -1450,10 +1450,10 @@ export function resolveDecision(
 
     case "choose_hero_from_discard": {
       const chosenCardId = decisionData.cardId as string;
-      const card = s.discardPile.find(
+      const rawCard = s.discardPile.find(
         (c) => c.id === chosenCardId && c.type === "hero"
       );
-      if (!card) return { state, error: "Hero not found in discard" };
+      if (!rawCard) return { state, error: "Hero not found in discard" };
 
       const plasticMod = s.activeModifiers.find(
         (m) => m.cardId === "plastic_contamination"
@@ -1462,13 +1462,35 @@ export function resolveDecision(
         return { state, error: "Plastic Contamination blocks hero placement" };
       }
 
+      // Always clear stale chosenFunction from a previous placement
+      const card: Card = { ...rawCard, chosenFunction: undefined };
+
+      // Remove from discard first
+      s = { ...s, discardPile: removeOneById(s.discardPile, chosenCardId) };
+
+      // If card has multiple possible functions, prompt the player to choose a slot
+      const allFunctions = card.alternateFunctions?.length
+        ? [...new Set([card.function, ...card.alternateFunctions])]
+        : [];
+      if (allFunctions.length > 1) {
+        addLog(s, `${player.name} chose ${card.name} from discard — select a function slot.`);
+        s = {
+          ...s,
+          pendingDecision: {
+            type: "choose_function",
+            playerId,
+            cardId: card.id,
+            prompt: `${player.name}: Choose which function slot to fill with ${card.name} (Actinomycetes).`,
+            options: allFunctions.map((fn) => ({ function: fn })),
+            meta: { pendingCard: card as unknown as Record<string, unknown> },
+          },
+        };
+        return { state: s };
+      }
+
       const updatedPlayer = {
         ...player,
         compostPile: [...player.compostPile, card],
-      };
-      s = {
-        ...s,
-        discardPile: removeOneById(s.discardPile, chosenCardId),
       };
       s = updatePlayer(s, updatedPlayer);
       addLog(s, `${player.name} placed ${card.name} from discard into compost (Actinomycetes).`);
