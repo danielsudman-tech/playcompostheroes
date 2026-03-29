@@ -36,6 +36,8 @@ import {
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
+const CARD_BACK = { id: "back", name: "Card Back", type: "unknown" as const, layer: null, effectType: "instant" as const, cardText: "", factText: "", function: "", imageKey: "card-back.jpg" };
+
 export default function Game() {
   const { gameId } = useParams();
   const [, setLocation] = useLocation();
@@ -612,7 +614,7 @@ export default function Game() {
                   gameState.phase === 'draw' && isMyTurn ? "opacity-100 animate-pulse" : "opacity-0"
                 )} />
                 <GameCard
-                  card={gameState.deck[0]}
+                  card={CARD_BACK as any}
                   isFaceDown
                   hoverable={gameState.phase === 'draw' && isMyTurn}
                   className={cn(
@@ -625,7 +627,7 @@ export default function Game() {
               </div>
               <div className="flex items-center gap-1.5 bg-background/80 px-3 py-1 rounded-full text-xs font-bold shadow-sm border">
                 <Layers className="w-3 h-3 text-muted-foreground" />
-                {gameState.deck.length} left
+                {gameState.deckCount ?? 0} left
               </div>
             </div>
 

@@ -52,9 +52,10 @@ const HIDDEN_CARD = {
 
 function serializeState(state: GameState, viewerIndex?: number) {
   const isOnline = state.mode === "online";
+  const { deck, ...rest } = state;
   return {
-    ...state,
-    deck: state.deck.map(() => HIDDEN_CARD),
+    ...rest,
+    deckCount: deck.length,
     players: state.players.map((player, idx) => {
       if (!isOnline || viewerIndex === undefined || idx === viewerIndex) {
         return player;

@@ -18,7 +18,7 @@ export interface GameState {
   phase: GameStatePhase;
   currentPlayerIndex: number;
   players: PlayerState[];
-  deck: Card[];
+  deckCount: number;
   discardPile: Card[];
   activeModifiers: ActiveModifier[];
   pendingDecision: PendingDecision | null;

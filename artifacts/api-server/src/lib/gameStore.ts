@@ -5,6 +5,14 @@ import type { Response } from "express";
 // ── In-memory only: live SSE connections (can't persist HTTP streams) ──────────
 const sseClientsByToken = new Map<string, Map<string, Response>>();
 
+// ── In-memory game state cache ────────────────────────────────────────────────
+// Eliminates a DB read on every action — the DB remains the durable backup.
+const gameStateCache = new Map<string, GameState>();
+
+// ── In-memory token → player-index map per game ───────────────────────────────
+// Eliminates a DB query on every SSE broadcast.
+const tokenIndexCache = new Map<string, Map<string, number>>();
+
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
 function generateId(): string {
@@ -22,6 +30,7 @@ export function createGameId(): string {
 // ── Game state ────────────────────────────────────────────────────────────────
 
 export async function storeGame(state: GameState): Promise<void> {
+  gameStateCache.set(state.gameId, state);
   await pool.query(
     `INSERT INTO compost_games (game_id, state, updated_at)
      VALUES ($1, $2, NOW())
@@ -33,13 +42,16 @@ export async function storeGame(state: GameState): Promise<void> {
 }
 
 export async function getGame(gameId: string): Promise<GameState | undefined> {
+  if (gameStateCache.has(gameId)) return gameStateCache.get(gameId);
   const result = await pool.query(
     `SELECT state FROM compost_games WHERE game_id = $1`,
     [gameId]
   );
   if (result.rows.length === 0) return undefined;
   const row = result.rows[0];
-  return (typeof row.state === "string" ? JSON.parse(row.state) : row.state) as GameState;
+  const state = (typeof row.state === "string" ? JSON.parse(row.state) : row.state) as GameState;
+  gameStateCache.set(gameId, state);
+  return state;
 }
 
 // ── Password ──────────────────────────────────────────────────────────────────
@@ -145,6 +157,8 @@ export async function claimSlot(
      VALUES ($1, $2, $3)`,
     [gameId, token, nextIndex]
   );
+  if (!tokenIndexCache.has(gameId)) tokenIndexCache.set(gameId, new Map());
+  tokenIndexCache.get(gameId)!.set(token, nextIndex);
   return { token, playerIndex: nextIndex };
 }
 
@@ -152,13 +166,18 @@ export async function getPlayerIndexForToken(
   gameId: string,
   token: string
 ): Promise<number | null> {
+  const cached = tokenIndexCache.get(gameId)?.get(token);
+  if (cached !== undefined) return cached;
   const result = await pool.query(
     `SELECT player_index FROM compost_game_tokens
      WHERE game_id = $1 AND token = $2`,
     [gameId, token]
   );
   if (result.rows.length === 0) return null;
-  return result.rows[0].player_index as number;
+  const playerIndex = result.rows[0].player_index as number;
+  if (!tokenIndexCache.has(gameId)) tokenIndexCache.set(gameId, new Map());
+  tokenIndexCache.get(gameId)!.set(token, playerIndex);
+  return playerIndex;
 }
 
 export async function removePlayerTokenByIndex(
@@ -187,6 +206,15 @@ export async function removePlayerTokenByIndex(
      WHERE game_id = $1 AND player_index > $2`,
     [gameId, removedIndex]
   );
+
+  // Update in-memory token cache: remove the token, shift higher indices down
+  const tokenMap = tokenIndexCache.get(gameId);
+  if (tokenMap) {
+    if (removedToken) tokenMap.delete(removedToken);
+    for (const [tok, idx] of tokenMap) {
+      if (idx > removedIndex) tokenMap.set(tok, idx - 1);
+    }
+  }
 
   return removedToken;
 }
@@ -240,34 +268,14 @@ export function broadcastToGame(
   const clients = sseClientsByToken.get(gameId);
   if (!clients || clients.size === 0) return;
 
-  // Token → player index must be fetched async, but broadcast is fire-and-forget.
-  // We load the token map once and broadcast synchronously to all live connections.
-  pool
-    .query(
-      `SELECT token, player_index FROM compost_game_tokens WHERE game_id = $1`,
-      [gameId]
-    )
-    .then((result) => {
-      const tokenMap = new Map<string, number>(
-        result.rows.map((r) => [r.token as string, r.player_index as number])
-      );
-      for (const [token, res] of clients) {
-        const playerIndex = tokenMap.get(token);
-        const payload = serializeFn(state, playerIndex);
-        try {
-          res.write(`data: ${JSON.stringify(payload)}\n\n`);
-        } catch {
-          clients.delete(token);
-        }
-      }
-    })
-    .catch(() => {
-      // If DB lookup fails, broadcast without player filtering
-      for (const [, res] of clients) {
-        const payload = serializeFn(state);
-        try {
-          res.write(`data: ${JSON.stringify(payload)}\n\n`);
-        } catch {}
-      }
-    });
+  const tokenMap = tokenIndexCache.get(gameId);
+  for (const [token, res] of clients) {
+    const playerIndex = tokenMap?.get(token);
+    const payload = serializeFn(state, playerIndex);
+    try {
+      res.write(`data: ${JSON.stringify(payload)}\n\n`);
+    } catch {
+      clients.delete(token);
+    }
+  }
 }
