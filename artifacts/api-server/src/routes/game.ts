@@ -331,17 +331,22 @@ router.get("/games/:gameId/events", async (req, res) => {
   res.setHeader("X-Accel-Buffering", "no");
   res.flushHeaders();
 
-  res.write(`data: ${JSON.stringify(serializeState(state, viewerIndex))}\n\n`);
+  const sseWrite = (chunk: string) => {
+    res.write(chunk);
+    (res as any).flush?.();
+  };
+
+  sseWrite(`data: ${JSON.stringify(serializeState(state, viewerIndex))}\n\n`);
 
   addSseClient(gameId, token, res);
 
   const ping = setInterval(() => {
     try {
-      res.write(": ping\n\n");
+      sseWrite(": ping\n\n");
     } catch {
       clearInterval(ping);
     }
-  }, 25000);
+  }, 15000);
 
   req.on("close", () => {
     clearInterval(ping);

@@ -92,10 +92,11 @@ export function useGameState(gameId: string | null, token?: string | null) {
       return r.json();
     },
     enabled: !!gameId,
-    // Online mode: stop polling once state is loaded (SSE handles real-time updates)
-    // Pass & Play: poll every 1.5s so the UI stays in sync
+    // Online mode: SSE handles real-time updates; poll every 10s as a safety net
+    // in case SSE silently drops so players never get permanently stuck.
+    // Pass & Play: poll every 1.5s so the UI stays in sync.
     refetchInterval: (query) => {
-      if (query.state.data?.mode === "online") return false;
+      if (query.state.data?.mode === "online") return 10000;
       return 1500;
     },
     staleTime: 1000,
@@ -114,6 +115,7 @@ export function useGameSse(
   const queryClient = useQueryClient();
   const onNudgeRef = useRef(onNudge);
   onNudgeRef.current = onNudge;
+  const [sseConnected, setSseConnected] = useState(false);
 
   useEffect(() => {
     if (!gameId || !token || !isOnline) return;
@@ -121,10 +123,15 @@ export function useGameSse(
     const url = `/api/games/${gameId}/events?token=${encodeURIComponent(token)}`;
     const source = new EventSource(url);
 
+    source.onopen = () => {
+      setSseConnected(true);
+    };
+
     source.onmessage = (e) => {
       try {
         const data = JSON.parse(e.data);
         queryClient.setQueryData(getGetGameQueryKey(gameId), data);
+        setSseConnected(true);
       } catch {}
     };
 
@@ -141,11 +148,19 @@ export function useGameSse(
     });
 
     source.onerror = () => {
-      // EventSource will auto-reconnect — no action needed
+      setSseConnected(false);
+      // Force a poll immediately so the player doesn't see stale state
+      // while EventSource auto-reconnects in the background.
+      queryClient.invalidateQueries({ queryKey: getGetGameQueryKey(gameId) });
     };
 
-    return () => source.close();
+    return () => {
+      source.close();
+      setSseConnected(false);
+    };
   }, [gameId, token, isOnline, queryClient, onKicked]);
+
+  return { sseConnected };
 }
 
 // ── Leave or kick a player from a waiting room ────────────────────────────────

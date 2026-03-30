@@ -239,6 +239,7 @@ export function sendKickedEvent(gameId: string, token: string): void {
   if (res) {
     try {
       res.write(`event: kicked\ndata: {}\n\n`);
+      (res as any).flush?.();
     } catch {}
     clients.delete(token);
   }
@@ -274,6 +275,7 @@ export function broadcastToGame(
     const payload = serializeFn(state, playerIndex);
     try {
       res.write(`data: ${JSON.stringify(payload)}\n\n`);
+      (res as any).flush?.();
     } catch {
       clients.delete(token);
     }

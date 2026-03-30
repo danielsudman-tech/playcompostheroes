@@ -68,7 +68,7 @@ export default function Game() {
     toast({ title: "You were removed from the room", variant: "destructive" });
     setLocation("/");
   }, [gameId, toast, setLocation]);
-  useGameSse(gameId || null, localToken, isOnline && !!localToken, handleKicked, (from) => {
+  const { sseConnected } = useGameSse(gameId || null, localToken, isOnline && !!localToken, handleKicked, (from) => {
     toast({
       title: "It's your turn! 🌱",
       description: `${from} is waiting for you to play.`,
@@ -514,10 +514,15 @@ export default function Game() {
 
       {/* Online mode badge */}
       {isOnline && (
-        <div className="fixed top-3 right-3 z-50 flex items-center gap-1.5 bg-green-500/15 border border-green-500/30 text-green-600 px-2.5 py-1 rounded-full text-xs font-bold backdrop-blur-md">
-          <Wifi className="w-3 h-3" />
-          Online
-          {claim?.playerName && <span className="opacity-70">· {claim.playerName}</span>}
+        <div className={cn(
+          "fixed top-3 right-3 z-50 flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-bold backdrop-blur-md border transition-colors duration-500",
+          sseConnected
+            ? "bg-green-500/15 border-green-500/30 text-green-600"
+            : "bg-yellow-500/15 border-yellow-500/30 text-yellow-600"
+        )}>
+          <Wifi className={cn("w-3 h-3", !sseConnected && "animate-pulse")} />
+          {sseConnected ? "Online" : "Reconnecting…"}
+          {claim?.playerName && sseConnected && <span className="opacity-70">· {claim.playerName}</span>}
         </div>
       )}
 
