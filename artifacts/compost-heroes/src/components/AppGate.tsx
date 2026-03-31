@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, createContext, useContext, type ReactNode } from "react";
-import { Loader2, Lock, Eye, EyeOff, ShoppingCart } from "lucide-react";
+import { Loader2, Lock, Eye, EyeOff } from "lucide-react";
 import compostHeroesLogo from "@assets/Compost_Heroes_Logo_no_background_1773537933517.png";
 
 const STORAGE_KEY = "compost_user_token";
@@ -230,16 +230,6 @@ export function AppGate({ children }: { children: ReactNode }) {
             </p>
           </div>
 
-          {/* Buy deck CTA */}
-          <a
-            href="https://www.compostheroes.org/purchase"
-            target="_blank"
-            rel="noopener noreferrer"
-            className="inline-flex items-center gap-2 bg-primary text-primary-foreground hover:bg-primary/90 rounded-full px-4 py-2 text-sm font-semibold transition-colors shadow-sm"
-          >
-            <ShoppingCart className="w-4 h-4" />
-            Own the physical deck — buy it here
-          </a>
         </div>
 
         {/* Auth card */}
@@ -341,6 +331,18 @@ export function AppGate({ children }: { children: ReactNode }) {
         <div className="text-center space-y-1">
           <p className="text-sm font-semibold text-foreground/70">Built by Green Camps</p>
           <p className="text-xs text-muted-foreground">Turning sustainability into action through play</p>
+        </div>
+
+        {/* Purchase link */}
+        <div className="text-center">
+          <a
+            href="https://www.compostheroes.org/purchase"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="text-xs text-muted-foreground hover:text-foreground transition-colors"
+          >
+            Prefer the physical version? Buy the deck →
+          </a>
         </div>
 
       </div>
