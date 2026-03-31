@@ -6,7 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { assetUrl } from "@/lib/assetUrl";
 import compostHeroesLogo from "@assets/Compost_Heroes_Logo_no_background_1773537933517.png";
-import greenCampsLogo from "@assets/Green_Camps_Logo_no_background_1773537933517.png";
+import greenCampsLogo from "@assets/Green_Camps_Logo_no_background_1774982775801.png";
 import {
   Users, Trash2, PlusCircle, Settings2, PlayCircle, Wifi, Lock,
   RefreshCcw, LogIn, ChevronRight, Loader2, Bot, User, ShoppingCart, LogOut
@@ -244,12 +244,14 @@ export default function Lobby() {
           <p className="text-muted-foreground font-medium mb-3">The card game of soil and strategy</p>
           <div className="flex items-center justify-center gap-2 opacity-70">
             <span className="text-xs text-muted-foreground font-medium tracking-wide">A Project of</span>
-            <img
-              src={greenCampsLogo}
-              alt="Green Camps"
-              className="h-7 object-contain"
-              draggable={false}
-            />
+            <a href="https://www.greencamps.org" target="_blank" rel="noopener noreferrer">
+              <img
+                src={greenCampsLogo}
+                alt="Green Camps"
+                className="h-7 object-contain hover:opacity-80 transition-opacity"
+                draggable={false}
+              />
+            </a>
           </div>
         </div>
 
@@ -469,13 +471,10 @@ export default function Lobby() {
             href="https://www.compostheroes.org/purchase"
             target="_blank"
             rel="noopener noreferrer"
-            className="inline-flex items-center gap-2 bg-secondary/20 hover:bg-secondary/30 border border-secondary/40 text-secondary-foreground rounded-full px-4 py-2 text-sm font-semibold transition-colors"
+            className="inline-flex items-center gap-2 bg-primary text-primary-foreground hover:bg-primary/90 rounded-full px-4 py-2 text-sm font-semibold transition-colors shadow-sm"
           >
             <ShoppingCart className="w-4 h-4" />
             Buy the physical deck
-          </a>
-          <a href={`${import.meta.env.BASE_URL}admin`} className="text-xs text-muted-foreground/40 hover:text-muted-foreground transition-colors inline-block">
-            Card Image Admin
           </a>
         </div>
       </motion.div>
