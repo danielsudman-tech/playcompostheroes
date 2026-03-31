@@ -339,7 +339,7 @@ export function AppGate({ children }: { children: ReactNode }) {
             href="https://www.compostheroes.org/purchase"
             target="_blank"
             rel="noopener noreferrer"
-            className="text-xs text-muted-foreground hover:text-foreground transition-colors"
+            className="inline-flex items-center gap-2 bg-primary text-primary-foreground hover:bg-primary/90 rounded-full px-4 py-2 text-sm font-semibold transition-colors shadow-sm"
           >
             Prefer the physical version? Buy the deck →
           </a>
