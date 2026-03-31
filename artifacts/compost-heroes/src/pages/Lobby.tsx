@@ -9,9 +9,10 @@ import compostHeroesLogo from "@assets/Compost_Heroes_Logo_no_background_1773537
 import greenCampsLogo from "@assets/Green_Camps_Logo_no_background_1773537933517.png";
 import {
   Users, Trash2, PlusCircle, Settings2, PlayCircle, Wifi, Lock,
-  RefreshCcw, LogIn, ChevronRight, Loader2, Bot, User, ShoppingCart
+  RefreshCcw, LogIn, ChevronRight, Loader2, Bot, User, ShoppingCart, LogOut
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
+import { useCurrentUser, useLogout } from "@/components/AppGate";
 
 // ── Room Browser ────────────────────────────────────────────────────────────
 
@@ -106,6 +107,8 @@ export default function Lobby() {
   const [, setLocation] = useLocation();
   const { toast } = useToast();
   const createGame = useCreateNewGame();
+  const currentUser = useCurrentUser();
+  const logout = useLogout();
 
   const [tab, setTab] = useState<"create" | "browse">("create");
   const [mode, setMode] = useState<"standalone" | "online">("standalone");
@@ -213,6 +216,23 @@ export default function Lobby() {
         transition={{ duration: 0.7, type: "spring" }}
         className="relative z-10 w-full max-w-md"
       >
+        {/* User bar */}
+        {currentUser && (
+          <div className="flex items-center justify-between mb-4 px-1">
+            <span className="flex items-center gap-1.5 text-sm text-muted-foreground">
+              <User className="w-3.5 h-3.5" />
+              <span className="font-medium text-foreground">{currentUser.name}</span>
+            </span>
+            <button
+              onClick={logout}
+              className="flex items-center gap-1.5 text-xs text-muted-foreground hover:text-destructive transition-colors font-medium"
+            >
+              <LogOut className="w-3.5 h-3.5" />
+              Sign out
+            </button>
+          </div>
+        )}
+
         {/* Title */}
         <div className="text-center mb-6">
           <img

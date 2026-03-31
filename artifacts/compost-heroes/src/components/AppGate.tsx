@@ -14,12 +14,17 @@ export interface RegisteredUser {
 
 interface UserContextValue {
   user: RegisteredUser | null;
+  logout: () => void;
 }
 
-const UserContext = createContext<UserContextValue>({ user: null });
+const UserContext = createContext<UserContextValue>({ user: null, logout: () => {} });
 
 export function useCurrentUser(): RegisteredUser | null {
   return useContext(UserContext).user;
+}
+
+export function useLogout(): () => void {
+  return useContext(UserContext).logout;
 }
 
 type Status = "loading" | "registered" | "idle" | "submitting";
@@ -102,6 +107,18 @@ export function AppGate({ children }: { children: ReactNode }) {
     })();
     return () => { cancelled = true; };
   }, [validateToken]);
+
+  const logout = useCallback(() => {
+    localStorage.removeItem(STORAGE_KEY);
+    setUser(null);
+    setStatus("idle");
+    setMode("start");
+    setEmail("");
+    setPassword("");
+    setName("");
+    setConfirmPassword("");
+    setErrorMsg(null);
+  }, []);
 
   function switchMode(m: Mode) {
     setMode(m);
@@ -186,7 +203,7 @@ export function AppGate({ children }: { children: ReactNode }) {
   }
 
   if (status === "registered") {
-    return <UserContext.Provider value={{ user }}>{children}</UserContext.Provider>;
+    return <UserContext.Provider value={{ user, logout }}>{children}</UserContext.Provider>;
   }
 
   return (
