@@ -1,4 +1,5 @@
 import { Router, type IRouter } from "express";
+import { logEvent } from "../lib/analyticsStore.js";
 import {
   activateOngoing,
   addBotToRoom,
@@ -110,6 +111,7 @@ router.post("/games", async (req, res) => {
     const gameId = createGameId();
     const state = createWaitingRoom(gameId, name, max, "online");
     await storeGame(state);
+    logEvent("game_created", { gameId, metadata: { mode: "online", maxPlayers: max, hostName: name } });
 
     if (password && password.trim()) {
       await setGamePassword(gameId, password.trim());
@@ -147,6 +149,7 @@ router.post("/games", async (req, res) => {
   let state = createGameState(gameId, playerNames, mode, validBotIndices, validSkillLevels);
   state = runBotTurnsIfNeeded(state);
   await storeGame(state);
+  logEvent("game_created", { gameId, intValue: playerNames.length, metadata: { mode, bots: validBotIndices.length } });
 
   res.status(201).json(serializeState(state));
 });
@@ -238,6 +241,7 @@ router.post("/games/:gameId/join", async (req, res) => {
   }
 
   await storeGame(result.state);
+  logEvent("player_joined", { gameId, metadata: { playerName: trimmedName, playerCount: result.state.players.length } });
 
   const claimed = await claimSlot(gameId);
   if (!claimed) {
@@ -480,6 +484,13 @@ router.post("/games/:gameId/action", async (req, res) => {
 
   const stateAfterBots = runBotTurnsIfNeeded(result.state);
   await storeGame(stateAfterBots);
+  if (stateAfterBots.phase === "game_over" && state.phase !== "game_over") {
+    logEvent("game_completed", {
+      gameId,
+      intValue: stateAfterBots.players.length,
+      metadata: { winner: (stateAfterBots as any).winner ?? null, mode: stateAfterBots.mode },
+    });
+  }
   broadcast(gameId, stateAfterBots);
 
   const viewerIndex =

@@ -1,4 +1,5 @@
 import app from "./app";
+import { runStartupMigrations } from "./lib/analyticsStore.js";
 
 const rawPort = process.env["PORT"];
 
@@ -16,4 +17,5 @@ if (Number.isNaN(port) || port <= 0) {
 
 app.listen(port, () => {
   console.log(`Server listening on port ${port}`);
+  runStartupMigrations().catch(err => console.error("[startup migrations]", err));
 });

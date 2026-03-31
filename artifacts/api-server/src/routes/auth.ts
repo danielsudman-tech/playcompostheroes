@@ -1,5 +1,6 @@
 import { Router, type IRouter } from "express";
 import { registerUser, loginUser, getUserByToken } from "../lib/userStore.js";
+import { logEvent } from "../lib/analyticsStore.js";
 
 const router: IRouter = Router();
 
@@ -31,6 +32,7 @@ router.post("/auth/register", async (req, res) => {
 
   try {
     const result = await registerUser(email, name, password, organization, role);
+    logEvent("register", { userId: result.user.id, metadata: { role: role ?? null, organization: organization ?? null } });
     res.json({ token: result.token, user: result.user });
   } catch (err: unknown) {
     const e = err as { code?: string; message?: string };
@@ -56,6 +58,7 @@ router.post("/auth/login", async (req, res) => {
 
   try {
     const result = await loginUser(email, password);
+    logEvent("login", { userId: result.user.id });
     res.json({ token: result.token, user: result.user });
   } catch (err: unknown) {
     const e = err as { code?: string; message?: string };

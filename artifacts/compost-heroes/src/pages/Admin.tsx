@@ -1,4 +1,4 @@
-import { useState, useRef, useCallback, useEffect } from "react";
+import React, { useState, useRef, useCallback, useEffect } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useLocation } from "wouter";
 import { Button } from "@/components/ui/button";
@@ -18,6 +18,12 @@ import {
   Users,
   CreditCard,
   Download,
+  BarChart2,
+  LogIn,
+  Gamepad2,
+  Trophy,
+  Activity,
+  UserCheck,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -44,6 +50,33 @@ interface AdminUser {
   role: string | null;
   createdAt: string;
   sessionCount: number;
+}
+
+interface AnalyticsSummary {
+  totalUsers: number;
+  totalLogins: number;
+  totalGames: number;
+  completedGames: number;
+  activeGames: number;
+  onlineGames: number;
+}
+
+interface DayCount { date: string; count: number; }
+interface EventByType { eventType: string; count: number; }
+interface GameByMode { mode: string; count: number; }
+interface GameByPlayers { playerCount: number; count: number; }
+interface RecentEvent { eventType: string; gameId: string | null; userId: string | null; userName: string | null; metadata: Record<string, unknown> | null; createdAt: string; }
+interface TopUser { userId: string; name: string; email: string; loginCount: number; gamesCreated: number; lastLogin: string | null; }
+
+interface AnalyticsData {
+  summary: AnalyticsSummary;
+  registrationsOverTime: DayCount[];
+  loginsOverTime: DayCount[];
+  eventsByType: EventByType[];
+  gamesByMode: GameByMode[];
+  gamesByPlayerCount: GameByPlayers[];
+  recentEvents: RecentEvent[];
+  topUsers: TopUser[];
 }
 
 // ── Admin auth helpers ─────────────────────────────────────────────────────────
@@ -287,6 +320,211 @@ function CardsTab({ adminKey }: { adminKey: string }) {
   );
 }
 
+// ── Analytics tab ─────────────────────────────────────────────────────────────
+
+function StatCard({ icon: Icon, label, value, sub, color }: { icon: React.ElementType; label: string; value: number | string; sub?: string; color: string }) {
+  return (
+    <div className="bg-card border border-border rounded-xl p-4 flex flex-col gap-1">
+      <div className={cn("w-8 h-8 rounded-lg flex items-center justify-center mb-1", color)}>
+        <Icon className="w-4 h-4 text-white" />
+      </div>
+      <div className="text-2xl font-bold text-foreground">{value}</div>
+      <div className="text-sm font-medium text-foreground">{label}</div>
+      {sub && <div className="text-xs text-muted-foreground">{sub}</div>}
+    </div>
+  );
+}
+
+function MiniBar({ value, max, color }: { value: number; max: number; color: string }) {
+  const pct = max > 0 ? Math.round((value / max) * 100) : 0;
+  return (
+    <div className="flex items-center gap-2 w-full">
+      <div className="flex-1 h-2 bg-muted rounded-full overflow-hidden">
+        <div className={cn("h-full rounded-full transition-all", color)} style={{ width: `${pct}%` }} />
+      </div>
+      <span className="text-xs text-muted-foreground w-6 text-right">{value}</span>
+    </div>
+  );
+}
+
+function SparkLine({ data, color }: { data: DayCount[]; color: string }) {
+  if (!data.length) return <div className="text-xs text-muted-foreground italic">No data yet</div>;
+  const max = Math.max(...data.map(d => d.count), 1);
+  return (
+    <div className="flex items-end gap-0.5 h-16 w-full">
+      {data.map((d, i) => (
+        <div
+          key={i}
+          title={`${d.date}: ${d.count}`}
+          style={{ height: `${Math.max(4, (d.count / max) * 100)}%`, flex: 1 }}
+          className={cn("rounded-t-sm min-w-[3px] transition-all", color)}
+        />
+      ))}
+    </div>
+  );
+}
+
+const EVENT_LABELS: Record<string, string> = {
+  register: "Registered",
+  login: "Logged in",
+  game_created: "Started game",
+  player_joined: "Joined game",
+  game_completed: "Finished game",
+};
+
+function AnalyticsTab({ adminKey }: { adminKey: string }) {
+  const { data, isLoading, error, refetch } = useQuery<AnalyticsData>({
+    queryKey: ["admin-analytics", adminKey],
+    queryFn: async () => {
+      const res = await fetch("/api/admin/analytics", { headers: { "x-admin-key": adminKey } });
+      if (!res.ok) throw new Error("Failed to fetch analytics");
+      return res.json();
+    },
+    refetchInterval: 30_000,
+  });
+
+  if (isLoading) return <div className="flex justify-center py-12"><Loader2 className="w-6 h-6 animate-spin text-muted-foreground" /></div>;
+  if (error || !data) return <div className="text-center py-12 text-destructive">Failed to load analytics. <button onClick={() => refetch()} className="underline">Retry</button></div>;
+
+  const { summary, registrationsOverTime, loginsOverTime, eventsByType, gamesByMode, gamesByPlayerCount, recentEvents, topUsers } = data;
+  const maxEventCount = Math.max(...eventsByType.map(e => e.count), 1);
+
+  return (
+    <div className="space-y-8">
+      {/* Summary Cards */}
+      <div>
+        <h2 className="text-sm font-bold uppercase tracking-wider text-muted-foreground mb-3">Overview</h2>
+        <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+          <StatCard icon={UserCheck} label="Registered Users" value={summary.totalUsers} color="bg-emerald-600" />
+          <StatCard icon={LogIn} label="Total Logins" value={summary.totalLogins} color="bg-blue-600" />
+          <StatCard icon={Gamepad2} label="Games Started" value={summary.totalGames} sub={`${summary.onlineGames} online`} color="bg-violet-600" />
+          <StatCard icon={Trophy} label="Games Completed" value={summary.completedGames} color="bg-amber-600" />
+          <StatCard icon={Activity} label="Active Games" value={summary.activeGames} sub="in progress" color="bg-rose-600" />
+        </div>
+      </div>
+
+      {/* Activity charts */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+        <div className="bg-card border border-border rounded-xl p-4">
+          <div className="text-sm font-bold text-foreground mb-3">New Registrations (last 30 days)</div>
+          <SparkLine data={registrationsOverTime} color="bg-emerald-500" />
+        </div>
+        <div className="bg-card border border-border rounded-xl p-4">
+          <div className="text-sm font-bold text-foreground mb-3">Logins (last 30 days)</div>
+          <SparkLine data={loginsOverTime} color="bg-blue-500" />
+        </div>
+      </div>
+
+      {/* Events breakdown */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+        <div className="bg-card border border-border rounded-xl p-4">
+          <div className="text-sm font-bold text-foreground mb-3">Events (last 30 days)</div>
+          <div className="space-y-2">
+            {eventsByType.length === 0 && <div className="text-xs text-muted-foreground italic">No events yet</div>}
+            {eventsByType.map(e => (
+              <div key={e.eventType} className="space-y-0.5">
+                <div className="flex justify-between text-xs">
+                  <span className="text-foreground font-medium">{EVENT_LABELS[e.eventType] ?? e.eventType}</span>
+                </div>
+                <MiniBar value={e.count} max={maxEventCount} color="bg-primary" />
+              </div>
+            ))}
+          </div>
+        </div>
+
+        <div className="bg-card border border-border rounded-xl p-4 space-y-4">
+          <div>
+            <div className="text-sm font-bold text-foreground mb-2">Games by Mode</div>
+            <div className="space-y-1.5">
+              {gamesByMode.length === 0 && <div className="text-xs text-muted-foreground italic">No data yet</div>}
+              {gamesByMode.map(m => {
+                const maxMode = Math.max(...gamesByMode.map(x => x.count), 1);
+                return (
+                  <div key={m.mode} className="space-y-0.5">
+                    <div className="text-xs text-foreground font-medium capitalize">{m.mode}</div>
+                    <MiniBar value={m.count} max={maxMode} color="bg-violet-500" />
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+          <div>
+            <div className="text-sm font-bold text-foreground mb-2">Games by Player Count</div>
+            <div className="space-y-1.5">
+              {gamesByPlayerCount.length === 0 && <div className="text-xs text-muted-foreground italic">No data yet</div>}
+              {gamesByPlayerCount.map(g => {
+                const maxP = Math.max(...gamesByPlayerCount.map(x => x.count), 1);
+                return (
+                  <div key={g.playerCount} className="space-y-0.5">
+                    <div className="text-xs text-foreground font-medium">{g.playerCount} players</div>
+                    <MiniBar value={g.count} max={maxP} color="bg-amber-500" />
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* Top Users */}
+      {topUsers.length > 0 && (
+        <div className="bg-card border border-border rounded-xl overflow-hidden">
+          <div className="px-4 pt-4 pb-2 border-b border-border">
+            <div className="text-sm font-bold text-foreground">Top Users by Activity</div>
+          </div>
+          <div className="divide-y divide-border">
+            {topUsers.slice(0, 10).map(u => (
+              <div key={u.userId} className="px-4 py-2.5 flex items-center gap-3 text-sm">
+                <div className="flex-1 min-w-0">
+                  <div className="font-medium text-foreground truncate">{u.name}</div>
+                  <div className="text-xs text-muted-foreground truncate">{u.email}</div>
+                </div>
+                <div className="text-right shrink-0">
+                  <div className="text-xs text-foreground"><span className="font-semibold">{u.loginCount}</span> logins</div>
+                  <div className="text-xs text-muted-foreground"><span className="font-semibold">{u.gamesCreated}</span> games</div>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Recent Activity Feed */}
+      <div className="bg-card border border-border rounded-xl overflow-hidden">
+        <div className="px-4 pt-4 pb-2 border-b border-border flex items-center justify-between">
+          <div className="text-sm font-bold text-foreground">Recent Activity</div>
+          <button onClick={() => refetch()} className="text-xs text-muted-foreground hover:text-foreground transition-colors">Refresh</button>
+        </div>
+        {recentEvents.length === 0 && <div className="px-4 py-6 text-xs text-muted-foreground italic text-center">No events recorded yet</div>}
+        <div className="divide-y divide-border max-h-80 overflow-y-auto">
+          {recentEvents.map((ev, i) => {
+            const d = new Date(ev.createdAt);
+            const label = EVENT_LABELS[ev.eventType] ?? ev.eventType;
+            const who = ev.userName ?? ev.userId ?? "—";
+            const details: string[] = [];
+            if (ev.metadata) {
+              if (ev.metadata.mode) details.push(String(ev.metadata.mode));
+              if (ev.metadata.playerCount) details.push(`${ev.metadata.playerCount} players`);
+              if (ev.metadata.winner) details.push(`winner: ${ev.metadata.winner}`);
+            }
+            return (
+              <div key={i} className="px-4 py-2 flex items-center gap-3 text-xs">
+                <div className="w-20 shrink-0 text-muted-foreground">{d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}</div>
+                <div className="flex-1 min-w-0">
+                  <span className="font-medium text-foreground">{label}</span>
+                  {who !== "—" && <span className="text-muted-foreground"> · {who}</span>}
+                  {details.length > 0 && <span className="text-muted-foreground"> · {details.join(", ")}</span>}
+                </div>
+                <div className="shrink-0 text-muted-foreground">{d.toLocaleDateString([], { month: "short", day: "numeric" })}</div>
+              </div>
+            );
+          })}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ── Users tab ─────────────────────────────────────────────────────────────────
 
 function UsersTab({ adminKey }: { adminKey: string }) {
@@ -401,7 +639,7 @@ export default function Admin() {
   const [, setLocation] = useLocation();
   const [adminKey, setAdminKey] = useState<string | null>(() => localStorage.getItem(ADMIN_KEY_STORAGE));
   const [validating, setValidating] = useState(!!adminKey);
-  const [tab, setTab] = useState<"cards" | "users">("users");
+  const [tab, setTab] = useState<"cards" | "users" | "analytics">("users");
 
   useEffect(() => {
     if (!adminKey) return;
@@ -448,7 +686,7 @@ export default function Admin() {
           </button>
         </div>
 
-        <div className="max-w-3xl mx-auto mt-3 flex gap-1">
+        <div className="max-w-3xl mx-auto mt-3 flex gap-1 flex-wrap">
           <button
             onClick={() => setTab("users")}
             className={cn("flex items-center gap-1.5 text-sm font-bold px-4 py-2 rounded-xl transition-colors", tab === "users" ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:text-foreground hover:bg-muted/50")}
@@ -461,12 +699,19 @@ export default function Admin() {
           >
             <CreditCard className="w-4 h-4" /> Cards
           </button>
+          <button
+            onClick={() => setTab("analytics")}
+            className={cn("flex items-center gap-1.5 text-sm font-bold px-4 py-2 rounded-xl transition-colors", tab === "analytics" ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:text-foreground hover:bg-muted/50")}
+          >
+            <BarChart2 className="w-4 h-4" /> Analytics
+          </button>
         </div>
       </div>
 
       <div className="max-w-3xl mx-auto px-6 py-6">
         {tab === "users" && <UsersTab adminKey={adminKey} />}
         {tab === "cards" && <CardsTab adminKey={adminKey} />}
+        {tab === "analytics" && <AnalyticsTab adminKey={adminKey} />}
       </div>
     </div>
   );

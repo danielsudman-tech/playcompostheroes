@@ -1,4 +1,4 @@
-import { pgTable, text, timestamp } from "drizzle-orm/pg-core";
+import { pgTable, text, timestamp, integer } from "drizzle-orm/pg-core";
 import { sql } from "drizzle-orm";
 
 export const compostUsers = pgTable("compost_users", {
@@ -15,5 +15,15 @@ export const compostUserSessions = pgTable("compost_user_sessions", {
   userId: text("user_id")
     .notNull()
     .references(() => compostUsers.id, { onDelete: "cascade" }),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow(),
+});
+
+export const compostAnalyticsEvents = pgTable("compost_analytics_events", {
+  id: text("id").primaryKey().default(sql`gen_random_uuid()::text`),
+  eventType: text("event_type").notNull(),
+  userId: text("user_id"),
+  gameId: text("game_id"),
+  intValue: integer("int_value"),
+  metadata: text("metadata"),
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow(),
 });
