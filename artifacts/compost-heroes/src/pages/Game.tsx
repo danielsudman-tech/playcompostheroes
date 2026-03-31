@@ -510,7 +510,7 @@ export default function Game() {
 
   return (
     <>
-    <div className="min-h-screen bg-background game-table-pattern flex flex-col overflow-x-hidden md:overflow-hidden text-foreground">
+    <div className="min-h-screen md:h-screen bg-background game-table-pattern flex flex-col overflow-x-hidden md:overflow-hidden text-foreground">
       {/* Background Decor */}
       <div className="fixed inset-0 pointer-events-none opacity-[0.03] z-0 mix-blend-multiply">
          <img src={`${import.meta.env.BASE_URL}images/wood-bg.png`} className="w-full h-full object-cover" alt="" />
@@ -575,7 +575,7 @@ export default function Game() {
       </AnimatePresence>
 
       {/* TOP ROW: Opponents */}
-      <div className="relative z-10 flex-none p-4 pb-0 flex justify-center gap-4 overflow-x-auto">
+      <div className="relative z-10 flex-none py-2 px-4 pb-0 flex justify-center gap-4 overflow-x-auto">
         {opponents.map(opp => {
           const oppIndex = gameState.players.findIndex(p => p.id === opp.id);
           const isOppTurn = opp.id === currentPlayer.id;
@@ -611,10 +611,10 @@ export default function Game() {
       </div>
 
       {/* MIDDLE ROW: Board — matches physical mat layout. On mobile: auto height + pb-[520px] keeps content scrollable above fixed overlay. */}
-      <div className="relative z-10 md:flex-1 flex flex-row gap-4 px-4 py-2 pb-[520px] md:pb-2 items-stretch justify-center">
+      <div className="relative z-10 md:flex-1 md:min-h-0 flex flex-row gap-4 px-4 py-2 pb-[520px] md:pb-2 items-stretch justify-center">
 
         {/* Left: Activity Log */}
-        <div className="hidden lg:flex flex-col w-56 bg-card/80 backdrop-blur-md border border-border shadow-inner rounded-xl overflow-hidden self-center" style={{ maxHeight: 320 }}>
+        <div className="hidden lg:flex flex-col w-56 bg-card/80 backdrop-blur-md border border-border shadow-inner rounded-xl overflow-hidden self-center" style={{ maxHeight: 220 }}>
           <div className="px-3 py-2 bg-muted/50 border-b border-border flex items-center gap-2 font-bold text-xs uppercase tracking-wider shrink-0">
             <History className="w-3.5 h-3.5" /> Activity Log
           </div>
@@ -847,7 +847,7 @@ export default function Game() {
       </div>
 
       {/* BOTTOM ROW: Local Player mat (desktop only — mobile uses My Pile tab) */}
-      <div className="relative z-20 pb-[420px] max-w-3xl mx-auto w-full hidden md:block">
+      <div className="relative z-20 pb-[200px] max-w-3xl mx-auto w-full hidden md:block">
         <PlayerMat 
           player={localPlayerFull} 
           isCurrentPlayer={isMyTurn}
