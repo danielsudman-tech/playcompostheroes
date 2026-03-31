@@ -117,6 +117,97 @@ router.delete("/admin/cards/:cardId/image", (req, res) => {
   res.json({ success: true });
 });
 
+// GET /api/admin/games — list all games with state summary
+router.get("/admin/games", async (req, res) => {
+  const phaseFilter = (req.query.phase as string | undefined) ?? "all";
+  try {
+    const whereClause = phaseFilter === "all"
+      ? ""
+      : phaseFilter === "active"
+        ? `WHERE state->>'phase' NOT IN ('game_over','waiting') AND updated_at > NOW() - INTERVAL '3 hours'`
+        : phaseFilter === "waiting"
+          ? `WHERE state->>'phase' = 'waiting'`
+          : phaseFilter === "finished"
+            ? `WHERE state->>'phase' = 'game_over'`
+            : "";
+
+    const result = await pool.query<{
+      game_id: string;
+      phase: string;
+      mode: string;
+      player_count: string;
+      player_names: string;
+      updated_at: string;
+      created_at: string;
+      completed_at: string | null;
+      has_password: string;
+    }>(`
+      SELECT
+        game_id,
+        state->>'phase' AS phase,
+        state->>'mode' AS mode,
+        jsonb_array_length(state->'players') AS player_count,
+        (
+          SELECT string_agg(p->>'name', ', ' ORDER BY ordinality)
+          FROM jsonb_array_elements(state->'players') WITH ORDINALITY AS t(p, ordinality)
+        ) AS player_names,
+        updated_at,
+        created_at,
+        completed_at,
+        CASE WHEN password IS NOT NULL THEN 'true' ELSE 'false' END AS has_password
+      FROM compost_games
+      ${whereClause}
+      ORDER BY updated_at DESC
+      LIMIT 200
+    `);
+
+    const phaseCounts = await pool.query<{ phase: string; count: string }>(`
+      SELECT state->>'phase' AS phase, COUNT(*) AS count FROM compost_games GROUP BY phase
+    `);
+
+    const activeCount = await pool.query<{ count: string }>(`
+      SELECT COUNT(*) AS count FROM compost_games
+      WHERE state->>'phase' NOT IN ('game_over','waiting') AND updated_at > NOW() - INTERVAL '3 hours'
+    `);
+
+    res.json({
+      games: result.rows.map(r => ({
+        gameId: r.game_id,
+        phase: r.phase,
+        mode: r.mode,
+        playerCount: parseInt(r.player_count, 10),
+        playerNames: r.player_names ?? "",
+        updatedAt: r.updated_at,
+        createdAt: r.created_at,
+        completedAt: r.completed_at,
+        hasPassword: r.has_password === "true",
+      })),
+      phaseCounts: Object.fromEntries(phaseCounts.rows.map(r => [r.phase, parseInt(r.count, 10)])),
+      activeCount: parseInt(activeCount.rows[0]?.count ?? "0", 10),
+    });
+  } catch (err) {
+    console.error("[admin games]", err);
+    res.status(500).json({ error: "Failed to fetch games" });
+  }
+});
+
+// DELETE /api/admin/games/:gameId — delete a game record
+router.delete("/admin/games/:gameId", async (req, res) => {
+  const { gameId } = req.params as { gameId: string };
+  try {
+    await pool.query(`DELETE FROM compost_game_tokens WHERE game_id = $1`, [gameId]);
+    const result = await pool.query(`DELETE FROM compost_games WHERE game_id = $1`, [gameId]);
+    if ((result.rowCount ?? 0) === 0) {
+      res.status(404).json({ error: "Game not found" });
+      return;
+    }
+    res.json({ success: true });
+  } catch (err) {
+    console.error("[admin delete game]", err);
+    res.status(500).json({ error: "Failed to delete game" });
+  }
+});
+
 // GET /api/admin/analytics — player behavior summary
 router.get("/admin/analytics", async (_req, res) => {
   try {
@@ -144,7 +235,7 @@ router.get("/admin/analytics", async (_req, res) => {
           (SELECT COUNT(*) FROM compost_analytics_events WHERE event_type = 'login') AS total_logins,
           (SELECT COUNT(*) FROM compost_analytics_events WHERE event_type = 'game_created') AS total_games,
           (SELECT COUNT(*) FROM compost_analytics_events WHERE event_type = 'game_completed') AS completed_games,
-          (SELECT COUNT(*) FROM compost_games WHERE state->>'phase' NOT IN ('game_over','waiting')) AS active_games,
+          (SELECT COUNT(*) FROM compost_games WHERE state->>'phase' NOT IN ('game_over','waiting') AND updated_at > NOW() - INTERVAL '3 hours') AS active_games,
           (SELECT COUNT(*) FROM compost_analytics_events WHERE event_type = 'game_created' AND metadata::jsonb->>'mode' = 'online') AS online_games
       `),
 

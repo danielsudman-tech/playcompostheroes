@@ -320,6 +320,172 @@ function CardsTab({ adminKey }: { adminKey: string }) {
   );
 }
 
+interface AdminGame {
+  gameId: string;
+  phase: string;
+  mode: string;
+  playerCount: number;
+  playerNames: string;
+  updatedAt: string;
+  createdAt: string;
+  completedAt: string | null;
+  hasPassword: boolean;
+}
+
+interface GamesData {
+  games: AdminGame[];
+  phaseCounts: Record<string, number>;
+  activeCount: number;
+}
+
+// ── Games tab ─────────────────────────────────────────────────────────────────
+
+const PHASE_LABELS: Record<string, { label: string; color: string }> = {
+  waiting: { label: "Waiting", color: "bg-amber-100 text-amber-800" },
+  draw: { label: "Drawing", color: "bg-blue-100 text-blue-800" },
+  play: { label: "Playing", color: "bg-green-100 text-green-800" },
+  game_over: { label: "Finished", color: "bg-muted text-muted-foreground" },
+};
+
+function timeAgo(iso: string): string {
+  const secs = Math.floor((Date.now() - new Date(iso).getTime()) / 1000);
+  if (secs < 60) return `${secs}s ago`;
+  if (secs < 3600) return `${Math.floor(secs / 60)}m ago`;
+  if (secs < 86400) return `${Math.floor(secs / 3600)}h ago`;
+  return `${Math.floor(secs / 86400)}d ago`;
+}
+
+function GamesTab({ adminKey }: { adminKey: string }) {
+  const queryClient = useQueryClient();
+  const [filter, setFilter] = useState<"all" | "active" | "waiting" | "finished">("all");
+  const [deletingId, setDeletingId] = useState<string | null>(null);
+  const { toast } = useToast();
+
+  const { data, isLoading, error, refetch } = useQuery<GamesData>({
+    queryKey: ["admin-games", adminKey, filter],
+    queryFn: async () => {
+      const res = await fetch(`/api/admin/games?phase=${filter}`, { headers: { "x-admin-key": adminKey } });
+      if (!res.ok) throw new Error("Failed to fetch games");
+      return res.json();
+    },
+    refetchInterval: 15_000,
+  });
+
+  const deleteGame = useMutation({
+    mutationFn: async (gameId: string) => {
+      const res = await fetch(`/api/admin/games/${gameId}`, {
+        method: "DELETE",
+        headers: adminHeaders(adminKey),
+      });
+      if (!res.ok) throw new Error("Failed to delete game");
+    },
+    onSuccess: (_data, gameId) => {
+      toast({ title: "Game deleted", description: gameId });
+      queryClient.invalidateQueries({ queryKey: ["admin-games"] });
+      setDeletingId(null);
+    },
+    onError: () => {
+      toast({ title: "Failed to delete", variant: "destructive" });
+      setDeletingId(null);
+    },
+  });
+
+  if (isLoading) return <div className="flex justify-center py-12"><Loader2 className="w-6 h-6 animate-spin text-muted-foreground" /></div>;
+  if (error || !data) return <div className="text-center py-12 text-destructive">Failed to load games. <button onClick={() => refetch()} className="underline">Retry</button></div>;
+
+  const FILTERS: { key: typeof filter; label: string }[] = [
+    { key: "all", label: `All (${(data.phaseCounts.waiting ?? 0) + (data.phaseCounts.draw ?? 0) + (data.phaseCounts.play ?? 0) + (data.phaseCounts.game_over ?? 0)})` },
+    { key: "active", label: `Active (${data.activeCount})` },
+    { key: "waiting", label: `Waiting (${data.phaseCounts.waiting ?? 0})` },
+    { key: "finished", label: `Finished (${data.phaseCounts.game_over ?? 0})` },
+  ];
+
+  return (
+    <div className="space-y-4">
+      {/* Phase summary */}
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+        {[
+          { label: "Active", value: data.activeCount, note: "updated <3h", color: "bg-green-600" },
+          { label: "Waiting", value: data.phaseCounts.waiting ?? 0, note: "in lobby", color: "bg-amber-600" },
+          { label: "Finished", value: data.phaseCounts.game_over ?? 0, note: "game over", color: "bg-muted-foreground" },
+          { label: "Total", value: Object.values(data.phaseCounts).reduce((a, b) => a + b, 0), note: "all time", color: "bg-blue-600" },
+        ].map(s => (
+          <div key={s.label} className="bg-card border border-border rounded-xl p-3 flex flex-col gap-0.5">
+            <div className={cn("w-6 h-6 rounded-md flex items-center justify-center mb-1", s.color)}>
+              <Gamepad2 className="w-3 h-3 text-white" />
+            </div>
+            <div className="text-xl font-bold text-foreground">{s.value}</div>
+            <div className="text-xs font-medium text-foreground">{s.label}</div>
+            <div className="text-[10px] text-muted-foreground">{s.note}</div>
+          </div>
+        ))}
+      </div>
+
+      {/* Filter tabs */}
+      <div className="flex gap-1 flex-wrap">
+        {FILTERS.map(f => (
+          <button key={f.key} onClick={() => setFilter(f.key)}
+            className={cn("text-xs font-bold px-3 py-1.5 rounded-lg transition-colors",
+              filter === f.key ? "bg-primary text-primary-foreground" : "bg-muted text-muted-foreground hover:text-foreground")}
+          >{f.label}</button>
+        ))}
+        <button onClick={() => refetch()} className="ml-auto text-xs text-muted-foreground hover:text-foreground transition-colors px-2">↻ Refresh</button>
+      </div>
+
+      {/* Games list */}
+      <div className="bg-card border border-border rounded-xl overflow-hidden">
+        {data.games.length === 0 && (
+          <div className="px-4 py-8 text-center text-sm text-muted-foreground italic">No games found</div>
+        )}
+        <div className="divide-y divide-border">
+          {data.games.map(g => {
+            const phaseInfo = PHASE_LABELS[g.phase] ?? { label: g.phase, color: "bg-muted text-muted-foreground" };
+            const isStale = g.phase !== "game_over" && g.phase !== "waiting" &&
+              (Date.now() - new Date(g.updatedAt).getTime()) > 3 * 3600 * 1000;
+            const confirmingDelete = deletingId === g.gameId;
+            return (
+              <div key={g.gameId} className={cn("px-4 py-3 flex items-start gap-3", isStale && "opacity-50")}>
+                <div className="flex-1 min-w-0 space-y-1">
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <span className={cn("text-[10px] font-bold px-1.5 py-0.5 rounded-full", phaseInfo.color)}>{phaseInfo.label}</span>
+                    <span className="text-[10px] bg-muted text-muted-foreground font-medium px-1.5 py-0.5 rounded-full capitalize">{g.mode}</span>
+                    {g.hasPassword && <span className="text-[10px] text-muted-foreground">🔒</span>}
+                    {isStale && <span className="text-[10px] text-amber-600 font-semibold">stale</span>}
+                  </div>
+                  <div className="text-xs font-medium text-foreground">{g.playerNames || "—"}</div>
+                  <div className="flex items-center gap-2 text-[10px] text-muted-foreground">
+                    <span>{g.playerCount} player{g.playerCount !== 1 ? "s" : ""}</span>
+                    <span>·</span>
+                    <span title={g.updatedAt}>updated {timeAgo(g.updatedAt)}</span>
+                    <span>·</span>
+                    <span className="font-mono">{g.gameId}</span>
+                  </div>
+                </div>
+                <div className="shrink-0 flex items-center gap-2">
+                  {confirmingDelete ? (
+                    <>
+                      <button onClick={() => setDeletingId(null)} className="text-[10px] text-muted-foreground hover:text-foreground transition-colors">Cancel</button>
+                      <button onClick={() => deleteGame.mutate(g.gameId)} disabled={deleteGame.isPending}
+                        className="text-[10px] font-bold text-destructive border border-destructive/30 rounded px-2 py-1 hover:bg-destructive/10 transition-colors">
+                        {deleteGame.isPending ? "…" : "Delete"}
+                      </button>
+                    </>
+                  ) : (
+                    <button onClick={() => setDeletingId(g.gameId)}
+                      className="text-[10px] text-muted-foreground/40 hover:text-destructive transition-colors p-1">
+                      <Trash2 className="w-3.5 h-3.5" />
+                    </button>
+                  )}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ── Analytics tab ─────────────────────────────────────────────────────────────
 
 function StatCard({ icon: Icon, label, value, sub, color }: { icon: React.ElementType; label: string; value: number | string; sub?: string; color: string }) {
@@ -639,7 +805,7 @@ export default function Admin() {
   const [, setLocation] = useLocation();
   const [adminKey, setAdminKey] = useState<string | null>(() => localStorage.getItem(ADMIN_KEY_STORAGE));
   const [validating, setValidating] = useState(!!adminKey);
-  const [tab, setTab] = useState<"cards" | "users" | "analytics">("users");
+  const [tab, setTab] = useState<"cards" | "users" | "analytics" | "games">("users");
 
   useEffect(() => {
     if (!adminKey) return;
@@ -705,6 +871,12 @@ export default function Admin() {
           >
             <BarChart2 className="w-4 h-4" /> Analytics
           </button>
+          <button
+            onClick={() => setTab("games")}
+            className={cn("flex items-center gap-1.5 text-sm font-bold px-4 py-2 rounded-xl transition-colors", tab === "games" ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:text-foreground hover:bg-muted/50")}
+          >
+            <Gamepad2 className="w-4 h-4" /> Games
+          </button>
         </div>
       </div>
 
@@ -712,6 +884,7 @@ export default function Admin() {
         {tab === "users" && <UsersTab adminKey={adminKey} />}
         {tab === "cards" && <CardsTab adminKey={adminKey} />}
         {tab === "analytics" && <AnalyticsTab adminKey={adminKey} />}
+        {tab === "games" && <GamesTab adminKey={adminKey} />}
       </div>
     </div>
   );
