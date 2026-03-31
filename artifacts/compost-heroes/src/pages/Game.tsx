@@ -31,6 +31,7 @@ import {
   ChevronLeft,
   ChevronRight,
   ChevronDown,
+  ChevronUp,
   Lock,
   MoveRight,
   Bell,
@@ -132,6 +133,7 @@ export default function Game() {
   // Desktop hand area expanded state — all cards grow when mouse enters the row
   const [isHandHovered, setIsHandHovered] = useState(false);
   const [handMinimized, setHandMinimized] = useState(false);
+  const [pileCollapsed, setPileCollapsed] = useState(false);
 
   // Sound effect utility (Web Audio API — no external files needed)
   const playSound = useCallback((type: "draw" | "play_action" | "play_hero" | "error") => {
@@ -847,15 +849,54 @@ export default function Game() {
       </div>
 
       {/* BOTTOM ROW: Local Player mat (desktop only — mobile uses My Pile tab) */}
-      <div className="relative z-20 pb-[200px] max-w-3xl mx-auto w-full hidden md:block">
-        <PlayerMat 
-          player={localPlayerFull} 
-          isCurrentPlayer={isMyTurn}
-          isLocalUser={true}
-          isActiveTurn={isMyTurn}
-          onPlayCard={handlePlayCard}
-          onMoveLayer={(cardId, targetFunction) => actionMutation.mutate({ type: "move_card_layer" as any, playerId: localPlayerId!, cardId, targetFunction })}
-        />
+      <div
+        className="relative z-20 max-w-3xl mx-auto w-full hidden md:block"
+        style={{ paddingBottom: handMinimized ? 48 : 200 }}
+      >
+        {/* Collapse toggle header — always visible */}
+        <button
+          className="w-full flex items-center justify-between px-4 py-1.5 bg-card/90 backdrop-blur-md border-t border-border hover:bg-muted/30 transition-colors group"
+          onClick={() => setPileCollapsed(c => !c)}
+          title={pileCollapsed ? "Show your compost pile" : "Hide your compost pile"}
+        >
+          <div className="flex items-center gap-2">
+            <span className="text-xs font-bold text-muted-foreground uppercase tracking-wide">Your Compost Pile</span>
+            <span className="text-[10px] bg-primary/10 text-primary font-bold px-1.5 py-0.5 rounded-full border border-primary/20">
+              {localPlayerFull.compostPile.length} / 5 cards
+            </span>
+          </div>
+          <div className="flex items-center gap-1.5 text-muted-foreground group-hover:text-foreground transition-colors">
+            {pileCollapsed && (
+              <span className="text-[11px] text-amber-600 font-semibold">Click to show</span>
+            )}
+            {pileCollapsed
+              ? <ChevronUp className="w-3.5 h-3.5" />
+              : <ChevronDown className="w-3.5 h-3.5" />
+            }
+          </div>
+        </button>
+        {/* Pile body — collapsible */}
+        <AnimatePresence initial={false}>
+          {!pileCollapsed && (
+            <motion.div
+              key="pile-body"
+              initial={{ height: 0, opacity: 0 }}
+              animate={{ height: "auto", opacity: 1 }}
+              exit={{ height: 0, opacity: 0 }}
+              transition={{ duration: 0.2, ease: "easeInOut" }}
+              className="overflow-hidden"
+            >
+              <PlayerMat
+                player={localPlayerFull}
+                isCurrentPlayer={isMyTurn}
+                isLocalUser={true}
+                isActiveTurn={isMyTurn}
+                onPlayCard={handlePlayCard}
+                onMoveLayer={(cardId, targetFunction) => actionMutation.mutate({ type: "move_card_layer" as any, playerId: localPlayerId!, cardId, targetFunction })}
+              />
+            </motion.div>
+          )}
+        </AnimatePresence>
       </div>
 
       {/* HAND + TURN CONTROLS OVERLAY — fixed at screen bottom. Hand above, turn controls at very bottom. */}
@@ -877,19 +918,48 @@ export default function Game() {
               className="bg-card/95 backdrop-blur-md border-t border-border"
               layout
             >
-              <div className="flex items-center justify-between px-4 py-1.5">
-                <span className="text-xs font-medium text-muted-foreground">
-                  Hand&nbsp;
-                  <span className="font-mono text-[10px] text-foreground/40">
-                    {hand.length}/{localPlayerFull.maxHandSize}
+              {/* Hand header — clickable to minimize */}
+              <button
+                className="w-full flex items-center justify-between px-4 py-1.5 hover:bg-muted/20 transition-colors group"
+                onClick={() => setHandMinimized(m => !m)}
+                title={handMinimized ? "Show hand" : "Hide hand"}
+              >
+                <div className="flex items-center gap-2">
+                  <span className="text-xs font-medium text-muted-foreground">
+                    Hand&nbsp;
+                    <span className="font-mono text-[10px] text-foreground/40">
+                      {hand.length}/{localPlayerFull.maxHandSize}
+                    </span>
                   </span>
-                </span>
-                {isPlayPhase && (
-                  <span className="text-[11px] text-primary font-semibold">
-                    {isHandHovered ? "Click a card to play it" : "Hover to expand · Click to play"}
+                  {handMinimized && hand.length > 0 && (
+                    <span className="text-[11px] text-amber-600 font-semibold">Hidden · click to show</span>
+                  )}
+                </div>
+                <div className="flex items-center gap-2">
+                  {isPlayPhase && !handMinimized && (
+                    <span className="text-[11px] text-primary font-semibold">
+                      {isHandHovered ? "Click a card to play it" : "Hover to expand · Click to play"}
+                    </span>
+                  )}
+                  {isPlayPhase && handMinimized && (
+                    <span className="text-[11px] text-primary font-semibold animate-pulse">Your turn!</span>
+                  )}
+                  <span className="text-muted-foreground group-hover:text-foreground transition-colors">
+                    {handMinimized ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
                   </span>
-                )}
-              </div>
+                </div>
+              </button>
+              {/* Cards row — collapsible */}
+              <AnimatePresence initial={false}>
+              {!handMinimized && (
+              <motion.div
+                key="hand-cards"
+                initial={{ height: 0, opacity: 0 }}
+                animate={{ height: "auto", opacity: 1 }}
+                exit={{ height: 0, opacity: 0 }}
+                transition={{ duration: 0.18, ease: "easeInOut" }}
+                className="overflow-hidden"
+              >
               <div className={cn(
                 "flex gap-3 px-4 pb-3 transition-all",
                 isHandHovered
@@ -945,6 +1015,9 @@ export default function Game() {
                   );
                 })}
               </div>
+              </motion.div>
+              )}
+              </AnimatePresence>
             </motion.div>
           );
         })()}
