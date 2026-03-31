@@ -807,7 +807,7 @@ export default function Game() {
       {/* BOTTOM ROW: Local Player mat (desktop only — pile toggle lives in overlay so it stays clickable) */}
       <div
         className="relative z-20 max-w-3xl mx-auto w-full hidden md:block"
-        style={{ paddingBottom: handMinimized ? 130 : 320 }}
+        style={{ paddingBottom: handMinimized ? 130 : 380 }}
       >
         <AnimatePresence initial={false}>
           {!pileCollapsed && (
@@ -928,7 +928,7 @@ export default function Game() {
                       transition={{ type: "spring", stiffness: 280, damping: 28 }}
                       onClick={() => !isBlocked && handleCardClick(card)}
                       className={cn(
-                        "shrink-0 cursor-pointer rounded-xl overflow-hidden w-[144px] h-[208px]",
+                        "shrink-0 cursor-pointer rounded-xl overflow-hidden w-[176px] h-[256px]",
                         isPlayable && "ring-2 ring-primary/60 shadow-md shadow-primary/20 hover:shadow-lg hover:shadow-primary/30 hover:-translate-y-1 transition-transform",
                         isBlocked && "cursor-not-allowed",
                       )}
