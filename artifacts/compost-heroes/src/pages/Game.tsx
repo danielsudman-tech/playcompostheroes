@@ -1,5 +1,4 @@
 import { useState, useEffect, useRef, useCallback } from "react";
-import { createPortal } from "react-dom";
 import { useParams, useLocation } from "wouter";
 import { motion, AnimatePresence } from "framer-motion";
 import confetti from "canvas-confetti";
@@ -124,14 +123,6 @@ export default function Game() {
   const prevPlayerIndexRef = useRef<number | null>(null);
   const isFirstRender = useRef(true);
 
-  // Desktop hand-card hover preview portal
-  const [hoveredHandCard, setHoveredHandCard] = useState<{
-    imageSrc: string | null;
-    name: string;
-    rect: DOMRect;
-  } | null>(null);
-  // Desktop hand area expanded state — all cards grow when mouse enters the row
-  const [isHandHovered, setIsHandHovered] = useState(false);
   const [handMinimized, setHandMinimized] = useState(false);
   const [pileCollapsed, setPileCollapsed] = useState(false);
 
@@ -474,41 +465,6 @@ export default function Game() {
     ? gameState.discardPile[gameState.discardPile.length - 1] 
     : null;
 
-  // Portal must be computed outside JSX to avoid parser issues with createPortal(<JSX>, node) inside expressions
-  const handCardPortal = hoveredHandCard
-    ? createPortal(
-        <div
-          className="pointer-events-none fixed z-[9999]"
-          style={{
-            left: Math.max(8, Math.min(
-              window.innerWidth - 232,
-              hoveredHandCard.rect.left + hoveredHandCard.rect.width / 2 - 116
-            )),
-            bottom: window.innerHeight - hoveredHandCard.rect.top + 10,
-          }}
-        >
-          <motion.div
-            initial={{ scale: 0.85, opacity: 0, y: 8 }}
-            animate={{ scale: 1, opacity: 1, y: 0 }}
-            transition={{ type: "spring", duration: 0.2 }}
-            className="shadow-2xl rounded-2xl overflow-hidden border-2 border-white/30"
-          >
-            {hoveredHandCard.imageSrc ? (
-              <img
-                src={hoveredHandCard.imageSrc}
-                alt={hoveredHandCard.name}
-                className="w-[232px] h-[324px] object-cover"
-              />
-            ) : (
-              <div className="w-[232px] h-[324px] bg-card flex items-center justify-center text-muted-foreground text-sm font-bold">
-                {hoveredHandCard.name}
-              </div>
-            )}
-          </motion.div>
-        </div>,
-        document.body
-      )
-    : null;
 
   return (
     <>
@@ -848,34 +804,11 @@ export default function Game() {
 
       </div>
 
-      {/* BOTTOM ROW: Local Player mat (desktop only — mobile uses My Pile tab) */}
+      {/* BOTTOM ROW: Local Player mat (desktop only — pile toggle lives in overlay so it stays clickable) */}
       <div
         className="relative z-20 max-w-3xl mx-auto w-full hidden md:block"
-        style={{ paddingBottom: handMinimized ? 48 : 200 }}
+        style={{ paddingBottom: handMinimized ? 130 : 320 }}
       >
-        {/* Collapse toggle header — always visible */}
-        <button
-          className="w-full flex items-center justify-between px-4 py-1.5 bg-card/90 backdrop-blur-md border-t border-border hover:bg-muted/30 transition-colors group"
-          onClick={() => setPileCollapsed(c => !c)}
-          title={pileCollapsed ? "Show your compost pile" : "Hide your compost pile"}
-        >
-          <div className="flex items-center gap-2">
-            <span className="text-xs font-bold text-muted-foreground uppercase tracking-wide">Your Compost Pile</span>
-            <span className="text-[10px] bg-primary/10 text-primary font-bold px-1.5 py-0.5 rounded-full border border-primary/20">
-              {localPlayerFull.compostPile.length} / 5 cards
-            </span>
-          </div>
-          <div className="flex items-center gap-1.5 text-muted-foreground group-hover:text-foreground transition-colors">
-            {pileCollapsed && (
-              <span className="text-[11px] text-amber-600 font-semibold">Click to show</span>
-            )}
-            {pileCollapsed
-              ? <ChevronUp className="w-3.5 h-3.5" />
-              : <ChevronDown className="w-3.5 h-3.5" />
-            }
-          </div>
-        </button>
-        {/* Pile body — collapsible */}
         <AnimatePresence initial={false}>
           {!pileCollapsed && (
             <motion.div
@@ -902,12 +835,31 @@ export default function Game() {
       {/* HAND + TURN CONTROLS OVERLAY — fixed at screen bottom. Hand above, turn controls at very bottom. */}
       <div className="fixed bottom-0 inset-x-0 z-30 pointer-events-none">
 
-        {/* ── DESKTOP wrapper: tracks mouse across both hand row AND controls bar so hand stays expanded ── */}
-        <div
-          className="hidden md:flex md:flex-col pointer-events-auto"
-          onMouseEnter={() => setIsHandHovered(true)}
-          onMouseLeave={() => { setIsHandHovered(false); setHoveredHandCard(null); }}
+        {/* ── DESKTOP wrapper ── */}
+        <div className="hidden md:flex md:flex-col pointer-events-auto">
+
+        {/* ── DESKTOP pile toggle bar — lives here so it's always above the overlay and clickable ── */}
+        <button
+          className="flex items-center justify-between px-4 py-1.5 bg-card/90 backdrop-blur-md border-t border-border hover:bg-muted/30 transition-colors group"
+          onClick={() => setPileCollapsed(c => !c)}
+          title={pileCollapsed ? "Show your compost pile" : "Hide your compost pile"}
         >
+          <div className="flex items-center gap-2">
+            <span className="text-xs font-bold text-muted-foreground uppercase tracking-wide">Your Compost Pile</span>
+            <span className="text-[10px] bg-primary/10 text-primary font-bold px-1.5 py-0.5 rounded-full border border-primary/20">
+              {localPlayerFull.compostPile.length} / 5 cards
+            </span>
+          </div>
+          <div className="flex items-center gap-1.5 text-muted-foreground group-hover:text-foreground transition-colors">
+            {pileCollapsed && (
+              <span className="text-[11px] text-amber-600 font-semibold">Hidden · click to show</span>
+            )}
+            {pileCollapsed
+              ? <ChevronUp className="w-3.5 h-3.5" />
+              : <ChevronDown className="w-3.5 h-3.5" />
+            }
+          </div>
+        </button>
 
         {/* ── DESKTOP hand row ── */}
         {(() => {
@@ -937,9 +889,7 @@ export default function Game() {
                 </div>
                 <div className="flex items-center gap-2">
                   {isPlayPhase && !handMinimized && (
-                    <span className="text-[11px] text-primary font-semibold">
-                      {isHandHovered ? "Click a card to play it" : "Hover to expand · Click to play"}
-                    </span>
+                    <span className="text-[11px] text-primary font-semibold">Click a card to play it</span>
                   )}
                   {isPlayPhase && handMinimized && (
                     <span className="text-[11px] text-primary font-semibold animate-pulse">Your turn!</span>
@@ -949,7 +899,7 @@ export default function Game() {
                   </span>
                 </div>
               </button>
-              {/* Cards row — collapsible */}
+              {/* Cards row — always full size, collapsible */}
               <AnimatePresence initial={false}>
               {!handMinimized && (
               <motion.div
@@ -960,12 +910,7 @@ export default function Game() {
                 transition={{ duration: 0.18, ease: "easeInOut" }}
                 className="overflow-hidden"
               >
-              <div className={cn(
-                "flex gap-3 px-4 pb-3 transition-all",
-                isHandHovered
-                  ? "overflow-x-auto flex-nowrap justify-start items-end"
-                  : "overflow-x-auto flex-wrap justify-center items-end"
-              )}>
+              <div className="flex gap-3 px-4 pb-3 overflow-x-auto flex-nowrap items-end">
                 {hand.length === 0 && (
                   <div className="py-4 text-muted-foreground/40 text-sm italic">No cards in hand</div>
                 )}
@@ -979,23 +924,12 @@ export default function Game() {
                     <motion.div
                       key={`${card.id}-${idx}`}
                       initial={{ opacity: 0, y: 8 }}
-                      animate={{
-                        opacity: isBlocked ? 0.4 : 1,
-                        y: 0,
-                        width: isHandHovered ? 192 : 96,
-                        height: isHandHovered ? 288 : 144,
-                      }}
-                      transition={{ type: "spring", stiffness: 280, damping: 28, delay: isHandHovered ? idx * 0.02 : 0 }}
+                      animate={{ opacity: isBlocked ? 0.4 : 1, y: 0 }}
+                      transition={{ type: "spring", stiffness: 280, damping: 28 }}
                       onClick={() => !isBlocked && handleCardClick(card)}
-                      onMouseEnter={(e) => {
-                        if (isHandHovered) return;
-                        const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
-                        setHoveredHandCard({ imageSrc, name: card.name, rect });
-                      }}
-                      onMouseLeave={() => setHoveredHandCard(null)}
                       className={cn(
-                        "shrink-0 cursor-pointer rounded-xl overflow-hidden",
-                        isPlayable && "ring-2 ring-primary/60 shadow-md shadow-primary/20 hover:shadow-lg hover:shadow-primary/30",
+                        "shrink-0 cursor-pointer rounded-xl overflow-hidden w-[144px] h-[208px]",
+                        isPlayable && "ring-2 ring-primary/60 shadow-md shadow-primary/20 hover:shadow-lg hover:shadow-primary/30 hover:-translate-y-1 transition-transform",
                         isBlocked && "cursor-not-allowed",
                       )}
                     >
@@ -1008,7 +942,7 @@ export default function Game() {
                         />
                       ) : (
                         <div className="w-full h-full">
-                          <GameCard card={card} size={isHandHovered ? "md" : "sm"} hoverable={false} />
+                          <GameCard card={card} size="md" hoverable={false} />
                         </div>
                       )}
                     </motion.div>
@@ -1656,7 +1590,6 @@ export default function Game() {
 
     </div>
 
-    {handCardPortal}
     </>
   );
 }
