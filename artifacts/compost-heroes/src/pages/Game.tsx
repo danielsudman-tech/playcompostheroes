@@ -479,14 +479,14 @@ export default function Game() {
         <button
           onClick={toggleTutorial}
           className={cn(
-            "fixed top-3 left-3 z-50 flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-bold backdrop-blur-md border transition-colors duration-200",
+            "fixed top-3 left-3 z-50 flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-bold backdrop-blur-md border shadow-sm transition-colors duration-200",
             tutorialEnabled
-              ? "bg-primary/15 border-primary/30 text-primary"
-              : "bg-muted/60 border-border text-muted-foreground hover:text-foreground"
+              ? "bg-primary text-primary-foreground border-primary/50"
+              : "bg-background/90 border-border text-muted-foreground hover:text-foreground"
           )}
         >
-          <BookOpen className="w-3 h-3" />
-          {tutorialEnabled ? "Guide: On" : "Guide: Off"}
+          <BookOpen className="w-3.5 h-3.5" />
+          {tutorialEnabled ? "Guide On" : "Guide Off"}
         </button>
       )}
 

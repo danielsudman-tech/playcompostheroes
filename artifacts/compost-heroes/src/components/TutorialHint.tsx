@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { X, BookOpen, ChevronDown, ChevronUp } from "lucide-react";
+import { BookOpen, ChevronDown, ChevronUp } from "lucide-react";
 import { cn } from "@/lib/utils";
 import type { GameState } from "@workspace/api-client-react";
 
@@ -243,32 +243,62 @@ export function TutorialHint({ gameState, isMyTurn, localPlayerId }: TutorialHin
   };
 
   return (
-    <div className={cn(
-      "fixed bottom-4 left-4 z-40 w-72 rounded-xl border bg-background/95 backdrop-blur-md shadow-lg transition-all duration-200",
-      "border-primary/30"
-    )}>
-      <div
-        className="flex items-center gap-2 px-3 py-2.5 cursor-pointer select-none"
-        onClick={handleCollapse}
-      >
-        <BookOpen className="w-3.5 h-3.5 text-primary flex-shrink-0" />
-        <span className="text-xs font-bold text-primary flex-1 truncate">{hint.title}</span>
-        {collapsed
-          ? <ChevronUp className="w-3.5 h-3.5 text-muted-foreground flex-shrink-0" />
-          : <ChevronDown className="w-3.5 h-3.5 text-muted-foreground flex-shrink-0" />
-        }
+    <>
+      {/* Mobile: pinned just below the top bar, full-width */}
+      <div className={cn(
+        "md:hidden fixed top-12 inset-x-2 z-40 rounded-xl border bg-background/95 backdrop-blur-md shadow-lg transition-all duration-200",
+        "border-primary/30"
+      )}>
+        <div
+          className="flex items-center gap-2 px-3 py-2 cursor-pointer select-none"
+          onClick={handleCollapse}
+        >
+          <BookOpen className="w-3.5 h-3.5 text-primary flex-shrink-0" />
+          <span className="text-xs font-bold text-primary flex-1 truncate">{hint.title}</span>
+          {collapsed
+            ? <ChevronDown className="w-3.5 h-3.5 text-muted-foreground flex-shrink-0" />
+            : <ChevronUp className="w-3.5 h-3.5 text-muted-foreground flex-shrink-0" />
+          }
+        </div>
+        {!collapsed && (
+          <div className="px-3 pb-3 space-y-1.5">
+            <p className="text-xs text-foreground/80 leading-relaxed">{hint.body}</p>
+            {hint.tip && (
+              <p className="text-xs text-muted-foreground leading-relaxed border-t border-border pt-1.5">
+                💡 {hint.tip}
+              </p>
+            )}
+          </div>
+        )}
       </div>
 
-      {!collapsed && (
-        <div className="px-3 pb-3 space-y-1.5">
-          <p className="text-xs text-foreground/80 leading-relaxed">{hint.body}</p>
-          {hint.tip && (
-            <p className="text-xs text-muted-foreground leading-relaxed border-t border-border pt-1.5">
-              💡 {hint.tip}
-            </p>
-          )}
+      {/* Desktop: bottom-left, fixed width */}
+      <div className={cn(
+        "hidden md:block fixed bottom-4 left-4 z-40 w-72 rounded-xl border bg-background/95 backdrop-blur-md shadow-lg transition-all duration-200",
+        "border-primary/30"
+      )}>
+        <div
+          className="flex items-center gap-2 px-3 py-2.5 cursor-pointer select-none"
+          onClick={handleCollapse}
+        >
+          <BookOpen className="w-3.5 h-3.5 text-primary flex-shrink-0" />
+          <span className="text-xs font-bold text-primary flex-1 truncate">{hint.title}</span>
+          {collapsed
+            ? <ChevronUp className="w-3.5 h-3.5 text-muted-foreground flex-shrink-0" />
+            : <ChevronDown className="w-3.5 h-3.5 text-muted-foreground flex-shrink-0" />
+          }
         </div>
-      )}
-    </div>
+        {!collapsed && (
+          <div className="px-3 pb-3 space-y-1.5">
+            <p className="text-xs text-foreground/80 leading-relaxed">{hint.body}</p>
+            {hint.tip && (
+              <p className="text-xs text-muted-foreground leading-relaxed border-t border-border pt-1.5">
+                💡 {hint.tip}
+              </p>
+            )}
+          </div>
+        )}
+      </div>
+    </>
   );
 }
