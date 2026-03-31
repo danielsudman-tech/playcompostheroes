@@ -210,7 +210,6 @@ export function AppGate({ children }: { children: ReactNode }) {
     <div className="min-h-screen bg-background relative overflow-hidden flex flex-col items-center justify-start md:justify-center p-4 py-10">
       <div className="absolute top-[-10%] left-[-10%] w-[40%] h-[40%] bg-primary/20 blur-[100px] rounded-full pointer-events-none" />
       <div className="absolute bottom-[-10%] right-[-10%] w-[50%] h-[50%] bg-secondary/20 blur-[120px] rounded-full pointer-events-none" />
-
       <div className="relative z-10 w-full max-w-md flex flex-col gap-8">
 
         {/* Hero section */}
@@ -248,7 +247,7 @@ export function AppGate({ children }: { children: ReactNode }) {
 
           <div className="px-6 pt-5 pb-2">
             <h2 className="text-lg font-bold text-foreground text-center">Start Playing</h2>
-            <p className="text-xs text-muted-foreground text-center mt-1">Takes 10 seconds. No spam.</p>
+            <p className="text-xs text-muted-foreground text-center mt-1">Start Playing in 10 seconds. No spam.</p>
           </div>
 
           <form onSubmit={handleStart} className="p-6 pt-4 space-y-3">
