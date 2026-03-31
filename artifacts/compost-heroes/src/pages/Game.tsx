@@ -11,6 +11,7 @@ import { PlayerMat } from "@/components/PlayerMat";
 import { GameCard } from "@/components/GameCard";
 import { DecisionModal } from "@/components/DecisionModal";
 import { OpponentPileModal } from "@/components/OpponentPileModal";
+import { TutorialHint, useTutorialMode } from "@/components/TutorialHint";
 import { Button } from "@/components/ui/button";
 import { useToast } from "@/hooks/use-toast";
 import type { PlayerState, Card } from "@workspace/api-client-react";
@@ -33,6 +34,7 @@ import {
   Lock,
   MoveRight,
   Bell,
+  BookOpen,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -84,6 +86,8 @@ export default function Game() {
   const actionMutation = useGameAction(gameId || "", isOnline ? localToken : null, {
     onError: (msg) => toast({ title: "Action failed", description: msg, variant: "destructive" }),
   });
+
+  const { tutorialEnabled, toggleTutorial } = useTutorialMode();
 
   // Player identity:
   // - Online: fixed to the claimed slot (even when it's not your turn)
@@ -511,6 +515,31 @@ export default function Game() {
       <div className="fixed inset-0 pointer-events-none opacity-[0.03] z-0 mix-blend-multiply">
          <img src={`${import.meta.env.BASE_URL}images/wood-bg.png`} className="w-full h-full object-cover" alt="" />
       </div>
+
+      {/* Tutorial toggle button */}
+      {gameState.phase !== "waiting" && gameState.phase !== "game_over" && (
+        <button
+          onClick={toggleTutorial}
+          className={cn(
+            "fixed top-3 left-3 z-50 flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-bold backdrop-blur-md border transition-colors duration-200",
+            tutorialEnabled
+              ? "bg-primary/15 border-primary/30 text-primary"
+              : "bg-muted/60 border-border text-muted-foreground hover:text-foreground"
+          )}
+        >
+          <BookOpen className="w-3 h-3" />
+          {tutorialEnabled ? "Guide: On" : "Guide: Off"}
+        </button>
+      )}
+
+      {/* Tutorial hint panel */}
+      {tutorialEnabled && gameState.phase !== "waiting" && gameState.phase !== "game_over" && (
+        <TutorialHint
+          gameState={gameState}
+          isMyTurn={isMyTurn}
+          localPlayerId={localPlayerId}
+        />
+      )}
 
       {/* Online mode badge */}
       {isOnline && (
