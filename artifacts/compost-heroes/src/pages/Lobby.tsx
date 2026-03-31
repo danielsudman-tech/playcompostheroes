@@ -9,7 +9,7 @@ import compostHeroesLogo from "@assets/Compost_Heroes_Logo_no_background_1773537
 import greenCampsLogo from "@assets/Green_Camps_Logo_no_background_1773537933517.png";
 import {
   Users, Trash2, PlusCircle, Settings2, PlayCircle, Wifi, Lock,
-  RefreshCcw, LogIn, ChevronRight, Loader2, Bot, User
+  RefreshCcw, LogIn, ChevronRight, Loader2, Bot, User, ShoppingCart
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 
@@ -108,7 +108,7 @@ export default function Lobby() {
   const createGame = useCreateNewGame();
 
   const [tab, setTab] = useState<"create" | "browse">("create");
-  const [mode, setMode] = useState<"standalone" | "facilitator" | "online">("standalone");
+  const [mode, setMode] = useState<"standalone" | "online">("standalone");
 
   type SkillLevel = "easy" | "medium" | "hard";
 
@@ -266,7 +266,7 @@ export default function Lobby() {
                   <label className="text-sm font-bold text-muted-foreground uppercase tracking-wider flex items-center gap-2">
                     <Settings2 className="w-4 h-4" /> Game Mode
                   </label>
-                  <div className="grid grid-cols-3 gap-2">
+                  <div className="grid grid-cols-2 gap-2">
                     <button
                       onClick={() => setMode("standalone")}
                       className={`p-3 rounded-xl border-2 transition-all flex flex-col items-center text-center gap-1 ${mode === "standalone" ? "border-primary bg-primary/10 text-primary" : "border-border hover:border-primary/50 text-muted-foreground"}`}
@@ -281,13 +281,6 @@ export default function Lobby() {
                       <Wifi className="w-4 h-4 shrink-0" />
                       <span className="font-bold text-sm">Online</span>
                       <span className="text-[10px] opacity-80">Share a link</span>
-                    </button>
-                    <button
-                      onClick={() => setMode("facilitator")}
-                      className={`p-3 rounded-xl border-2 transition-all flex flex-col items-center text-center gap-1 ${mode === "facilitator" ? "border-secondary bg-secondary/10 text-secondary" : "border-border hover:border-secondary/50 text-muted-foreground"}`}
-                    >
-                      <span className="font-bold text-sm">Facilitator</span>
-                      <span className="text-[10px] opacity-80">Host view</span>
                     </button>
                   </div>
                 </div>
@@ -334,7 +327,7 @@ export default function Lobby() {
                   </div>
                 )}
 
-                {/* Pass & Play / Facilitator: player names */}
+                {/* Pass & Play: player names */}
                 {mode !== "online" && (
                   <div className="space-y-4">
                     <div className="flex items-center justify-between">
@@ -450,9 +443,18 @@ export default function Lobby() {
           )}
         </AnimatePresence>
 
-        <div className="mt-5 text-center">
-          <p className="text-sm text-muted-foreground">Collect 1 Hero from each of the 5 layers to win!</p>
-          <a href={`${import.meta.env.BASE_URL}admin`} className="text-xs text-muted-foreground/40 hover:text-muted-foreground transition-colors mt-2 inline-block">
+        <div className="mt-5 flex flex-col items-center gap-3">
+          <p className="text-sm text-muted-foreground text-center">Collect 1 Hero from each of the 5 layers to win!</p>
+          <a
+            href="https://www.compostheroes.org/purchase"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="inline-flex items-center gap-2 bg-secondary/20 hover:bg-secondary/30 border border-secondary/40 text-secondary-foreground rounded-full px-4 py-2 text-sm font-semibold transition-colors"
+          >
+            <ShoppingCart className="w-4 h-4" />
+            Buy the physical deck
+          </a>
+          <a href={`${import.meta.env.BASE_URL}admin`} className="text-xs text-muted-foreground/40 hover:text-muted-foreground transition-colors inline-block">
             Card Image Admin
           </a>
         </div>
