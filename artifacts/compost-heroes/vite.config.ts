@@ -26,6 +26,19 @@ if (!basePath) {
   );
 }
 
+// Expose a public URL for OG meta tags.
+// Priority: explicit VITE_PUBLIC_URL → dev domain → REPLIT_DOMAINS → empty
+if (!process.env.VITE_PUBLIC_URL) {
+  const devDomain = process.env.REPLIT_DEV_DOMAIN;
+  const replitDomains = process.env.REPLIT_DOMAINS; // may be set in some build envs
+  const firstDomain = replitDomains ? replitDomains.split(",")[0].trim() : "";
+  process.env.VITE_PUBLIC_URL = devDomain
+    ? `https://${devDomain}`
+    : firstDomain
+      ? `https://${firstDomain}`
+      : "";
+}
+
 export default defineConfig({
   base: basePath,
   plugins: [

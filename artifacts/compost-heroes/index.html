@@ -4,6 +4,36 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1" />
     <title>Compost Heroes</title>
+
+    <!-- Open Graph / link preview -->
+    <meta property="og:type" content="website" />
+    <meta property="og:site_name" content="Compost Heroes" />
+    <meta property="og:title" content="Join my Compost Heroes game!" />
+    <meta property="og:description" content="Play Online Multiplayer — collect 5 hero cards from the compost pile to win. Quick to learn, fun to play!" />
+    <meta property="og:image" content="%VITE_PUBLIC_URL%/og-share.png" />
+    <meta property="og:image:width" content="1280" />
+    <meta property="og:image:height" content="720" />
+
+    <!-- Twitter / X Card -->
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:title" content="Join my Compost Heroes game!" />
+    <meta name="twitter:description" content="Play Online Multiplayer — collect 5 hero cards from the compost pile to win." />
+    <meta name="twitter:image" content="%VITE_PUBLIC_URL%/og-share.png" />
+
+    <!-- Patch og:image to absolute if build-time substitution produced a relative URL -->
+    <script>
+      (function() {
+        var o = window.location.origin;
+        ['meta[property="og:image"]','meta[name="twitter:image"]'].forEach(function(sel) {
+          var el = document.querySelector(sel);
+          if (el) {
+            var c = el.getAttribute('content') || '';
+            if (c && !c.startsWith('http')) el.setAttribute('content', o + (c.startsWith('/') ? '' : '/') + c);
+          }
+        });
+      })();
+    </script>
+
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">

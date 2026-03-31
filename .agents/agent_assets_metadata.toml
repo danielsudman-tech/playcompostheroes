@@ -1,0 +1,8 @@
+uploads = []
+outputs = []
+
+[[generated]]
+id = "Hdm778UjxM4qNDPfbQ7cX"
+uri = "file://artifacts/compost-heroes/public/og-share.png"
+type = "image"
+title = "compost heroes og share image"
