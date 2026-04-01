@@ -24,6 +24,10 @@ import {
   Trophy,
   Activity,
   UserCheck,
+  Archive,
+  Github,
+  RefreshCw,
+  Database,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -486,6 +490,170 @@ function GamesTab({ adminKey }: { adminKey: string }) {
   );
 }
 
+// ── Backups tab ───────────────────────────────────────────────────────────────
+
+interface GitHubStatus {
+  configured: boolean;
+  repo: string | null;
+  remoteUrl: string | null;
+  lastCommit: string | null;
+}
+
+function BackupsTab({ adminKey }: { adminKey: string }) {
+  const { toast } = useToast();
+  const [pushing, setPushing] = useState(false);
+  const [pushResult, setPushResult] = useState<{ ok: boolean; msg: string } | null>(null);
+
+  const headers = { "x-admin-key": adminKey };
+
+  const { data: ghStatus, isLoading: ghLoading, refetch: refetchGh } = useQuery<GitHubStatus>({
+    queryKey: ["admin-backup-github-status", adminKey],
+    queryFn: async () => {
+      const res = await fetch("/api/admin/backup/github/status", { headers });
+      if (!res.ok) throw new Error("Failed");
+      return res.json();
+    },
+    refetchInterval: 30_000,
+  });
+
+  const handleDbDownload = () => {
+    // Use ?adminKey= since anchor clicks can't set custom headers
+    const a = document.createElement("a");
+    a.href = `/api/admin/backup/db?adminKey=${encodeURIComponent(adminKey)}`;
+    a.download = "";
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    toast({ title: "Database backup downloading…" });
+  };
+
+  const handleGithubPush = async () => {
+    setPushing(true);
+    setPushResult(null);
+    try {
+      const res = await fetch("/api/admin/backup/github/push", {
+        method: "POST",
+        headers,
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error ?? "Push failed");
+      setPushResult({ ok: true, msg: `Pushed to ${data.repo} at ${new Date(data.pushedAt).toLocaleTimeString()}` });
+      toast({ title: "Pushed to GitHub!" });
+      refetchGh();
+    } catch (err: any) {
+      const msg = err?.message ?? "Unknown error";
+      setPushResult({ ok: false, msg });
+      toast({ title: "Push failed", description: msg, variant: "destructive" });
+    } finally {
+      setPushing(false);
+    }
+  };
+
+  return (
+    <div className="space-y-6">
+
+      {/* Database backup */}
+      <div className="bg-card border border-border rounded-xl overflow-hidden">
+        <div className="px-4 pt-4 pb-3 border-b border-border flex items-center gap-2">
+          <Database className="w-4 h-4 text-primary" />
+          <div className="text-sm font-bold text-foreground">Database Backup</div>
+        </div>
+        <div className="px-4 py-4 space-y-3">
+          <p className="text-xs text-muted-foreground">
+            Downloads a full SQL dump of all users, games, sessions, analytics, and card data.
+            Runs <code className="bg-muted px-1 rounded">pg_dump</code> on demand — no scheduled copy is stored on the server.
+          </p>
+          <button
+            onClick={handleDbDownload}
+            className="flex items-center gap-2 bg-primary text-primary-foreground text-sm font-bold px-4 py-2 rounded-xl hover:opacity-90 transition-opacity"
+          >
+            <Download className="w-4 h-4" />
+            Download .sql backup
+          </button>
+        </div>
+      </div>
+
+      {/* GitHub code backup */}
+      <div className="bg-card border border-border rounded-xl overflow-hidden">
+        <div className="px-4 pt-4 pb-3 border-b border-border flex items-center gap-2">
+          <Github className="w-4 h-4 text-primary" />
+          <div className="text-sm font-bold text-foreground">Code Backup → GitHub</div>
+          <button onClick={() => refetchGh()} className="ml-auto text-muted-foreground hover:text-foreground transition-colors">
+            <RefreshCw className="w-3.5 h-3.5" />
+          </button>
+        </div>
+        <div className="px-4 py-4 space-y-4">
+          {ghLoading ? (
+            <div className="flex justify-center py-4"><Loader2 className="w-5 h-5 animate-spin text-muted-foreground" /></div>
+          ) : (
+            <>
+              {/* Status row */}
+              <div className="flex items-center gap-2">
+                {ghStatus?.configured ? (
+                  <span className="flex items-center gap-1.5 text-xs font-semibold text-green-700 bg-green-50 border border-green-200 px-2 py-1 rounded-full">
+                    <CheckCircle className="w-3.5 h-3.5" /> Configured
+                  </span>
+                ) : (
+                  <span className="flex items-center gap-1.5 text-xs font-semibold text-amber-700 bg-amber-50 border border-amber-200 px-2 py-1 rounded-full">
+                    <AlertCircle className="w-3.5 h-3.5" /> Not configured
+                  </span>
+                )}
+                {ghStatus?.repo && (
+                  <span className="text-xs text-muted-foreground font-mono">{ghStatus.repo}</span>
+                )}
+              </div>
+
+              {/* Last commit */}
+              {ghStatus?.lastCommit && (
+                <div className="text-xs text-muted-foreground">
+                  Last backup: <span className="font-mono text-foreground">{ghStatus.lastCommit}</span>
+                </div>
+              )}
+
+              {/* Setup instructions if not configured */}
+              {!ghStatus?.configured && (
+                <div className="bg-amber-50 border border-amber-200 rounded-lg p-3 space-y-1.5 text-xs text-amber-900">
+                  <div className="font-semibold">Setup required:</div>
+                  <ol className="list-decimal ml-4 space-y-1">
+                    <li>Add a <strong>GITHUB_TOKEN</strong> secret in Replit (GitHub PAT with <em>repo</em> permission)</li>
+                    <li>Add a <strong>GITHUB_BACKUP_REPO</strong> env var (e.g. <code className="bg-amber-100 px-1 rounded">yourname/compost-heroes-backup</code>)</li>
+                    <li>Create that repo on GitHub (private recommended)</li>
+                    <li>Restart the API server workflow, then come back here</li>
+                  </ol>
+                </div>
+              )}
+
+              {/* Push button */}
+              <button
+                onClick={handleGithubPush}
+                disabled={pushing || !ghStatus?.configured}
+                className="flex items-center gap-2 bg-primary text-primary-foreground text-sm font-bold px-4 py-2 rounded-xl hover:opacity-90 transition-opacity disabled:opacity-40 disabled:cursor-not-allowed"
+              >
+                {pushing ? <Loader2 className="w-4 h-4 animate-spin" /> : <Github className="w-4 h-4" />}
+                {pushing ? "Pushing…" : "Push to GitHub now"}
+              </button>
+
+              {/* Push result */}
+              {pushResult && (
+                <div className={cn(
+                  "text-xs px-3 py-2 rounded-lg border",
+                  pushResult.ok
+                    ? "bg-green-50 border-green-200 text-green-800"
+                    : "bg-red-50 border-red-200 text-red-800"
+                )}>
+                  {pushResult.ok ? <CheckCircle className="inline w-3.5 h-3.5 mr-1" /> : <AlertCircle className="inline w-3.5 h-3.5 mr-1" />}
+                  {pushResult.msg}
+                </div>
+              )}
+            </>
+          )}
+        </div>
+      </div>
+
+    </div>
+  );
+}
+
 // ── Analytics tab ─────────────────────────────────────────────────────────────
 
 function StatCard({ icon: Icon, label, value, sub, color }: { icon: React.ElementType; label: string; value: number | string; sub?: string; color: string }) {
@@ -805,7 +973,7 @@ export default function Admin() {
   const [, setLocation] = useLocation();
   const [adminKey, setAdminKey] = useState<string | null>(() => localStorage.getItem(ADMIN_KEY_STORAGE));
   const [validating, setValidating] = useState(!!adminKey);
-  const [tab, setTab] = useState<"cards" | "users" | "analytics" | "games">("users");
+  const [tab, setTab] = useState<"cards" | "users" | "analytics" | "games" | "backups">("users");
 
   useEffect(() => {
     if (!adminKey) return;
@@ -877,6 +1045,12 @@ export default function Admin() {
           >
             <Gamepad2 className="w-4 h-4" /> Games
           </button>
+          <button
+            onClick={() => setTab("backups")}
+            className={cn("flex items-center gap-1.5 text-sm font-bold px-4 py-2 rounded-xl transition-colors", tab === "backups" ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:text-foreground hover:bg-muted/50")}
+          >
+            <Archive className="w-4 h-4" /> Backups
+          </button>
         </div>
       </div>
 
@@ -885,6 +1059,7 @@ export default function Admin() {
         {tab === "cards" && <CardsTab adminKey={adminKey} />}
         {tab === "analytics" && <AnalyticsTab adminKey={adminKey} />}
         {tab === "games" && <GamesTab adminKey={adminKey} />}
+        {tab === "backups" && <BackupsTab adminKey={adminKey} />}
       </div>
     </div>
   );

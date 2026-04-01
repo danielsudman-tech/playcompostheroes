@@ -1,6 +1,9 @@
 import { Router, type Request, type Response, type NextFunction } from "express";
 import { writeFileSync, existsSync, mkdirSync } from "fs";
 import { join } from "path";
+import { spawn, execFile } from "child_process";
+import { promisify } from "util";
+const execFileAsync = promisify(execFile);
 import { getAllCards } from "../lib/cards.js";
 import { getAllOverrides, setImageKeyOverride, removeImageKeyOverride } from "../lib/imageKeyStore.js";
 import { getAllCopies, getCardCopies, setCardCopies } from "../lib/cardCopiesStore.js";
@@ -373,6 +376,100 @@ router.get("/admin/users", async (_req, res) => {
   } catch (err) {
     console.error("[admin users]", err);
     res.status(500).json({ error: "Failed to fetch users" });
+  }
+});
+
+// ── Backup: database ──────────────────────────────────────────────────────────
+
+// GET /api/admin/backup/db — stream a pg_dump SQL file to the client
+router.get("/admin/backup/db", async (req, res) => {
+  const dbUrl = process.env.DATABASE_URL;
+  if (!dbUrl) {
+    res.status(500).json({ error: "DATABASE_URL not configured" });
+    return;
+  }
+  const ts = new Date().toISOString().replace(/[:.]/g, "-").slice(0, 19);
+  const filename = `compost-heroes-db-${ts}.sql`;
+  res.setHeader("Content-Type", "application/octet-stream");
+  res.setHeader("Content-Disposition", `attachment; filename="${filename}"`);
+
+  const child = spawn("pg_dump", ["--no-password", dbUrl], { stdio: ["ignore", "pipe", "pipe"] });
+  child.stdout.pipe(res);
+  child.stderr.on("data", (d: Buffer) => console.error("[backup/db]", d.toString()));
+  child.on("error", (err) => {
+    console.error("[backup/db] spawn error", err);
+    if (!res.headersSent) res.status(500).end("pg_dump failed");
+  });
+  child.on("close", (code) => {
+    if (code !== 0) console.error(`[backup/db] pg_dump exited with code ${code}`);
+  });
+});
+
+// ── Backup: GitHub ────────────────────────────────────────────────────────────
+
+// GET /api/admin/backup/github/status — check configuration & last commit
+router.get("/admin/backup/github/status", async (req, res) => {
+  const token = process.env.GITHUB_TOKEN;
+  const repo = process.env.GITHUB_BACKUP_REPO;
+  const configured = !!(token && repo);
+
+  let lastCommit: string | null = null;
+  let remoteUrl: string | null = null;
+  try {
+    const { stdout: log } = await execFileAsync("git", ["log", "-1", "--format=%h %s (%cr)", "--"], { timeout: 5000 });
+    lastCommit = log.trim() || null;
+  } catch { /* no commits yet */ }
+
+  try {
+    const { stdout: remote } = await execFileAsync("git", ["remote", "get-url", "github-backup"], { timeout: 3000 });
+    remoteUrl = remote.trim().replace(/:[^@]+@/, ":***@") || null; // redact token
+  } catch { /* remote not set up yet */ }
+
+  res.json({ configured, repo: repo ?? null, remoteUrl, lastCommit });
+});
+
+// POST /api/admin/backup/github/push — commit everything and push to GitHub
+router.post("/admin/backup/github/push", async (req, res) => {
+  const token = process.env.GITHUB_TOKEN;
+  const repo = process.env.GITHUB_BACKUP_REPO;
+
+  if (!token || !repo) {
+    res.status(400).json({ error: "GITHUB_TOKEN secret and GITHUB_BACKUP_REPO env var must both be set." });
+    return;
+  }
+
+  const remoteUrl = `https://x-access-token:${token}@github.com/${repo}.git`;
+  const ts = new Date().toISOString().slice(0, 19).replace("T", " ");
+
+  try {
+    // Ensure the remote exists (update it if already present)
+    try {
+      await execFileAsync("git", ["remote", "remove", "github-backup"], { timeout: 3000 });
+    } catch { /* didn't exist, that's fine */ }
+    await execFileAsync("git", ["remote", "add", "github-backup", remoteUrl], { timeout: 3000 });
+
+    // Configure git identity for the commit
+    await execFileAsync("git", ["config", "user.email", "backup@compostheroes.app"], { timeout: 3000 });
+    await execFileAsync("git", ["config", "user.name", "Compost Heroes Backup"], { timeout: 3000 });
+
+    // Stage everything and create a backup commit
+    await execFileAsync("git", ["add", "-A"], { timeout: 10000 });
+
+    // Commit — don't fail if nothing to commit
+    try {
+      await execFileAsync("git", ["commit", "-m", `backup: ${ts}`], { timeout: 10000 });
+    } catch (e: any) {
+      if (!String(e?.stderr ?? e?.message ?? "").includes("nothing to commit")) throw e;
+    }
+
+    // Push (force to keep the backup branch tidy)
+    await execFileAsync("git", ["push", "github-backup", "HEAD:main", "--force"], { timeout: 60000 });
+
+    res.json({ success: true, pushedAt: new Date().toISOString(), repo });
+  } catch (err: any) {
+    const msg = String(err?.stderr ?? err?.message ?? err);
+    console.error("[backup/github]", msg);
+    res.status(500).json({ error: msg.replace(token, "***") }); // redact token from error
   }
 });
 
