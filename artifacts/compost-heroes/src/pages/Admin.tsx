@@ -28,6 +28,7 @@ import {
   Github,
   RefreshCw,
   Database,
+  KeyRound,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -862,7 +863,11 @@ function AnalyticsTab({ adminKey }: { adminKey: string }) {
 // ── Users tab ─────────────────────────────────────────────────────────────────
 
 function UsersTab({ adminKey }: { adminKey: string }) {
+  const { toast } = useToast();
   const [search, setSearch] = useState("");
+  const [resettingId, setResettingId] = useState<string | null>(null);
+  const [resetPw, setResetPw] = useState("");
+  const [resetBusy, setResetBusy] = useState(false);
 
   const { data: users, isLoading, error } = useQuery<AdminUser[]>({
     queryKey: ["admin-users"],
@@ -898,6 +903,32 @@ function UsersTab({ adminKey }: { adminKey: string }) {
     a.download = `compost-heroes-users-${new Date().toISOString().split("T")[0]}.csv`;
     a.click();
     URL.revokeObjectURL(url);
+  };
+
+  const handleResetPassword = async (userId: string, userName: string) => {
+    if (!resetPw || resetPw.length < 6) {
+      toast({ title: "Password must be at least 6 characters", variant: "destructive" });
+      return;
+    }
+    setResetBusy(true);
+    try {
+      const res = await fetch(`/api/admin/users/${userId}/reset-password`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json", "x-admin-key": adminKey },
+        body: JSON.stringify({ newPassword: resetPw }),
+      });
+      if (!res.ok) {
+        const data = await res.json();
+        throw new Error(data.error ?? "Failed");
+      }
+      toast({ title: `Password reset for ${userName}`, description: "Their sessions have been invalidated." });
+      setResettingId(null);
+      setResetPw("");
+    } catch (err: any) {
+      toast({ title: "Reset failed", description: err?.message ?? "Unknown error", variant: "destructive" });
+    } finally {
+      setResetBusy(false);
+    }
   };
 
   return (
@@ -936,26 +967,79 @@ function UsersTab({ adminKey }: { adminKey: string }) {
                   <th className="text-left text-xs font-bold text-muted-foreground uppercase tracking-wider px-4 py-2.5 hidden md:table-cell">Organization</th>
                   <th className="text-left text-xs font-bold text-muted-foreground uppercase tracking-wider px-4 py-2.5 hidden md:table-cell">Role</th>
                   <th className="text-left text-xs font-bold text-muted-foreground uppercase tracking-wider px-4 py-2.5">Joined</th>
+                  <th className="px-4 py-2.5"></th>
                 </tr>
               </thead>
               <tbody>
                 {filtered.length === 0 ? (
-                  <tr><td colSpan={5} className="text-center py-10 text-muted-foreground text-sm">No users found</td></tr>
+                  <tr><td colSpan={6} className="text-center py-10 text-muted-foreground text-sm">No users found</td></tr>
                 ) : (
                   filtered.map((u, i) => (
-                    <tr key={u.id} className={cn("border-b border-border last:border-0", i % 2 === 0 ? "bg-background" : "bg-muted/20")}>
-                      <td className="px-4 py-3 font-semibold text-foreground whitespace-nowrap">{u.name}</td>
-                      <td className="px-4 py-3 text-muted-foreground text-xs">{u.email}</td>
-                      <td className="px-4 py-3 text-muted-foreground text-xs hidden md:table-cell">{u.organization ?? <span className="opacity-40">—</span>}</td>
-                      <td className="px-4 py-3 hidden md:table-cell">
-                        {u.role ? (
-                          <span className="text-[10px] font-bold bg-primary/10 text-primary border border-primary/20 rounded-full px-2 py-0.5">{u.role}</span>
-                        ) : (
-                          <span className="opacity-40 text-xs">—</span>
-                        )}
-                      </td>
-                      <td className="px-4 py-3 text-muted-foreground text-xs whitespace-nowrap">{new Date(u.createdAt).toLocaleDateString()}</td>
-                    </tr>
+                    <React.Fragment key={u.id}>
+                      <tr className={cn("border-b border-border", resettingId === u.id ? "bg-amber-50/60" : i % 2 === 0 ? "bg-background" : "bg-muted/20")}>
+                        <td className="px-4 py-3 font-semibold text-foreground whitespace-nowrap">{u.name}</td>
+                        <td className="px-4 py-3 text-muted-foreground text-xs">{u.email}</td>
+                        <td className="px-4 py-3 text-muted-foreground text-xs hidden md:table-cell">{u.organization ?? <span className="opacity-40">—</span>}</td>
+                        <td className="px-4 py-3 hidden md:table-cell">
+                          {u.role ? (
+                            <span className="text-[10px] font-bold bg-primary/10 text-primary border border-primary/20 rounded-full px-2 py-0.5">{u.role}</span>
+                          ) : (
+                            <span className="opacity-40 text-xs">—</span>
+                          )}
+                        </td>
+                        <td className="px-4 py-3 text-muted-foreground text-xs whitespace-nowrap">{new Date(u.createdAt).toLocaleDateString()}</td>
+                        <td className="px-3 py-3">
+                          <button
+                            onClick={() => {
+                              if (resettingId === u.id) { setResettingId(null); setResetPw(""); }
+                              else { setResettingId(u.id); setResetPw(""); }
+                            }}
+                            title="Reset password"
+                            className={cn("flex items-center gap-1 text-[11px] font-bold px-2 py-1 rounded-lg transition-colors border",
+                              resettingId === u.id
+                                ? "bg-amber-100 border-amber-300 text-amber-800 hover:bg-amber-200"
+                                : "border-border text-muted-foreground hover:text-foreground hover:bg-muted/50"
+                            )}
+                          >
+                            <KeyRound className="w-3 h-3" />
+                            <span className="hidden sm:inline">Reset</span>
+                          </button>
+                        </td>
+                      </tr>
+                      {resettingId === u.id && (
+                        <tr className="bg-amber-50/60 border-b border-amber-200">
+                          <td colSpan={6} className="px-4 py-3">
+                            <div className="flex items-center gap-2">
+                              <KeyRound className="w-4 h-4 text-amber-600 shrink-0" />
+                              <span className="text-xs font-semibold text-amber-900 shrink-0">New password for {u.name}:</span>
+                              <input
+                                type="text"
+                                value={resetPw}
+                                onChange={(e) => setResetPw(e.target.value)}
+                                placeholder="Min. 6 characters"
+                                className="flex-1 h-8 px-3 rounded-lg border border-amber-300 bg-white text-xs focus:outline-none focus:ring-2 focus:ring-amber-300 min-w-0"
+                                autoFocus
+                                onKeyDown={(e) => { if (e.key === "Enter") handleResetPassword(u.id, u.name); if (e.key === "Escape") { setResettingId(null); setResetPw(""); } }}
+                              />
+                              <button
+                                onClick={() => handleResetPassword(u.id, u.name)}
+                                disabled={resetBusy || resetPw.length < 6}
+                                className="flex items-center gap-1 text-xs font-bold bg-amber-600 text-white px-3 py-1.5 rounded-lg hover:bg-amber-700 transition-colors disabled:opacity-40 shrink-0"
+                              >
+                                {resetBusy ? <Loader2 className="w-3 h-3 animate-spin" /> : <CheckCircle className="w-3 h-3" />}
+                                Set
+                              </button>
+                              <button
+                                onClick={() => { setResettingId(null); setResetPw(""); }}
+                                className="text-amber-600 hover:text-amber-800 text-xs shrink-0"
+                              >
+                                Cancel
+                              </button>
+                            </div>
+                          </td>
+                        </tr>
+                      )}
+                    </React.Fragment>
                   ))
                 )}
               </tbody>

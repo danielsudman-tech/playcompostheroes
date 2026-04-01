@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, createContext, useContext, type ReactNode } from "react";
-import { Loader2, Lock, Eye, EyeOff } from "lucide-react";
+import { Loader2, Lock, Eye, EyeOff, HelpCircle, X } from "lucide-react";
 import compostHeroesLogo from "@assets/Compost_Heroes_Logo_no_background_1773537933517.png";
 
 const STORAGE_KEY = "compost_user_token";
@@ -77,6 +77,7 @@ export function AppGate({ children }: { children: ReactNode }) {
   const [password, setPassword] = useState("");
   const [name, setName] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
+  const [showForgot, setShowForgot] = useState(false);
 
   const validateToken = useCallback(async (token: string): Promise<RegisteredUser | null> => {
     try {
@@ -123,6 +124,7 @@ export function AppGate({ children }: { children: ReactNode }) {
   function switchMode(m: Mode) {
     setMode(m);
     setErrorMsg(null);
+    setShowForgot(false);
   }
 
   const handleStart = async (e: React.FormEvent) => {
@@ -280,6 +282,35 @@ export function AppGate({ children }: { children: ReactNode }) {
                 placeholder="Confirm password"
                 autoComplete="new-password"
               />
+            )}
+
+            {/* Forgot password — only shown in signin mode */}
+            {mode === "signin" && (
+              <div className="text-right -mt-1">
+                <button
+                  type="button"
+                  onClick={() => setShowForgot((s) => !s)}
+                  className="text-xs text-muted-foreground hover:text-primary transition-colors flex items-center gap-1 ml-auto"
+                >
+                  <HelpCircle className="w-3.5 h-3.5" />
+                  Forgot your password?
+                </button>
+              </div>
+            )}
+
+            {showForgot && mode === "signin" && (
+              <div className="bg-amber-50 border border-amber-200 rounded-xl px-4 py-3 flex gap-3 items-start">
+                <HelpCircle className="w-4 h-4 text-amber-600 mt-0.5 shrink-0" />
+                <div className="flex-1 min-w-0">
+                  <p className="text-xs font-semibold text-amber-900 mb-0.5">Password reset needed?</p>
+                  <p className="text-xs text-amber-800 leading-relaxed">
+                    Contact your game admin and ask them to reset your password. They can do this from the admin panel.
+                  </p>
+                </div>
+                <button type="button" onClick={() => setShowForgot(false)} className="text-amber-500 hover:text-amber-700 shrink-0 mt-0.5">
+                  <X className="w-3.5 h-3.5" />
+                </button>
+              </div>
             )}
 
             {errorMsg && (

@@ -129,6 +129,19 @@ export async function loginUser(
   return { token, user };
 }
 
+export async function resetUserPassword(userId: string, newPassword: string): Promise<void> {
+  const passwordHash = await bcrypt.hash(newPassword, 12);
+  const result = await pool.query(
+    `UPDATE compost_users SET password_hash = $1 WHERE id = $2`,
+    [passwordHash, userId]
+  );
+  if (result.rowCount === 0) {
+    throw Object.assign(new Error("User not found"), { code: "USER_NOT_FOUND" });
+  }
+  // Invalidate all existing sessions so the user must log in with the new password
+  await pool.query(`DELETE FROM compost_user_sessions WHERE user_id = $1`, [userId]);
+}
+
 export async function getUserByToken(token: string): Promise<CompostUser | null> {
   const result = await pool.query<{
     id: string;

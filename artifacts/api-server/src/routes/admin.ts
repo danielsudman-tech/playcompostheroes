@@ -9,6 +9,7 @@ import { getAllOverrides, setImageKeyOverride, removeImageKeyOverride } from "..
 import { getAllCopies, getCardCopies, setCardCopies } from "../lib/cardCopiesStore.js";
 import { WORKSPACE_ROOT } from "../lib/workspaceRoot.js";
 import { pool } from "@workspace/db";
+import { resetUserPassword } from "../lib/userStore.js";
 
 // Resolve path to the frontend public/assets directory using workspace root
 // Works correctly in both dev (tsx) and prod (bundled dist/index.cjs)
@@ -376,6 +377,28 @@ router.get("/admin/users", async (_req, res) => {
   } catch (err) {
     console.error("[admin users]", err);
     res.status(500).json({ error: "Failed to fetch users" });
+  }
+});
+
+// ── User password reset ───────────────────────────────────────────────────────
+
+router.patch("/admin/users/:userId/reset-password", requireAdmin, async (req: Request, res: Response) => {
+  const { userId } = req.params;
+  const { newPassword } = req.body as { newPassword?: string };
+  if (!newPassword || newPassword.length < 6) {
+    res.status(400).json({ error: "New password must be at least 6 characters" });
+    return;
+  }
+  try {
+    await resetUserPassword(userId, newPassword);
+    res.json({ success: true });
+  } catch (err: any) {
+    if (err?.code === "USER_NOT_FOUND") {
+      res.status(404).json({ error: "User not found" });
+    } else {
+      console.error("[admin reset-password]", err);
+      res.status(500).json({ error: "Failed to reset password" });
+    }
   }
 });
 
