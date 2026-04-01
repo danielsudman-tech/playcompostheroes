@@ -35,4 +35,4 @@ channel = "stable-25_05"
 VITE_PUBLIC_URL = "https://play.compostheroes.org"
 
 [userenv.shared]
-GITHUB_BACKUP_REPO = "dannysudman/play-compost-heroes-backup"
+GITHUB_BACKUP_REPO = "danielsudman-tech/playcompostheroes"
