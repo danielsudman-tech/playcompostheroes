@@ -801,7 +801,7 @@ export default function Game() {
             </div>
 
             {/* Active Hero Modifiers */}
-            {gameState.activeModifiers.filter(m => !gameState.ongoingActionCard || m.cardId !== gameState.ongoingActionCard.id).length > 0 && (
+            {gameState.activeModifiers.filter(m => !gameState.ongoingActionCard || m.cardId !== ((gameState.ongoingActionCard as any).baseId ?? gameState.ongoingActionCard.id)).length > 0 && (
               <div className="bg-card/90 backdrop-blur-md rounded-2xl border shadow-xl overflow-hidden">
                 <div className="bg-gradient-to-r from-primary/20 via-primary/10 to-secondary/20 px-4 py-2 border-b border-border/50 flex items-center gap-2">
                   <Sparkles className="w-4 h-4 text-primary" />
@@ -809,7 +809,7 @@ export default function Game() {
                 </div>
                 <div className="p-3 flex flex-wrap gap-2 items-start">
                   {gameState.activeModifiers
-                    .filter(m => !gameState.ongoingActionCard || m.cardId !== gameState.ongoingActionCard.id)
+                    .filter(m => !gameState.ongoingActionCard || m.cardId !== ((gameState.ongoingActionCard as any).baseId ?? gameState.ongoingActionCard.id))
                     .map((mod, i) => (
                       <div key={i} className="bg-secondary/10 border border-secondary/20 rounded-lg px-2 py-1.5 text-[10px] shadow-sm max-w-[180px]">
                         <div className="font-bold text-secondary-foreground">{mod.cardName}</div>

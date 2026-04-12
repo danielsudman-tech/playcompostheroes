@@ -321,7 +321,7 @@ function applyOngoingModifier(
   playerId: string
 ): GameState {
   const modifier: ActiveModifier = {
-    cardId: card.id,
+    cardId: card.baseId ?? card.id,   // always store the template ID so lookups work
     cardName: card.name,
     effect: card.cardText,
     appliedByPlayerId: playerId,
@@ -1149,7 +1149,7 @@ export function playCard(
         ...s,
         ongoingActionCard: cardInHand,
         activeModifiers: prevOngoing
-          ? s.activeModifiers.filter((m) => m.cardId !== prevOngoing.id)
+          ? s.activeModifiers.filter((m) => m.cardId !== (prevOngoing.baseId ?? prevOngoing.id))
           : s.activeModifiers,
         discardPile: prevOngoing ? [prevOngoing, ...s.discardPile] : s.discardPile,
       };
@@ -2027,6 +2027,10 @@ export function endTurn(
   state: GameState,
   playerId: string
 ): { state: GameState; error?: string } {
+  // If the game is already over (e.g. a card play just triggered a win), do not advance.
+  if (state.phase === "game_over") {
+    return { state };
+  }
   const currentPlayer = state.players[state.currentPlayerIndex];
   if (currentPlayer.id !== playerId) {
     return { state, error: "It's not your turn" };
@@ -2051,6 +2055,15 @@ export function endTurn(
         meta: { count: discardCount },
       },
     };
+    return { state: s };
+  }
+
+  // Safety-net: check if any player already has all 5 functions before advancing
+  const winner = checkWinCondition(s);
+  if (winner) {
+    s = { ...s, phase: "game_over", winner };
+    const winnerPlayer = getPlayer(s, winner)!;
+    addLog(s, `🎉 ${winnerPlayer.name} wins! They collected one hero from each function!`);
     return { state: s };
   }
 
