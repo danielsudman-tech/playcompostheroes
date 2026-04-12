@@ -193,6 +193,11 @@ function getEffectiveFunction(card: Card): string {
   return card.chosenFunction ?? card.function;
 }
 
+/** True if this card instance matches the given template/design ID. */
+function cardIs(card: Card, templateId: string): boolean {
+  return (card.baseId ?? card.id) === templateId;
+}
+
 /** True if the card natively offers `fn` as one of its possible functions (regardless of which slot it occupies). */
 function cardHasFunctionNatively(card: Card, fn: string): boolean {
   if (card.function === fn) return true;
@@ -244,7 +249,7 @@ function recomputePlayerModifiers(
   let drawsExtraCard = false;
 
   // Old Timer hero: +1 hand size
-  if (player.compostPile.some((c) => c.id === "old_timer")) {
+  if (player.compostPile.some((c) => cardIs(c, "old_timer"))) {
     maxHandSize = 6;
   }
 
@@ -279,13 +284,13 @@ function playerHasProtection(
 ): boolean {
   // Sir Stink-No-More protects against stinky_pile
   if (actionCardId === "stinky_pile") {
-    if (player.compostPile.some((c) => c.id === "sir_stink_no_more")) return true;
-    if (player.compostPile.some((c) => c.id === "stink_shield")) return true;
+    if (player.compostPile.some((c) => cardIs(c, "sir_stink_no_more"))) return true;
+    if (player.compostPile.some((c) => cardIs(c, "stink_shield"))) return true;
   }
   // Major Brown and Stink Shield protect against soggy_pile
   if (actionCardId === "soggy_pile") {
-    if (player.compostPile.some((c) => c.id === "major_brown")) return true;
-    if (player.compostPile.some((c) => c.id === "stink_shield")) return true;
+    if (player.compostPile.some((c) => cardIs(c, "major_brown"))) return true;
+    if (player.compostPile.some((c) => cardIs(c, "stink_shield"))) return true;
   }
   // Soggy Saver: Moisture cards can't be removed from compost
   // (handled in soggy_pile resolution specifically)
@@ -293,13 +298,13 @@ function playerHasProtection(
 }
 
 function moistureProtected(player: PlayerState): boolean {
-  return player.compostPile.some((c) => c.id === "soggy_saver");
+  return player.compostPile.some((c) => cardIs(c, "soggy_saver"));
 }
 
 function triggerQuencher(s: GameState, playerId: string, card: Card): GameState {
   if (getEffectiveFunction(card) !== "Moisture") return s;
   const owner = getPlayer(s, playerId)!;
-  if (!owner.compostPile.some((c) => c.id === "quencher")) return s;
+  if (!owner.compostPile.some((c) => cardIs(c, "quencher"))) return s;
   s = drawCard(s, getPlayer(s, playerId)!);
   addLog(s, `${owner.name} drew 1 card (The Quencher — Moisture card entered compost).`);
   return s;
@@ -447,7 +452,7 @@ function resolveHeroInstantEffect(
       addLog(s, `Mycelial Alchemist: All players discard 1 Decomposer from compost.`);
       for (const pl of s.players) {
         const decomposerIdx = pl.compostPile.findIndex(
-          (c) => getEffectiveFunction(c) === "Decomposer"
+          (c) => cardHasFunctionNatively(c, "Decomposer")
         );
         if (decomposerIdx >= 0) {
           const discarded = pl.compostPile[decomposerIdx];
@@ -1066,6 +1071,34 @@ export function playCard(
       ? [...new Set([cardInHand.function, ...cardInHand.alternateFunctions])]
       : [];
     if (allFunctions.length > 1) {
+      // Only offer slots that are not already occupied in this player's compost pile
+      const occupiedSlots = new Set(
+        getPlayer(s, player.id)!.compostPile.map((c) => getEffectiveFunction(c))
+      );
+      const availableFunctions = allFunctions.filter((fn) => !occupiedSlots.has(fn));
+      if (availableFunctions.length === 0) {
+        return { state, error: "All function slots for this card are already filled." };
+      }
+      if (availableFunctions.length === 1) {
+        // Only one valid slot — place automatically without asking
+        const cardWithChoice: Card = { ...cardInHand, chosenFunction: availableFunctions[0] };
+        updatedPlayer = { ...updatedPlayer, compostPile: [...updatedPlayer.compostPile, cardWithChoice] };
+        s = updatePlayer(s, updatedPlayer);
+        addLog(s, `${player.name} placed ${cardInHand.name} into the ${availableFunctions[0]} slot.`);
+        if (cardWithChoice.effectType === "ongoing") {
+          s = recomputeAllModifiers(s);
+        } else {
+          s = resolveHeroInstantEffect(s, getPlayer(s, playerId)!, cardWithChoice);
+        }
+        s = triggerQuencher(s, playerId, cardWithChoice);
+        const winner = checkWinCondition(s);
+        if (winner) {
+          s = { ...s, phase: "game_over", winner };
+          const winnerPlayer = getPlayer(s, winner)!;
+          addLog(s, `🎉 ${winnerPlayer.name} wins! They collected one hero from each function!`);
+        }
+        return { state: s };
+      }
       addLog(s, `${player.name} played ${cardInHand.name} — choose which function slot to fill.`);
       s = {
         ...s,
@@ -1074,7 +1107,7 @@ export function playCard(
           playerId: player.id,
           cardId: cardInHand.id,
           prompt: `${player.name}: Choose which function slot to fill with ${cardInHand.name}.`,
-          options: allFunctions.map((fn) => ({ function: fn })),
+          options: availableFunctions.map((fn) => ({ function: fn })),
           meta: { pendingCard: cardInHand as unknown as Record<string, unknown> },
         },
       };
@@ -1194,7 +1227,7 @@ export function resolveDecision(
       // Check Hot Head hero effect for Carbon discards (only for the player who discarded)
       if (card.function === "Carbon") {
         const hotHeadOwner = getPlayer(s, playerId)!;
-        if (hotHeadOwner.compostPile.some((c) => c.id === "hot_head")) {
+        if (hotHeadOwner.compostPile.some((c) => cardIs(c, "hot_head"))) {
           s = drawCard(s, getPlayer(s, playerId)!);
           addLog(s, `${hotHeadOwner.name} drew 1 card (The Hot Head — Carbon discarded).`);
         }
@@ -1473,6 +1506,17 @@ export function resolveDecision(
         ? [...new Set([card.function, ...card.alternateFunctions])]
         : [];
       if (allFunctions.length > 1) {
+        // Filter out slots already occupied in this player's compost pile
+        const occupiedSlots = new Set(
+          getPlayer(s, playerId)!.compostPile.map((c) => getEffectiveFunction(c))
+        );
+        const availableFunctions = allFunctions.filter((fn) => !occupiedSlots.has(fn));
+        if (availableFunctions.length === 0) {
+          // No room — put the card back in discard and skip
+          s = { ...s, discardPile: [card, ...s.discardPile] };
+          addLog(s, `${player.name}'s compost pile has no room for ${card.name} — returned to discard.`);
+          return { state: s };
+        }
         addLog(s, `${player.name} chose ${card.name} from discard — select a function slot.`);
         s = {
           ...s,
@@ -1481,7 +1525,7 @@ export function resolveDecision(
             playerId,
             cardId: card.id,
             prompt: `${player.name}: Choose which function slot to fill with ${card.name} (Actinomycetes).`,
-            options: allFunctions.map((fn) => ({ function: fn })),
+            options: availableFunctions.map((fn) => ({ function: fn })),
             meta: { pendingCard: card as unknown as Record<string, unknown> },
           },
         };
@@ -1678,7 +1722,7 @@ export function resolveDecision(
           // Hot Head check for Carbon discards (only for the player who discarded)
           if (card.function === "Carbon") {
             const hotHeadOwner = getPlayer(s, playerId)!;
-            if (hotHeadOwner.compostPile.some((c) => c.id === "hot_head")) {
+            if (hotHeadOwner.compostPile.some((c) => cardIs(c, "hot_head"))) {
               s = drawCard(s, getPlayer(s, playerId)!);
               addLog(s, `${hotHeadOwner.name} drew 1 card (The Hot Head — Carbon discarded).`);
             }
@@ -1829,7 +1873,7 @@ export function resolveDecision(
       for (const discarded of toDiscard) {
         if (discarded.function === "Carbon") {
           const currentP = getPlayer(s, playerId)!;
-          if (currentP.compostPile.some((c) => c.id === "hot_head")) {
+          if (currentP.compostPile.some((c) => cardIs(c, "hot_head"))) {
             s = drawCard(s, getPlayer(s, playerId)!);
             addLog(s, `${player.name} drew 1 card (The Hot Head — Carbon discarded).`);
           }
@@ -1848,6 +1892,9 @@ export function resolveDecision(
       if (!pendingCard) return { state, error: "No pending card to place" };
       const allFns = [...new Set([pendingCard.function, ...(pendingCard.alternateFunctions ?? [])])];
       if (!allFns.includes(chosenFn)) return { state, error: "Invalid function choice" };
+      // Guard: reject if the target slot is already occupied
+      const alreadyOccupied = player.compostPile.some((c) => getEffectiveFunction(c) === chosenFn);
+      if (alreadyOccupied) return { state, error: `The ${chosenFn} slot is already filled.` };
 
       const cardWithChoice: Card = { ...pendingCard, chosenFunction: chosenFn };
       const updatedPlayer = {

@@ -9,6 +9,8 @@ export type CardFunction =
 
 export interface Card {
   id: string;
+  /** Template / design ID — always matches the card definition. `id` may be a unique instance. */
+  baseId?: string;
   name: string;
   type: CardType;
   layer: string | null;
@@ -572,6 +574,9 @@ export function getCardLayers(card: Card): string[] {
 
 // Build deck with image overrides and copies counts.
 // copiesOverrides: cardId → how many copies appear in the deck (default 1, 0 = excluded).
+// Every card in the returned deck has a unique `id` (instance ID) and a `baseId` equal
+// to the card's template design ID, so ongoing-effect checks can use `baseId`.
+let _deckInstanceCounter = 0;
 export function buildDeck(
   imageOverrides: Record<string, string> = {},
   copiesOverrides: Record<string, number> = {}
@@ -580,7 +585,13 @@ export function buildDeck(
   for (const c of ALL_CARDS) {
     const copies = copiesOverrides[c.id] ?? 1;
     for (let i = 0; i < copies; i++) {
-      deck.push({ ...c, imageKey: imageOverrides[c.id] ?? c.imageKey });
+      const instanceId = `${c.id}__${++_deckInstanceCounter}`;
+      deck.push({
+        ...c,
+        id: instanceId,
+        baseId: c.id,
+        imageKey: imageOverrides[c.id] ?? c.imageKey,
+      });
     }
   }
   return deck;
