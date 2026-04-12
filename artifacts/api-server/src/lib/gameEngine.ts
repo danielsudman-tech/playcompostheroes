@@ -343,7 +343,7 @@ function resolveHeroInstantEffect(
   let s = state;
   let p = player;
 
-  switch (card.id) {
+  switch (card.baseId ?? card.id) {
     // Fresh-Air Friend: discard 1 from hand to draw 2
     case "fresh_air_friend": {
       if (p.hand.length === 0) {
@@ -722,7 +722,7 @@ function resolveActionInstantEffect(
   let s = state;
   const p = player;
 
-  switch (card.id) {
+  switch (card.baseId ?? card.id) {
     // Anaerobic Pocket: discard 1 Airflow from compost, then choose opponent to skip
     case "anaerobic_pocket": {
       const airflowCards = p.compostPile.filter((c) => getEffectiveFunction(c) === "Airflow");
@@ -2152,7 +2152,7 @@ export function activateOngoing(
   // decision uses up the activation, preventing a second activation if the player skips).
   const stateWithFlag: GameState = { ...state, ongoingBenefitUsedThisTurn: true };
 
-  switch (ongoing.id) {
+  switch (ongoing.baseId ?? ongoing.id) {
     case "hot_pile_bonus": {
       const decomposerCount = player.compostPile.filter(
         (c) => getEffectiveFunction(c) === "Decomposer"
@@ -2497,7 +2497,7 @@ function scoreActionCard(
   const opponents = state.players.filter((p) => p.id !== player.id);
   const danger = mostDangerousOpponent(state, player.id);
 
-  switch (card.id) {
+  switch (card.baseId ?? card.id) {
     case "time_warp":
       return 90; // Always play — extra turn is always good
 
@@ -3001,7 +3001,7 @@ function botActivateOngoing(state: GameState, playerId: string): GameState {
 
   // Check if activation is beneficial
   let shouldActivate = false;
-  switch (ongoing.id) {
+  switch (ongoing.baseId ?? ongoing.id) {
     case "hot_pile_bonus": {
       const decomp = player.compostPile.filter((c) => getEffectiveFunction(c) === "Decomposer").length;
       shouldActivate = decomp >= 2;

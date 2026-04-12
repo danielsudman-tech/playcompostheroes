@@ -745,7 +745,7 @@ export default function Game() {
                       <div className="text-[11px] text-muted-foreground leading-snug mt-1">{gameState.ongoingActionCard.cardText}</div>
                       {isMyTurn && gameState.phase === "play" && !gameState.pendingDecision &&
                         (() => {
-                          const oid = gameState.ongoingActionCard!.id;
+                          const oid = (gameState.ongoingActionCard as any).baseId ?? gameState.ongoingActionCard!.id;
                           const ACTIVATABLE = ["hot_pile_bonus", "critical_mass", "nitrogen_boost", "rot_regrow"];
                           if (!ACTIVATABLE.includes(oid)) return null;
 
@@ -909,7 +909,7 @@ export default function Game() {
                         <div className="text-[10px] text-muted-foreground leading-snug line-clamp-1">{gameState.ongoingActionCard.cardText}</div>
                       </div>
                       {isMyTurn && gameState.phase === "play" && !gameState.pendingDecision && (() => {
-                        const oid = gameState.ongoingActionCard!.id;
+                        const oid = (gameState.ongoingActionCard as any).baseId ?? gameState.ongoingActionCard!.id;
                         const ACTIVATABLE = ["hot_pile_bonus", "critical_mass", "nitrogen_boost", "rot_regrow"];
                         if (!ACTIVATABLE.includes(oid)) return null;
                         let canActivate = false;
@@ -1137,7 +1137,7 @@ export default function Game() {
                         <div className="text-[10px] text-muted-foreground leading-snug line-clamp-2">{gameState.ongoingActionCard.cardText}</div>
                       </div>
                       {isMyTurn && gameState.phase === "play" && !gameState.pendingDecision && (() => {
-                        const oid = gameState.ongoingActionCard!.id;
+                        const oid = (gameState.ongoingActionCard as any).baseId ?? gameState.ongoingActionCard!.id;
                         const ACTIVATABLE = ["hot_pile_bonus", "critical_mass", "nitrogen_boost", "rot_regrow"];
                         if (!ACTIVATABLE.includes(oid)) return null;
                         let canActivate = false;
