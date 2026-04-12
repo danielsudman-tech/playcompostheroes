@@ -88,6 +88,7 @@ export default function Game() {
   });
 
   const { tutorialEnabled, toggleTutorial } = useTutorialMode();
+  const [showPlayLog, setShowPlayLog] = useState(false);
 
   // Player identity:
   // - Online: fixed to the claimed slot (even when it's not your turn)
@@ -473,20 +474,34 @@ export default function Game() {
          <img src={`${import.meta.env.BASE_URL}images/wood-bg.png`} className="w-full h-full object-cover" alt="" />
       </div>
 
-      {/* Tutorial toggle button */}
+      {/* Tutorial toggle button + Play Log button */}
       {gameState.phase !== "waiting" && gameState.phase !== "game_over" && (
-        <button
-          onClick={toggleTutorial}
-          className={cn(
-            "fixed top-3 left-3 z-50 flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-bold backdrop-blur-md border shadow-sm transition-colors duration-200",
-            tutorialEnabled
-              ? "bg-primary text-primary-foreground border-primary/50"
-              : "bg-background/90 border-border text-muted-foreground hover:text-foreground"
-          )}
-        >
-          <BookOpen className="w-3.5 h-3.5" />
-          {tutorialEnabled ? "Guide On" : "Guide Off"}
-        </button>
+        <div className="fixed top-3 left-3 z-50 flex items-center gap-1.5">
+          <button
+            onClick={toggleTutorial}
+            className={cn(
+              "flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-bold backdrop-blur-md border shadow-sm transition-colors duration-200",
+              tutorialEnabled
+                ? "bg-primary text-primary-foreground border-primary/50"
+                : "bg-background/90 border-border text-muted-foreground hover:text-foreground"
+            )}
+          >
+            <BookOpen className="w-3.5 h-3.5" />
+            {tutorialEnabled ? "Guide On" : "Guide Off"}
+          </button>
+          <button
+            onClick={() => setShowPlayLog(v => !v)}
+            className={cn(
+              "flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-bold backdrop-blur-md border shadow-sm transition-colors duration-200",
+              showPlayLog
+                ? "bg-amber-600 text-white border-amber-500/50"
+                : "bg-background/90 border-border text-muted-foreground hover:text-foreground"
+            )}
+          >
+            <History className="w-3.5 h-3.5" />
+            Recap
+          </button>
+        </div>
       )}
 
       {/* Tutorial hint panel */}
@@ -497,6 +512,44 @@ export default function Game() {
           localPlayerId={localPlayerId}
         />
       )}
+
+      {/* Play-by-play log panel */}
+      <AnimatePresence>
+        {showPlayLog && (
+          <motion.div
+            key="play-log"
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: 20 }}
+            transition={{ type: "spring", bounce: 0.2, duration: 0.35 }}
+            className="fixed left-3 right-3 bottom-3 z-[60] max-w-lg mx-auto bg-card/97 backdrop-blur-lg border border-border shadow-2xl rounded-2xl overflow-hidden"
+            style={{ maxHeight: "55vh" }}
+          >
+            <div className="flex items-center justify-between px-4 py-2.5 border-b border-border bg-muted/40 shrink-0">
+              <div className="flex items-center gap-2 font-bold text-sm">
+                <History className="w-4 h-4 text-amber-600" />
+                Play-by-Play
+              </div>
+              <button onClick={() => setShowPlayLog(false)} className="text-muted-foreground hover:text-foreground p-1 rounded-full hover:bg-muted transition-colors">
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+            <div className="overflow-y-auto p-3 flex flex-col gap-1 text-xs" style={{ maxHeight: "calc(55vh - 44px)" }}>
+              {gameState.log.length === 0 && (
+                <div className="text-center text-muted-foreground/50 italic py-6">No moves yet.</div>
+              )}
+              {[...gameState.log].reverse().map((entry, i) => (
+                <div key={i} className={cn(
+                  "py-1.5 px-2 rounded-lg border-b border-border/20 last:border-0 leading-snug",
+                  i === 0 ? "bg-amber-50/60 text-foreground font-medium" : "text-muted-foreground"
+                )}>
+                  {entry}
+                </div>
+              ))}
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
 
       {/* Online mode badge */}
       {isOnline && (

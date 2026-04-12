@@ -3,7 +3,7 @@ import { BookOpen, ChevronDown, ChevronUp } from "lucide-react";
 import { cn } from "@/lib/utils";
 import type { GameState } from "@workspace/api-client-react";
 
-const FUNCTIONS = ["Carbon", "Nitrogen", "Moisture", "Aeration", "Microbial"];
+const FUNCTIONS = ["Airflow", "Carbon", "Decomposer", "Moisture", "Nitrogen"];
 
 function getHint(
   gameState: GameState,
@@ -156,7 +156,7 @@ function getHint(
     const actionPlayed = gameState.actionPlayedThisTurn;
     const myPlayer = gameState.players.find(p => p.id === localPlayerId);
     const myFunctions = new Set(
-      (myPlayer?.compostPile ?? []).map(c => (c as any).effectiveFunction ?? c.function)
+      (myPlayer?.compostPile ?? []).map(c => c.chosenFunction ?? c.function)
     );
     const missing = FUNCTIONS.filter(f => !myFunctions.has(f));
 
@@ -194,7 +194,7 @@ function getHint(
 
   return {
     title: "Compost Heroes",
-    body: "Collect one Hero from each of the 5 function categories — Carbon, Nitrogen, Moisture, Aeration, and Microbial — to win!",
+    body: "Collect one Hero from each of the 5 function categories — Airflow, Carbon, Decomposer, Moisture, and Nitrogen — to win!",
   };
 }
 
