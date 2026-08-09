@@ -93,6 +93,18 @@ export function AppGate({ children }: { children: ReactNode }) {
   useEffect(() => {
     let cancelled = false;
     (async () => {
+      // Support sign-in links (?ut=<token>) so facilitators can share direct
+      // links over Zoom/Teams chat. The token is validated below like any other.
+      try {
+        const params = new URLSearchParams(window.location.search);
+        const urlToken = params.get("ut");
+        if (urlToken) {
+          localStorage.setItem(STORAGE_KEY, urlToken);
+          params.delete("ut");
+          const qs = params.toString();
+          window.history.replaceState({}, "", window.location.pathname + (qs ? `?${qs}` : "") + window.location.hash);
+        }
+      } catch {}
       const stored = localStorage.getItem(STORAGE_KEY);
       if (stored) {
         const validUser = await validateToken(stored);

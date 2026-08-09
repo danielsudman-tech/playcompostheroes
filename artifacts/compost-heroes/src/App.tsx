@@ -5,6 +5,7 @@ import { TooltipProvider } from "@/components/ui/tooltip";
 import NotFound from "@/pages/not-found";
 import Lobby from "./pages/Lobby";
 import Game from "./pages/Game";
+import FacilitatedGame from "./pages/FacilitatedGame";
 import Admin from "./pages/Admin";
 import { AppGate } from "./components/AppGate";
 import { ErrorBoundary } from "./components/ErrorBoundary";
@@ -16,6 +17,7 @@ function GameRouter() {
     <Switch>
       <Route path="/" component={Lobby} />
       <Route path="/game/:gameId" component={Game} />
+      <Route path="/game/:gameId/table" component={FacilitatedGame} />
       <Route component={NotFound} />
     </Switch>
   );

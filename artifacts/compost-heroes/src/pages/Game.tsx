@@ -181,6 +181,14 @@ export default function Game() {
     }
   }, []);
 
+  // Facilitated rooms use the dedicated Zoom-friendly table layout once play begins.
+  // Online mode is untouched — this only redirects facilitated-mode players with a token.
+  useEffect(() => {
+    if (isFacilitated && gameState && gameState.phase !== "waiting" && localToken) {
+      setLocation(`/game/${gameId}/table`);
+    }
+  }, [isFacilitated, gameState?.phase, localToken, gameId, setLocation]);
+
   useEffect(() => {
     // Pass screen only makes sense in Pass & Play (same device)
     if (!gameState || gameState.phase === "game_over" || isOnline) return;
