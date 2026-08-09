@@ -1,0 +1,228 @@
+# Card Effects, Rule Support, and Board Visibility
+
+The current online version already knows the full Compost Heroes card set and the features/effects associated with each card. Preserve and build on that logic.
+
+Many Compost Heroes cards include a **yellow effect section** that explains what happens when the card is played. In this new facilitated multiplayer mode, the online system should actively help players carry out those effects correctly.
+
+The goal is not simply to display the card text. The system should translate card effects into clear, contextual actions.
+
+For example:
+
+* If a card causes **Pile Flip**, the system should automatically shift each player's compost pile cards to the left according to the game rules and clearly show players what just happened.
+* If a card allows a player to **steal a Nitrogen card from another player**, playing that card should trigger a simple selection step:
+
+  * Choose which player to steal from.
+  * If needed, choose the eligible Nitrogen card.
+  * Confirm the move.
+  * Show the card transferring to the correct compost pile.
+* If a card requires selecting another player, choosing a card, drawing extra cards, discarding, moving a Hero, blocking an action, or resolving another specific effect, the system should present the appropriate interaction at that moment.
+
+Think of each card effect as potentially having its own small guided workflow.
+
+The player should never have to read a complicated effect and then manually figure out how to reproduce it in the interface.
+
+Instead:
+
+**Play card → system explains effect → player makes any required decisions → system executes the rules → play continues.**
+
+The current game logic should be audited carefully to identify all cards that require special digital support.
+
+Create an inventory of card-effect interaction types, such as:
+
+* Draw additional cards
+* Draw until a condition is met
+* Steal a Hero/card
+* Move or swap a card
+* Shift compost piles
+* Target another player
+* Target a specific compost layer
+* Prevent/block an action
+* Apply an ongoing effect
+* Remove an ongoing effect
+* Force a discard
+* Change hand size
+* Affect all players
+* Affect the next player
+* Trigger another card or effect
+* Require a player choice before resolving
+
+For each interaction type, recommend the cleanest and most reusable UI pattern rather than creating a completely unique interface for every card.
+
+## Yellow Card Effect Guidance
+
+The yellow section of each card should become an important part of the digital experience.
+
+When a player selects or plays a card, consider showing the effect in a highly readable way near the action area.
+
+For example:
+
+**Soggy Pile**
+
+"Choose another player. Their compost pile is affected by excess moisture."
+
+[Maria] [James] [Alex]
+
+Then provide only the choices that are legal.
+
+The interface should distinguish between:
+
+* what the card says
+* what the player needs to do now
+* what the system will handle automatically
+
+Avoid requiring players to interpret rule language when the software can guide them directly.
+
+---
+
+# Seeing the Other Players
+
+Players need strong awareness of the other three compost piles because much of the strategy depends on understanding what opponents have collected and who may be close to winning.
+
+Each player's board should show the important state of their compost pile at a glance.
+
+A player should be able to quickly see:
+
+* which compost layers another player has
+* which layers they are missing
+* important Heroes/cards currently in their pile
+* ongoing effects affecting them
+* how close they are to winning
+
+Because individual cards contain useful details, explore an interaction where players can **click/tap another player's compost pile to enlarge it**.
+
+The enlarged view could show:
+
+* cards at a readable size
+* Hero names
+* compost categories
+* card effects
+* active restrictions/effects
+
+This should be easy to open and dismiss without disrupting gameplay.
+
+Do not permanently dedicate large amounts of screen space to full-size opponent cards if a compact overview + expandable inspection provides a cleaner experience.
+
+---
+
+# Shared Table Elements
+
+Players should also be able to clearly see the shared game state, including:
+
+* Draw pile
+* Discard pile
+* Ongoing Action card/effect area
+* Current player's turn
+* Current turn step
+* Recent action or game event
+
+The draw pile should feel like a recognizable deck that can be clicked when drawing is allowed.
+
+The discard pile should allow players to understand what has recently been played/discarded where relevant, potentially with an expandable view if useful.
+
+Ongoing Action cards need to remain visually present because their effects can influence future turns. They should not disappear into an activity feed where players may forget them.
+
+Consider whether ongoing actions belong in a dedicated shared area of the table with a concise description of the active effect.
+
+---
+
+# Screen-Space Challenge
+
+There is a lot of information competing for limited screen space:
+
+* player's hand
+* player's compost pile
+* three opponents and their compost piles
+* draw pile
+* discard pile
+* ongoing Action cards
+* turn guidance
+* card instructions
+* activity/history
+* game controls
+
+Treat this as a major design challenge.
+
+I want the interface to feel **clean, calm, and understandable**, not like every piece of information has been placed on screen simultaneously.
+
+Explore hierarchy carefully.
+
+Prioritize what a player needs:
+
+### Always visible
+
+* My hand
+* My compost progress
+* Whose turn it is
+* Current turn step
+* Opponent compost progress
+* Draw pile
+* Important ongoing effects
+
+### Available when needed
+
+* Full opponent card details
+* Full discard history
+* Full rules
+* Detailed card explanations
+* Previous actions
+* Help/tutorial information
+
+Use progressive disclosure wherever possible.
+
+The interface should answer these questions immediately:
+
+**Whose turn is it?**
+
+**What am I supposed to do now?**
+
+**What cards can I play?**
+
+**What am I trying to collect?**
+
+**How close are the other players to winning?**
+
+**Is there an ongoing effect changing the rules right now?**
+
+Everything else can be secondary.
+
+---
+
+# Responsive Layout Exploration
+
+Explore different board layouts before settling on one.
+
+Potential concepts could include:
+
+### Digital Table
+
+My hand along the bottom, my compost pile directly above it, opponents around the top/sides, shared piles in the center.
+
+### Player-Focused Board
+
+My board takes most of the space while opponents appear as smaller expandable compost summaries.
+
+### Adaptive Turn Layout
+
+The interface temporarily emphasizes whichever board/player is relevant to the current action.
+
+For example, if I play a card that steals Nitrogen, the opponent area could expand temporarily to help me choose a target.
+
+Do not assume a traditional four-sided card-table layout is necessarily best, especially on laptops with limited vertical space.
+
+Optimize primarily for desktop/laptop use during Zoom or Teams-based corporate events, while keeping reasonable responsiveness for tablets and smaller screens.
+
+---
+
+# Critical Principle
+
+The digital system should automate **rule execution**, not **player decision-making**.
+
+If a card has an automatic mechanical consequence, the application can perform it.
+
+If a card requires a strategic choice, the player should make that choice.
+
+A strong card interaction should therefore feel like:
+
+**I choose the card → the game tells me what decision is required → I make the decision → the system correctly performs the effect.**
+
+That balance should guide the entire new mode.

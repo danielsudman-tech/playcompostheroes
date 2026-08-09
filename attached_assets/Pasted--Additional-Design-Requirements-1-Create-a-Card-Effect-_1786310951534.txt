@@ -1,0 +1,141 @@
+# Additional Design Requirements
+
+## 1. Create a Card-Effect Systems Map Before Building
+
+Before implementing the new gameplay mode, create a **card-effect systems map** for the full Compost Heroes deck.
+
+The current version already knows the cards and their effects, so use that existing logic as the starting point.
+
+The goal is to identify the small number of reusable interaction patterns that can support most or all card effects.
+
+For example, many cards may fall into patterns such as:
+
+* Choose another player
+* Choose one of another player's cards
+* Steal or transfer a card
+* Move or shift compost pile cards
+* Draw additional cards
+* Discard cards
+* Apply an ongoing effect
+* Remove or cancel an effect
+* Affect all players
+* Temporarily change a rule
+* Trigger a follow-up choice
+* Resolve automatically with no player decision
+
+Do not create a completely custom interface for every card unless the effect genuinely requires it.
+
+Instead, determine whether the deck can be supported by a manageable set of reusable interaction components.
+
+For each card, document:
+
+* What triggers the effect
+* Whether the effect is automatic or requires a player decision
+* What choices the player must make
+* What the interface needs to show
+* What the system should execute automatically
+* Whether the effect changes future turns or game state
+* Which reusable interaction pattern supports it
+
+Use this systems map to guide the architecture of the facilitated multiplayer mode.
+
+---
+
+## 2. Treat Opponent Visibility as Core Gameplay
+
+Seeing the other players' compost piles is not just a visual feature. It is necessary for strategy.
+
+Players may need to understand another player's board in order to:
+
+* decide who to target
+* steal a particular compost category
+* block a player
+* respond to an ongoing effect
+* determine who is close to winning
+* decide whether to play an offensive or defensive Action card
+
+Therefore, opponent information should be easy to understand at a glance.
+
+At the same time, do not attempt to show every opponent card at full readable size all the time.
+
+Explore a layered approach:
+
+### At-a-glance opponent view
+
+Show:
+
+* compost categories collected
+* categories still missing
+* number of cards
+* important active effects
+* proximity to winning
+
+### Expandable detailed view
+
+Allow a player to click or tap another player's compost pile to temporarily enlarge it and inspect:
+
+* individual cards
+* card names
+* categories
+* card effects
+* ongoing conditions
+
+When a card requires targeting another player's board, the relevant opponent information should become more prominent automatically.
+
+For example:
+
+If I play an Action that allows me to steal Nitrogen, the interface could highlight only opponents who currently have eligible Nitrogen cards.
+
+Once I choose a player, their pile could temporarily expand so I can select the appropriate card.
+
+Opponent visibility should support decision-making without overwhelming the main board.
+
+---
+
+## 3. Optimize First for Laptop + Video Conferencing
+
+The primary use case for this mode is facilitated corporate team building delivered through platforms such as Zoom or Microsoft Teams.
+
+That means players will often have:
+
+* Zoom/Teams open at the same time
+* limited screen space
+* browser windows that may not be maximized
+* chat or participant panels open
+* varying laptop sizes
+* limited familiarity with the game
+
+Design and test the interface with this reality in mind.
+
+Do not assume every player will have a full-screen 1920×1080 game window.
+
+The game should remain understandable and playable when running in a reasonably sized browser window beside or underneath a video conferencing application.
+
+Prioritize:
+
+* laptop screens
+* approximately 13–15 inch displays
+* browser windows that are not full screen
+* clear typography
+* minimal scrolling during a turn
+* large enough card interactions to avoid mis-clicks
+* compact opponent summaries
+* expandable detail rather than permanently visible detail
+* responsive layouts that preserve the important game state
+
+Test proposed layouts at several constrained window sizes.
+
+If necessary, allow parts of the interface to collapse intelligently, but always preserve immediate access to:
+
+* the player's hand
+* the player's compost pile
+* current turn instructions
+* opponent progress
+* draw pile
+* ongoing effects
+
+The design should not require players to constantly resize windows, zoom their browser, or scroll around the board just to complete a normal turn.
+
+A useful design question throughout this exploration is:
+
+> Can someone participate in a Zoom breakout room, see the other three people, and still comfortably understand and operate the Compost Heroes game at the same time?
