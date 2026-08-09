@@ -280,6 +280,67 @@ export function useGameAction(gameId: string, token?: string | null, callbacks?:
   });
 }
 
+// ── Facilitator assist controls (host token = player index 0) ────────────────
+
+export function useNudgePlayer(gameId: string | null, token: string | null) {
+  return useMutation({
+    mutationFn: async (targetPlayerIndex: number) => {
+      const r = await fetch(`/api/games/${gameId}/nudge`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ token, targetPlayerIndex }),
+      });
+      if (!r.ok) {
+        const err = await r.json().catch(() => ({}));
+        throw new Error((err as any).error ?? "Failed to nudge");
+      }
+      return r.json();
+    },
+  });
+}
+
+export function usePauseGame(gameId: string | null, token: string | null) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async (paused: boolean) => {
+      const r = await fetch(`/api/games/${gameId}/pause`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ token, paused }),
+      });
+      if (!r.ok) {
+        const err = await r.json().catch(() => ({}));
+        throw new Error((err as any).error ?? "Failed to update pause state");
+      }
+      return r.json() as Promise<GameState>;
+    },
+    onSuccess: (data) => {
+      if (gameId) queryClient.setQueryData(getGetGameQueryKey(gameId), data);
+    },
+  });
+}
+
+export function useFacilitatorResolve(gameId: string | null, token: string | null) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async () => {
+      const r = await fetch(`/api/games/${gameId}/facilitator-resolve`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ token }),
+      });
+      if (!r.ok) {
+        const err = await r.json().catch(() => ({}));
+        throw new Error((err as any).error ?? "Failed to resolve decision");
+      }
+      return r.json() as Promise<GameState>;
+    },
+    onSuccess: (data) => {
+      if (gameId) queryClient.setQueryData(getGetGameQueryKey(gameId), data);
+    },
+  });
+}
+
 // ── Join a waiting-room game ──────────────────────────────────────────────────
 
 export function useJoinRoom(gameId: string | null) {

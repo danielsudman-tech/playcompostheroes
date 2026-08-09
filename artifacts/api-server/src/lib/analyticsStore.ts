@@ -5,7 +5,8 @@ export type AnalyticsEventType =
   | "login"
   | "game_created"
   | "player_joined"
-  | "game_completed";
+  | "game_completed"
+  | "facilitator_resolve";
 
 interface LogEventOptions {
   userId?: string;

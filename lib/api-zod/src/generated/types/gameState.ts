@@ -33,5 +33,6 @@ export interface GameState {
   ongoingActionCard?: Card | null;
   ongoingBenefitUsedThisTurn?: boolean;
   maxPlayers?: number;
+  paused?: boolean;
   hasPassword?: boolean;
 }

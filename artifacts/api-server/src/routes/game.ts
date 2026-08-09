@@ -386,12 +386,117 @@ router.post("/games/:gameId/nudge", async (req, res) => {
   const state = await getGame(gameId);
   if (!state) { res.status(404).json({ error: "Game not found" }); return; }
 
+  if (state.mode !== "online" && state.mode !== "facilitated") {
+    res.status(400).json({ error: "Nudges are only available in multiplayer games" });
+    return;
+  }
+
   const senderIndex = await getPlayerIndexForToken(gameId, token);
   if (senderIndex === undefined || senderIndex === null) { res.status(403).json({ error: "Invalid token" }); return; }
 
+  // Facilitated sessions: only the facilitator (host, player index 0) may nudge.
+  if (state.mode === "facilitated" && senderIndex !== 0) {
+    res.status(403).json({ error: "Only the facilitator (host) can nudge players" });
+    return;
+  }
+
+  const target = Number(targetPlayerIndex);
+  if (!Number.isInteger(target) || target < 0 || target >= state.players.length || target === senderIndex) {
+    res.status(400).json({ error: "Invalid nudge target" });
+    return;
+  }
+
   const senderName = state.players[senderIndex]?.name ?? "Someone";
-  await sendNudgeEvent(gameId, targetPlayerIndex, senderName);
+  await sendNudgeEvent(gameId, target, senderName);
   res.json({ ok: true });
+});
+
+// ─── Facilitator (host = player index 0) assist controls ────────────────────
+
+async function requireHost(gameId: string, token: string | undefined): Promise<{ state: GameState } | { status: number; error: string }> {
+  const state = await getGame(gameId);
+  if (!state) return { status: 404, error: "Game not found" };
+  if (state.mode !== "facilitated") return { status: 400, error: "Facilitator controls are only available in facilitated games" };
+  if (!token) return { status: 403, error: "Host token required" };
+  const idx = await getPlayerIndexForToken(gameId, token);
+  if (idx !== 0) return { status: 403, error: "Only the facilitator (host) can do this" };
+  return { state };
+}
+
+// POST /api/games/:gameId/pause — facilitator pauses/resumes the game
+router.post("/games/:gameId/pause", async (req, res) => {
+  const { gameId } = req.params as { gameId: string };
+  const { token, paused } = req.body as { token?: string; paused?: boolean };
+
+  const check = await requireHost(gameId, token);
+  if ("error" in check) { res.status(check.status).json({ error: check.error }); return; }
+
+  const state: GameState = { ...check.state, paused: paused === true };
+  state.log = [...state.log.slice(-49), paused === true ? "⏸️ The facilitator paused the game." : "▶️ The facilitator resumed the game."];
+  await storeGame(state);
+  broadcast(gameId, state);
+  res.json(serializeState(state, 0));
+});
+
+/**
+ * Build a sensible decisionData for the facilitator stepping in on a stuck
+ * decision. Skips when the decision is optional; otherwise picks the first
+ * valid option(s). Never reveals hidden hand info to the facilitator — the
+ * choice is made server-side.
+ */
+function buildAutoResolveData(decision: NonNullable<GameState["pendingDecision"]>): Record<string, unknown> {
+  const opts = (decision.options ?? []) as any[];
+  const meta = (decision.meta ?? {}) as Record<string, unknown>;
+  switch (decision.type) {
+    case "choose_rot_roulette_keep":
+      return { keepCardIds: opts.slice(0, (meta.keepCount as number) ?? 2).map((o) => o.cardId) };
+    case "choose_discard_for_spread":
+    case "choose_discard_to_limit":
+      return { cardIds: opts.slice(0, (meta.count as number) ?? 1).map((o) => o.cardId) };
+    case "choose_rot_regrow_discard":
+      return { cardIds: opts.slice(0, 3).map((o) => o.cardId) };
+    case "choose_rainstorm_play":
+      return { cardIds: [] };
+    case "choose_target_player":
+    case "choose_opponent_for_steal":
+    case "choose_swap_opponent_breezy": {
+      const o = opts[0];
+      return { targetPlayerId: o?.targetPlayerId ?? o?.playerId, targetCardId: o?.targetCardId };
+    }
+    case "choose_function":
+    case "choose_move_function":
+      return { function: opts[0]?.function };
+    default:
+      if (meta.optional === true || opts.some((o) => o?.skip)) return { skip: true };
+      if (opts[0] && typeof opts[0] === "object") return { ...opts[0] };
+      return { skip: true };
+  }
+}
+
+// POST /api/games/:gameId/facilitator-resolve — host resolves a stuck decision
+router.post("/games/:gameId/facilitator-resolve", async (req, res) => {
+  const { gameId } = req.params as { gameId: string };
+  const { token } = req.body as { token?: string };
+
+  const check = await requireHost(gameId, token);
+  if ("error" in check) { res.status(check.status).json({ error: check.error }); return; }
+
+  const state = check.state;
+  const decision = state.pendingDecision;
+  if (!decision) { res.status(409).json({ error: "There is no pending decision to resolve" }); return; }
+
+  const owner = state.players.find((p) => p.id === decision.playerId);
+  const data = buildAutoResolveData(decision);
+  const result = resolveDecision(state, decision.playerId, data);
+  if (result.error) { res.status(400).json({ error: result.error }); return; }
+
+  let newState = result.state;
+  newState.log = [...newState.log.slice(-49), `🛟 The facilitator stepped in and resolved ${owner?.name ?? "a player"}'s pending choice.`];
+  newState = runBotTurnsIfNeeded(newState);
+  await storeGame(newState);
+  broadcast(gameId, newState);
+  logEvent("facilitator_resolve", { gameId, metadata: { decisionType: decision.type, ownerName: owner?.name } });
+  res.json(serializeState(newState, 0));
 });
 
 // POST /api/games/:gameId/action — perform a game action
@@ -420,6 +525,13 @@ router.post("/games/:gameId/action", async (req, res) => {
     decisionData?: Record<string, unknown>;
     token?: string;
   };
+
+  // Facilitated: while paused, no game actions are allowed (facilitator
+  // assist endpoints remain available).
+  if (state.mode === "facilitated" && state.paused) {
+    res.status(409).json({ error: "The facilitator has paused the game" });
+    return;
+  }
 
   // Multiplayer (online/facilitated): the acting player must present a valid
   // token, and it must belong to the playerId they claim to act as.

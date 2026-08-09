@@ -19,9 +19,11 @@ import type {
 import type {
   CreateGameRequest,
   ErrorResponse,
+  FacilitatorResolveRequest,
   GameAction,
   GameState,
   HealthStatus,
+  PauseGameRequest,
 } from "./api.schemas";
 
 import { customFetch } from "../custom-fetch";
@@ -271,6 +273,181 @@ export function useGetGame<
 
   return { ...query, queryKey: queryOptions.queryKey };
 }
+
+/**
+ * @summary Facilitator pauses or resumes a facilitated game (host token required)
+ */
+export const getPauseGameUrl = (gameId: string) => {
+  return `/api/games/${gameId}/pause`;
+};
+
+export const pauseGame = async (
+  gameId: string,
+  pauseGameRequest: PauseGameRequest,
+  options?: RequestInit,
+): Promise<GameState> => {
+  return customFetch<GameState>(getPauseGameUrl(gameId), {
+    ...options,
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...options?.headers },
+    body: JSON.stringify(pauseGameRequest),
+  });
+};
+
+export const getPauseGameMutationOptions = <
+  TError = ErrorType<ErrorResponse>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof pauseGame>>,
+    TError,
+    { gameId: string; data: BodyType<PauseGameRequest> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof pauseGame>>,
+  TError,
+  { gameId: string; data: BodyType<PauseGameRequest> },
+  TContext
+> => {
+  const mutationKey = ["pauseGame"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof pauseGame>>,
+    { gameId: string; data: BodyType<PauseGameRequest> }
+  > = (props) => {
+    const { gameId, data } = props ?? {};
+
+    return pauseGame(gameId, data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type PauseGameMutationResult = NonNullable<
+  Awaited<ReturnType<typeof pauseGame>>
+>;
+export type PauseGameMutationBody = BodyType<PauseGameRequest>;
+export type PauseGameMutationError = ErrorType<ErrorResponse>;
+
+/**
+ * @summary Facilitator pauses or resumes a facilitated game (host token required)
+ */
+export const usePauseGame = <
+  TError = ErrorType<ErrorResponse>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof pauseGame>>,
+    TError,
+    { gameId: string; data: BodyType<PauseGameRequest> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof pauseGame>>,
+  TError,
+  { gameId: string; data: BodyType<PauseGameRequest> },
+  TContext
+> => {
+  return useMutation(getPauseGameMutationOptions(options));
+};
+
+/**
+ * @summary Facilitator resolves the current pending decision on behalf of a stuck player (host token required)
+ */
+export const getFacilitatorResolveUrl = (gameId: string) => {
+  return `/api/games/${gameId}/facilitator-resolve`;
+};
+
+export const facilitatorResolve = async (
+  gameId: string,
+  facilitatorResolveRequest: FacilitatorResolveRequest,
+  options?: RequestInit,
+): Promise<GameState> => {
+  return customFetch<GameState>(getFacilitatorResolveUrl(gameId), {
+    ...options,
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...options?.headers },
+    body: JSON.stringify(facilitatorResolveRequest),
+  });
+};
+
+export const getFacilitatorResolveMutationOptions = <
+  TError = ErrorType<ErrorResponse>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof facilitatorResolve>>,
+    TError,
+    { gameId: string; data: BodyType<FacilitatorResolveRequest> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof facilitatorResolve>>,
+  TError,
+  { gameId: string; data: BodyType<FacilitatorResolveRequest> },
+  TContext
+> => {
+  const mutationKey = ["facilitatorResolve"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof facilitatorResolve>>,
+    { gameId: string; data: BodyType<FacilitatorResolveRequest> }
+  > = (props) => {
+    const { gameId, data } = props ?? {};
+
+    return facilitatorResolve(gameId, data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type FacilitatorResolveMutationResult = NonNullable<
+  Awaited<ReturnType<typeof facilitatorResolve>>
+>;
+export type FacilitatorResolveMutationBody =
+  BodyType<FacilitatorResolveRequest>;
+export type FacilitatorResolveMutationError = ErrorType<ErrorResponse>;
+
+/**
+ * @summary Facilitator resolves the current pending decision on behalf of a stuck player (host token required)
+ */
+export const useFacilitatorResolve = <
+  TError = ErrorType<ErrorResponse>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof facilitatorResolve>>,
+    TError,
+    { gameId: string; data: BodyType<FacilitatorResolveRequest> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof facilitatorResolve>>,
+  TError,
+  { gameId: string; data: BodyType<FacilitatorResolveRequest> },
+  TContext
+> => {
+  return useMutation(getFacilitatorResolveMutationOptions(options));
+};
 
 /**
  * @summary Perform a game action

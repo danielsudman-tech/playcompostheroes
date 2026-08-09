@@ -180,6 +180,324 @@ export const GetGameResponse = zod.object({
     .nullish(),
   ongoingBenefitUsedThisTurn: zod.boolean().optional(),
   maxPlayers: zod.number().optional(),
+  paused: zod.boolean().optional(),
+  hasPassword: zod.boolean().optional(),
+});
+
+/**
+ * @summary Facilitator pauses or resumes a facilitated game (host token required)
+ */
+export const PauseGameParams = zod.object({
+  gameId: zod.coerce.string(),
+});
+
+export const PauseGameBody = zod.object({
+  token: zod.string(),
+  paused: zod.boolean(),
+});
+
+export const PauseGameResponse = zod.object({
+  gameId: zod.string(),
+  mode: zod.enum(["facilitator", "standalone", "online", "facilitated"]),
+  phase: zod.enum([
+    "waiting",
+    "setup",
+    "draw",
+    "play",
+    "effect_resolution",
+    "end_turn",
+    "game_over",
+  ]),
+  currentPlayerIndex: zod.number(),
+  players: zod.array(
+    zod.object({
+      id: zod.string(),
+      name: zod.string(),
+      hand: zod.array(
+        zod.object({
+          id: zod.string(),
+          name: zod.string(),
+          type: zod.enum(["hero", "action"]),
+          layer: zod.string().nullable(),
+          effectType: zod.enum(["instant", "ongoing"]),
+          cardText: zod.string(),
+          factText: zod.string(),
+          function: zod.string(),
+          imageKey: zod.string().nullable(),
+          baseId: zod.string().optional(),
+          alternateFunctions: zod.array(zod.string()).optional(),
+          chosenFunction: zod.string().optional(),
+        }),
+      ),
+      compostPile: zod.array(
+        zod.object({
+          id: zod.string(),
+          name: zod.string(),
+          type: zod.enum(["hero", "action"]),
+          layer: zod.string().nullable(),
+          effectType: zod.enum(["instant", "ongoing"]),
+          cardText: zod.string(),
+          factText: zod.string(),
+          function: zod.string(),
+          imageKey: zod.string().nullable(),
+          baseId: zod.string().optional(),
+          alternateFunctions: zod.array(zod.string()).optional(),
+          chosenFunction: zod.string().optional(),
+        }),
+      ),
+      skipsNextTurn: zod.boolean(),
+      maxHandSize: zod.number(),
+      drawsExtraCard: zod.boolean(),
+      isBot: zod.boolean().optional(),
+      botSkillLevel: zod.enum(["easy", "medium", "hard"]).optional(),
+    }),
+  ),
+  deckCount: zod.number(),
+  discardPile: zod.array(
+    zod.object({
+      id: zod.string(),
+      name: zod.string(),
+      type: zod.enum(["hero", "action"]),
+      layer: zod.string().nullable(),
+      effectType: zod.enum(["instant", "ongoing"]),
+      cardText: zod.string(),
+      factText: zod.string(),
+      function: zod.string(),
+      imageKey: zod.string().nullable(),
+      baseId: zod.string().optional(),
+      alternateFunctions: zod.array(zod.string()).optional(),
+      chosenFunction: zod.string().optional(),
+    }),
+  ),
+  activeModifiers: zod.array(
+    zod.object({
+      cardId: zod.string(),
+      cardName: zod.string(),
+      effect: zod.string(),
+      appliedByPlayerId: zod.string(),
+    }),
+  ),
+  pendingDecision: zod
+    .object({
+      type: zod.string(),
+      playerId: zod.string(),
+      cardId: zod.string(),
+      options: zod.array(zod.record(zod.string(), zod.unknown())).optional(),
+      prompt: zod.string(),
+      meta: zod.record(zod.string(), zod.unknown()).optional(),
+    })
+    .nullable(),
+  lastEffect: zod
+    .object({
+      id: zod.string(),
+      cardId: zod.string(),
+      cardName: zod.string(),
+      cardText: zod.string(),
+      imageKey: zod.string().nullable(),
+      playedById: zod.string(),
+      playedByName: zod.string(),
+      outcome: zod.array(zod.string()),
+      events: zod.array(
+        zod.object({
+          kind: zod.enum([
+            "draw",
+            "discard",
+            "transfer",
+            "swap",
+            "skip",
+            "pile_shift",
+            "modifier",
+            "info",
+          ]),
+          playerIds: zod.array(zod.string()).optional(),
+          text: zod.string(),
+        }),
+      ),
+    })
+    .nullish(),
+  log: zod.array(zod.string()),
+  winner: zod.string().nullable(),
+  turnNumber: zod.number(),
+  extraTurn: zod.boolean().optional(),
+  heroPlayedThisTurn: zod.boolean().optional(),
+  actionPlayedThisTurn: zod.boolean().optional(),
+  ongoingActionCard: zod
+    .object({
+      id: zod.string(),
+      name: zod.string(),
+      type: zod.enum(["hero", "action"]),
+      layer: zod.string().nullable(),
+      effectType: zod.enum(["instant", "ongoing"]),
+      cardText: zod.string(),
+      factText: zod.string(),
+      function: zod.string(),
+      imageKey: zod.string().nullable(),
+      baseId: zod.string().optional(),
+      alternateFunctions: zod.array(zod.string()).optional(),
+      chosenFunction: zod.string().optional(),
+    })
+    .nullish(),
+  ongoingBenefitUsedThisTurn: zod.boolean().optional(),
+  maxPlayers: zod.number().optional(),
+  paused: zod.boolean().optional(),
+  hasPassword: zod.boolean().optional(),
+});
+
+/**
+ * @summary Facilitator resolves the current pending decision on behalf of a stuck player (host token required)
+ */
+export const FacilitatorResolveParams = zod.object({
+  gameId: zod.coerce.string(),
+});
+
+export const FacilitatorResolveBody = zod.object({
+  token: zod.string(),
+});
+
+export const FacilitatorResolveResponse = zod.object({
+  gameId: zod.string(),
+  mode: zod.enum(["facilitator", "standalone", "online", "facilitated"]),
+  phase: zod.enum([
+    "waiting",
+    "setup",
+    "draw",
+    "play",
+    "effect_resolution",
+    "end_turn",
+    "game_over",
+  ]),
+  currentPlayerIndex: zod.number(),
+  players: zod.array(
+    zod.object({
+      id: zod.string(),
+      name: zod.string(),
+      hand: zod.array(
+        zod.object({
+          id: zod.string(),
+          name: zod.string(),
+          type: zod.enum(["hero", "action"]),
+          layer: zod.string().nullable(),
+          effectType: zod.enum(["instant", "ongoing"]),
+          cardText: zod.string(),
+          factText: zod.string(),
+          function: zod.string(),
+          imageKey: zod.string().nullable(),
+          baseId: zod.string().optional(),
+          alternateFunctions: zod.array(zod.string()).optional(),
+          chosenFunction: zod.string().optional(),
+        }),
+      ),
+      compostPile: zod.array(
+        zod.object({
+          id: zod.string(),
+          name: zod.string(),
+          type: zod.enum(["hero", "action"]),
+          layer: zod.string().nullable(),
+          effectType: zod.enum(["instant", "ongoing"]),
+          cardText: zod.string(),
+          factText: zod.string(),
+          function: zod.string(),
+          imageKey: zod.string().nullable(),
+          baseId: zod.string().optional(),
+          alternateFunctions: zod.array(zod.string()).optional(),
+          chosenFunction: zod.string().optional(),
+        }),
+      ),
+      skipsNextTurn: zod.boolean(),
+      maxHandSize: zod.number(),
+      drawsExtraCard: zod.boolean(),
+      isBot: zod.boolean().optional(),
+      botSkillLevel: zod.enum(["easy", "medium", "hard"]).optional(),
+    }),
+  ),
+  deckCount: zod.number(),
+  discardPile: zod.array(
+    zod.object({
+      id: zod.string(),
+      name: zod.string(),
+      type: zod.enum(["hero", "action"]),
+      layer: zod.string().nullable(),
+      effectType: zod.enum(["instant", "ongoing"]),
+      cardText: zod.string(),
+      factText: zod.string(),
+      function: zod.string(),
+      imageKey: zod.string().nullable(),
+      baseId: zod.string().optional(),
+      alternateFunctions: zod.array(zod.string()).optional(),
+      chosenFunction: zod.string().optional(),
+    }),
+  ),
+  activeModifiers: zod.array(
+    zod.object({
+      cardId: zod.string(),
+      cardName: zod.string(),
+      effect: zod.string(),
+      appliedByPlayerId: zod.string(),
+    }),
+  ),
+  pendingDecision: zod
+    .object({
+      type: zod.string(),
+      playerId: zod.string(),
+      cardId: zod.string(),
+      options: zod.array(zod.record(zod.string(), zod.unknown())).optional(),
+      prompt: zod.string(),
+      meta: zod.record(zod.string(), zod.unknown()).optional(),
+    })
+    .nullable(),
+  lastEffect: zod
+    .object({
+      id: zod.string(),
+      cardId: zod.string(),
+      cardName: zod.string(),
+      cardText: zod.string(),
+      imageKey: zod.string().nullable(),
+      playedById: zod.string(),
+      playedByName: zod.string(),
+      outcome: zod.array(zod.string()),
+      events: zod.array(
+        zod.object({
+          kind: zod.enum([
+            "draw",
+            "discard",
+            "transfer",
+            "swap",
+            "skip",
+            "pile_shift",
+            "modifier",
+            "info",
+          ]),
+          playerIds: zod.array(zod.string()).optional(),
+          text: zod.string(),
+        }),
+      ),
+    })
+    .nullish(),
+  log: zod.array(zod.string()),
+  winner: zod.string().nullable(),
+  turnNumber: zod.number(),
+  extraTurn: zod.boolean().optional(),
+  heroPlayedThisTurn: zod.boolean().optional(),
+  actionPlayedThisTurn: zod.boolean().optional(),
+  ongoingActionCard: zod
+    .object({
+      id: zod.string(),
+      name: zod.string(),
+      type: zod.enum(["hero", "action"]),
+      layer: zod.string().nullable(),
+      effectType: zod.enum(["instant", "ongoing"]),
+      cardText: zod.string(),
+      factText: zod.string(),
+      function: zod.string(),
+      imageKey: zod.string().nullable(),
+      baseId: zod.string().optional(),
+      alternateFunctions: zod.array(zod.string()).optional(),
+      chosenFunction: zod.string().optional(),
+    })
+    .nullish(),
+  ongoingBenefitUsedThisTurn: zod.boolean().optional(),
+  maxPlayers: zod.number().optional(),
+  paused: zod.boolean().optional(),
   hasPassword: zod.boolean().optional(),
 });
 
@@ -352,5 +670,6 @@ export const PerformActionResponse = zod.object({
     .nullish(),
   ongoingBenefitUsedThisTurn: zod.boolean().optional(),
   maxPlayers: zod.number().optional(),
+  paused: zod.boolean().optional(),
   hasPassword: zod.boolean().optional(),
 });

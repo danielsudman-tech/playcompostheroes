@@ -39,6 +39,7 @@ import {
   Wifi,
   BookOpen,
   Crosshair,
+  Crown,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -266,6 +267,7 @@ export default function FacilitatedGame() {
   // Current step text — always visible in the header
   const stepText = (() => {
     if (gameState.phase === "game_over") return "Game over";
+    if ((gameState as any).paused) return "Game paused by the facilitator";
     if (decision) {
       const owner = gameState.players.find((p) => p.id === decision.playerId);
       return isMyDecision ? `Your choice: ${decision.prompt}` : `${owner?.name ?? "Someone"} is choosing…`;
@@ -293,6 +295,16 @@ export default function FacilitatedGame() {
           {(isMyTurn || isMyDecision) ? <Sparkles className="w-3.5 h-3.5 shrink-0" /> : <Loader2 className="w-3.5 h-3.5 shrink-0 animate-spin" />}
           <span className="truncate">{stepText}</span>
         </div>
+        {claim?.playerIndex === 0 && (
+          <button
+            onClick={() => setLocation(`/game/${gameId}/host`)}
+            className="flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-bold border transition-colors shrink-0 bg-amber-500/15 border-amber-500/40 text-amber-700 dark:text-amber-400 hover:bg-amber-500/25"
+            data-testid="open-facilitator-dashboard"
+            title="Open the facilitator dashboard"
+          >
+            <Crown className="w-3.5 h-3.5" /> <span className="hidden sm:inline">Host</span>
+          </button>
+        )}
         <button
           onClick={() => setShowLog((v) => !v)}
           className={cn(

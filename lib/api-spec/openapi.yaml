@@ -70,6 +70,86 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
 
+  /games/{gameId}/pause:
+    post:
+      operationId: pauseGame
+      tags: [game]
+      summary: Facilitator pauses or resumes a facilitated game (host token required)
+      parameters:
+        - name: gameId
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PauseGameRequest"
+      responses:
+        "200":
+          description: Updated game state
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/GameState"
+        "403":
+          description: Not the host
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "404":
+          description: Game not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /games/{gameId}/facilitator-resolve:
+    post:
+      operationId: facilitatorResolve
+      tags: [game]
+      summary: Facilitator resolves the current pending decision on behalf of a stuck player (host token required)
+      parameters:
+        - name: gameId
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/FacilitatorResolveRequest"
+      responses:
+        "200":
+          description: Updated game state
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/GameState"
+        "403":
+          description: Not the host
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "404":
+          description: Game not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "409":
+          description: No pending decision
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
   /games/{gameId}/action:
     post:
       operationId: performAction
@@ -369,6 +449,8 @@ components:
           type: boolean
         maxPlayers:
           type: integer
+        paused:
+          type: boolean
         hasPassword:
           type: boolean
       required:
@@ -384,6 +466,25 @@ components:
         - log
         - winner
         - turnNumber
+
+    PauseGameRequest:
+      type: object
+      properties:
+        token:
+          type: string
+        paused:
+          type: boolean
+      required:
+        - token
+        - paused
+
+    FacilitatorResolveRequest:
+      type: object
+      properties:
+        token:
+          type: string
+      required:
+        - token
 
     GameAction:
       type: object

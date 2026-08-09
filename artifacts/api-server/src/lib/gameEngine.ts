@@ -96,6 +96,8 @@ export interface GameState {
   /** True once the current player has already activated their ongoing-action-card benefit this turn. */
   ongoingBenefitUsedThisTurn: boolean;
   maxPlayers?: number;
+  /** Facilitated mode only: true while the facilitator has paused the game. */
+  paused?: boolean;
   /** Facilitated mode only: rich announcement of the most recent card effect, broadcast to all players. */
   lastEffect?: EffectAnnouncement | null;
 }

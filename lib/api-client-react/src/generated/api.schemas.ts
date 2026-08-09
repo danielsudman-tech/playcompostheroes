@@ -177,7 +177,17 @@ export interface GameState {
   ongoingActionCard?: Card | null;
   ongoingBenefitUsedThisTurn?: boolean;
   maxPlayers?: number;
+  paused?: boolean;
   hasPassword?: boolean;
+}
+
+export interface PauseGameRequest {
+  token: string;
+  paused: boolean;
+}
+
+export interface FacilitatorResolveRequest {
+  token: string;
 }
 
 export type GameActionType =
