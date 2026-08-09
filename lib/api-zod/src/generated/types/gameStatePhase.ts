@@ -10,6 +10,7 @@ export type GameStatePhase =
   (typeof GameStatePhase)[keyof typeof GameStatePhase];
 
 export const GameStatePhase = {
+  waiting: "waiting",
   setup: "setup",
   draw: "draw",
   play: "play",

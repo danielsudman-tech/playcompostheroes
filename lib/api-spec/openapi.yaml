@@ -136,9 +136,8 @@ components:
           maxItems: 4
         mode:
           type: string
-          enum: [facilitator, standalone]
+          enum: [facilitator, standalone, online, facilitated]
       required:
-        - playerNames
         - mode
 
     Card:
@@ -166,6 +165,14 @@ components:
         imageKey:
           type: string
           nullable: true
+        baseId:
+          type: string
+        alternateFunctions:
+          type: array
+          items:
+            type: string
+        chosenFunction:
+          type: string
       required:
         - id
         - name
@@ -198,6 +205,11 @@ components:
           type: integer
         drawsExtraCard:
           type: boolean
+        isBot:
+          type: boolean
+        botSkillLevel:
+          type: string
+          enum: [easy, medium, hard]
       required:
         - id
         - name
@@ -240,11 +252,67 @@ components:
             additionalProperties: true
         prompt:
           type: string
+        meta:
+          type: object
+          additionalProperties: true
       required:
         - type
         - playerId
         - cardId
         - prompt
+
+    EffectEvent:
+      type: object
+      properties:
+        kind:
+          type: string
+          enum: [draw, discard, transfer, swap, skip, pile_shift, modifier, info]
+        playerIds:
+          type: array
+          items:
+            type: string
+        text:
+          type: string
+      required:
+        - kind
+        - text
+
+    EffectAnnouncement:
+      type: object
+      properties:
+        id:
+          type: string
+        cardId:
+          type: string
+        cardName:
+          type: string
+        cardText:
+          type: string
+        imageKey:
+          type: string
+          nullable: true
+        playedById:
+          type: string
+        playedByName:
+          type: string
+        outcome:
+          type: array
+          items:
+            type: string
+        events:
+          type: array
+          items:
+            $ref: "#/components/schemas/EffectEvent"
+      required:
+        - id
+        - cardId
+        - cardName
+        - cardText
+        - imageKey
+        - playedById
+        - playedByName
+        - outcome
+        - events
 
     GameState:
       type: object
@@ -253,20 +321,18 @@ components:
           type: string
         mode:
           type: string
-          enum: [facilitator, standalone]
+          enum: [facilitator, standalone, online, facilitated]
         phase:
           type: string
-          enum: [setup, draw, play, effect_resolution, end_turn, game_over]
+          enum: [waiting, setup, draw, play, effect_resolution, end_turn, game_over]
         currentPlayerIndex:
           type: integer
         players:
           type: array
           items:
             $ref: "#/components/schemas/PlayerState"
-        deck:
-          type: array
-          items:
-            $ref: "#/components/schemas/Card"
+        deckCount:
+          type: integer
         discardPile:
           type: array
           items:
@@ -278,6 +344,9 @@ components:
         pendingDecision:
           $ref: "#/components/schemas/PendingDecision"
           nullable: true
+        lastEffect:
+          $ref: "#/components/schemas/EffectAnnouncement"
+          nullable: true
         log:
           type: array
           items:
@@ -287,13 +356,28 @@ components:
           nullable: true
         turnNumber:
           type: integer
+        extraTurn:
+          type: boolean
+        heroPlayedThisTurn:
+          type: boolean
+        actionPlayedThisTurn:
+          type: boolean
+        ongoingActionCard:
+          $ref: "#/components/schemas/Card"
+          nullable: true
+        ongoingBenefitUsedThisTurn:
+          type: boolean
+        maxPlayers:
+          type: integer
+        hasPassword:
+          type: boolean
       required:
         - gameId
         - mode
         - phase
         - currentPlayerIndex
         - players
-        - deck
+        - deckCount
         - discardPile
         - activeModifiers
         - pendingDecision
@@ -311,9 +395,17 @@ components:
             - play_card
             - end_turn
             - resolve_decision
+            - activate_ongoing
+            - move_card_layer
             - reset_game
         playerId:
           type: string
+        token:
+          type: string
+          nullable: true
+        targetFunction:
+          type: string
+          nullable: true
         cardId:
           type: string
           nullable: true

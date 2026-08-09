@@ -34,6 +34,7 @@ import {
   setGamePassword,
   storeGame,
 } from "../lib/gameStore.js";
+import { buildEffectAnnouncement, findEffectCard } from "../lib/facilitatedEffects.js";
 
 const router: IRouter = Router();
 
@@ -51,14 +52,28 @@ const HIDDEN_CARD = {
   imageKey: "card_back.jpg",
 };
 
-function serializeState(state: GameState, viewerIndex?: number) {
-  const isOnline = state.mode === "online";
+export function serializeState(state: GameState, viewerIndex?: number) {
+  const isOnline = state.mode === "online" || state.mode === "facilitated";
   const { deck, ...rest } = state;
+
+  // Hidden-information contract: a pending decision's options/meta can contain
+  // hand-derived card identities (e.g. Worm Party, hand-choice decisions).
+  // Only the decision owner may see them; everyone else gets just enough for
+  // the waiting UI (type, owner, prompt).
+  let pendingDecision = state.pendingDecision;
+  if (isOnline && pendingDecision) {
+    const viewerId = viewerIndex !== undefined ? state.players[viewerIndex]?.id : undefined;
+    if (viewerId !== pendingDecision.playerId) {
+      pendingDecision = { ...pendingDecision, options: [], meta: undefined };
+    }
+  }
+
   return {
     ...rest,
+    pendingDecision,
     deckCount: deck.length,
     players: state.players.map((player, idx) => {
-      if (!isOnline || viewerIndex === undefined || idx === viewerIndex) {
+      if (!isOnline || idx === viewerIndex) {
         return player;
       }
       return { ...player, hand: player.hand.map(() => HIDDEN_CARD) };
@@ -87,7 +102,7 @@ router.get("/rooms", async (_req, res) => {
 router.post("/games", async (req, res) => {
   const { playerNames, mode, password, hostName, maxPlayers, botPlayerIndices, botSkillLevels } = req.body as {
     playerNames?: string[];
-    mode: "facilitator" | "standalone" | "online";
+    mode: "facilitator" | "standalone" | "online" | "facilitated";
     password?: string;
     hostName?: string;
     maxPlayers?: number;
@@ -95,13 +110,13 @@ router.post("/games", async (req, res) => {
     botSkillLevels?: Record<number, BotSkillLevel>;
   };
 
-  if (mode !== "facilitator" && mode !== "standalone" && mode !== "online") {
-    res.status(400).json({ error: "mode must be facilitator, standalone, or online" });
+  if (mode !== "facilitator" && mode !== "standalone" && mode !== "online" && mode !== "facilitated") {
+    res.status(400).json({ error: "mode must be facilitator, standalone, online, or facilitated" });
     return;
   }
 
-  // Online waiting-room: just the host name + max players
-  if (mode === "online") {
+  // Online / facilitated waiting-room: just the host name + max players
+  if (mode === "online" || mode === "facilitated") {
     const name = (hostName ?? "").trim();
     if (!name) {
       res.status(400).json({ error: "hostName is required for online games" });
@@ -109,9 +124,9 @@ router.post("/games", async (req, res) => {
     }
     const max = Math.min(4, Math.max(2, Number(maxPlayers) || 4));
     const gameId = createGameId();
-    const state = createWaitingRoom(gameId, name, max, "online");
+    const state = createWaitingRoom(gameId, name, max, mode);
     await storeGame(state);
-    logEvent("game_created", { gameId, metadata: { mode: "online", maxPlayers: max, hostName: name } });
+    logEvent("game_created", { gameId, metadata: { mode, maxPlayers: max, hostName: name } });
 
     if (password && password.trim()) {
       await setGamePassword(gameId, password.trim());
@@ -406,6 +421,21 @@ router.post("/games/:gameId/action", async (req, res) => {
     token?: string;
   };
 
+  // Multiplayer (online/facilitated): the acting player must present a valid
+  // token, and it must belong to the playerId they claim to act as.
+  if (state.mode === "online" || state.mode === "facilitated") {
+    const tokenIndex = token ? await getPlayerIndexForToken(gameId, token) : null;
+    if (tokenIndex === null || tokenIndex === undefined) {
+      res.status(403).json({ error: "A valid player token is required for this game" });
+      return;
+    }
+    const tokenPlayerId = state.players[tokenIndex]?.id;
+    if (!tokenPlayerId || tokenPlayerId !== playerId) {
+      res.status(403).json({ error: "Token does not match the acting player" });
+      return;
+    }
+  }
+
   let result: { state: typeof state; error?: string };
 
   try {
@@ -452,14 +482,14 @@ router.post("/games/:gameId/action", async (req, res) => {
         const botIndices = state.players
           .map((p, i) => ((p as any).isBot ? i : -1))
           .filter((i) => i >= 0);
-        const botSkillLevels: Record<number, string> = {};
+        const botSkillLevels: Record<number, BotSkillLevel> = {};
         state.players.forEach((p, i) => {
           if ((p as any).isBot && (p as any).botSkillLevel) {
             botSkillLevels[i] = (p as any).botSkillLevel;
           }
         });
         // Reuse the same gameId so the URL and React Query cache stay valid
-        let newState = createGameState(gameId, playerNames, state.mode as "facilitator" | "standalone", botIndices, botSkillLevels);
+        let newState = createGameState(gameId, playerNames, state.mode, botIndices, botSkillLevels);
         newState = runBotTurnsIfNeeded(newState);
         await storeGame(newState);
         broadcast(newState.gameId, newState);
@@ -482,7 +512,50 @@ router.post("/games/:gameId/action", async (req, res) => {
     return;
   }
 
-  const stateAfterBots = runBotTurnsIfNeeded(result.state);
+  // Run bot turns/decisions FIRST, then build the facilitated announcement over
+  // the FULL transition (pre-action → after bots) so viewers see the completed
+  // effect — not just the human's intermediate step of a bot-completed chain.
+  let stateAfterBots = runBotTurnsIfNeeded(result.state);
+
+  if (state.mode === "facilitated") {
+    if (
+      type === "play_card" ||
+      type === "resolve_decision" ||
+      type === "activate_ongoing" ||
+      type === "move_card_layer"
+    ) {
+      // Resolve the originating card across all zones of both states — during
+      // decision chains it may already have moved (e.g. into a compost pile).
+      const effectCardId =
+        type === "resolve_decision" ? state.pendingDecision?.cardId :
+        type === "activate_ongoing" ? state.ongoingActionCard?.id :
+        cardId;
+      const effectCard = findEffectCard(state, stateAfterBots, effectCardId);
+      const announcement = buildEffectAnnouncement(state, stateAfterBots, effectCard, playerId);
+      stateAfterBots = { ...stateAfterBots, lastEffect: announcement };
+    } else if ((type === "end_turn" || type === "draw_card") && stateAfterBots !== result.state) {
+      // Bots took autonomous turns after this action. If a bot played an action
+      // card, attribute the announcement to it (newest card in the discard pile
+      // or a newly set ongoing card); otherwise announce the overall outcome.
+      const beforeDiscard = new Set(result.state.discardPile.map((c) => c.id));
+      const botCard =
+        stateAfterBots.discardPile.find((c) => !beforeDiscard.has(c.id) && c.type === "action") ??
+        (stateAfterBots.ongoingActionCard &&
+        stateAfterBots.ongoingActionCard.id !== result.state.ongoingActionCard?.id
+          ? stateAfterBots.ongoingActionCard
+          : null);
+      if (botCard) {
+        const botActor =
+          result.state.players[result.state.currentPlayerIndex]?.isBot
+            ? result.state.players[result.state.currentPlayerIndex].id
+            : playerId;
+        const announcement = buildEffectAnnouncement(result.state, stateAfterBots, botCard, botActor);
+        if (announcement) stateAfterBots = { ...stateAfterBots, lastEffect: announcement };
+      }
+    }
+    // otherwise: keep the last announcement visible until the next effect
+  }
+
   await storeGame(stateAfterBots);
   if (stateAfterBots.phase === "game_over" && state.phase !== "game_over") {
     logEvent("game_completed", {

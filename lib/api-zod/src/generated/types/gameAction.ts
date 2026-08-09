@@ -11,6 +11,8 @@ import type { GameActionType } from "./gameActionType";
 export interface GameAction {
   type: GameActionType;
   playerId: string;
+  token?: string | null;
+  targetFunction?: string | null;
   cardId?: string | null;
   targetPlayerId?: string | null;
   targetCardId?: string | null;

@@ -2,7 +2,7 @@ import { useState, useRef } from "react";
 import { createPortal } from "react-dom";
 import { motion, AnimatePresence } from "framer-motion";
 import { GameCard } from "./GameCard";
-import type { PlayerState, CardState } from "@workspace/api-client-react";
+import type { PlayerState, Card as CardState } from "@workspace/api-client-react";
 import { cn } from "@/lib/utils";
 import { User, ChevronLeft, ChevronRight } from "lucide-react";
 import { assetUrl } from "@/lib/assetUrl";

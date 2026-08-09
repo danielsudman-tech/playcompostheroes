@@ -78,7 +78,7 @@ export type GamePhase =
 
 export interface GameState {
   gameId: string;
-  mode: "facilitator" | "standalone" | "online";
+  mode: "facilitator" | "standalone" | "online" | "facilitated";
   phase: GamePhase;
   currentPlayerIndex: number;
   players: PlayerState[];
@@ -96,6 +96,31 @@ export interface GameState {
   /** True once the current player has already activated their ongoing-action-card benefit this turn. */
   ongoingBenefitUsedThisTurn: boolean;
   maxPlayers?: number;
+  /** Facilitated mode only: rich announcement of the most recent card effect, broadcast to all players. */
+  lastEffect?: EffectAnnouncement | null;
+}
+
+/** Structured description of a resolved effect, for spectator visualization in facilitated mode. */
+export interface EffectEvent {
+  kind: "draw" | "discard" | "transfer" | "swap" | "skip" | "pile_shift" | "modifier" | "info";
+  /** Player ids involved (source first, then target where applicable). */
+  playerIds?: string[];
+  /** Human-readable one-liner, safe to show to everyone (never reveals hidden hands). */
+  text: string;
+}
+
+export interface EffectAnnouncement {
+  /** Unique per announcement so clients can detect changes. */
+  id: string;
+  cardId: string;
+  cardName: string;
+  cardText: string;
+  imageKey: string | null;
+  playedById: string;
+  playedByName: string;
+  /** Plain-language outcome lines (from the game log). */
+  outcome: string[];
+  events: EffectEvent[];
 }
 
 type integer = number;
@@ -673,10 +698,9 @@ function resolveHeroInstantEffect(
 // Helper: apply the worm party pass using a specific card for the active player
 // chosenCardId = null means the active player has no hand (skip them)
 function applyWormParty(state: GameState, activePlayerId: string, chosenCardId: string | null): GameState {
-  let s = state;
   const passCards: Array<{ fromId: string; card: Card }> = [];
 
-  for (const pl of s.players) {
+  for (const pl of state.players) {
     if (pl.id === activePlayerId) {
       if (chosenCardId) {
         const card = pl.hand.find((c) => c.id === chosenCardId);
@@ -686,7 +710,52 @@ function applyWormParty(state: GameState, activePlayerId: string, chosenCardId: 
       passCards.push({ fromId: pl.id, card: pl.hand[0] });
     }
   }
+  return applyWormPasses(state, passCards);
+}
 
+// Helper: apply Worm Party passes where EVERY player explicitly chose their
+// card (facilitated sequential decision chain). chosen maps playerId → cardId.
+function applyWormPartyChain(state: GameState, chosen: Record<string, string>): GameState {
+  const passCards: Array<{ fromId: string; card: Card }> = [];
+  for (const pl of state.players) {
+    const cid = chosen[pl.id];
+    if (!cid) continue;
+    const card = pl.hand.find((c) => c.id === cid);
+    if (card) passCards.push({ fromId: pl.id, card });
+  }
+  return applyWormPasses(state, passCards);
+}
+
+// Helper: eligible Soggy Pile discards for a player (Moisture/Nitrogen,
+// respecting Soggy Saver moisture protection).
+function soggyCandidates(pl: PlayerState): Card[] {
+  return pl.compostPile.filter((c) => {
+    if (getEffectiveFunction(c) === "Moisture" && moistureProtected(pl)) return false;
+    return getEffectiveFunction(c) === "Moisture" || getEffectiveFunction(c) === "Nitrogen";
+  });
+}
+
+// Helper: set the pending Soggy Pile decision for order[index] (facilitated chain).
+function pushSoggyDecision(state: GameState, cardId: string, order: string[], index: number): GameState {
+  const pl = getPlayer(state, order[index])!;
+  const candidates = soggyCandidates(pl);
+  return {
+    ...state,
+    pendingDecision: {
+      type: "choose_soggy_pile_discard",
+      playerId: pl.id,
+      cardId,
+      options: candidates.map((c) => ({ cardId: c.id, cardName: c.name })),
+      prompt: `${pl.name}: Choose 1 Moisture or Nitrogen card to discard from your compost pile (Soggy Pile).`,
+      meta: { soggyChain: true, order, index },
+    },
+  };
+}
+
+// Shared tail: simultaneously remove the chosen cards and hand each to the
+// player on the left.
+function applyWormPasses(state: GameState, passCards: Array<{ fromId: string; card: Card }>): GameState {
+  let s = state;
   // Remove cards from hands
   for (const { fromId, card: passedCard } of passCards) {
     const pl = getPlayer(s, fromId)!;
@@ -846,15 +915,42 @@ function resolveActionInstantEffect(
     // Soggy Pile: each player discards 1 Moisture or Nitrogen from compost
     case "soggy_pile": {
       addLog(s, `Soggy Pile! Each player must discard 1 Moisture or Nitrogen from compost.`);
+
+      // Facilitated mode: each affected player CHOOSES their own discard via a
+      // sequential guided decision chain (single-candidate players auto-resolve).
+      if (s.mode === "facilitated") {
+        const order: string[] = [];
+        for (const pl of s.players) {
+          if (playerHasProtection(s, pl, "soggy_pile")) {
+            addLog(s, `${pl.name} is protected from Soggy Pile!`);
+            continue;
+          }
+          const candidates = soggyCandidates(pl);
+          if (candidates.length === 0) continue;
+          if (candidates.length === 1) {
+            const toDiscard = candidates[0];
+            s = { ...s, discardPile: [toDiscard, ...s.discardPile] };
+            s = updatePlayer(s, {
+              ...getPlayer(s, pl.id)!,
+              compostPile: removeOneById(getPlayer(s, pl.id)!.compostPile, toDiscard.id),
+            });
+            addLog(s, `${pl.name} discarded ${toDiscard.name} from compost (only eligible card).`);
+          } else {
+            order.push(pl.id);
+          }
+        }
+        if (order.length > 0) {
+          s = pushSoggyDecision(s, card.id, order, 0);
+        }
+        return s;
+      }
+
       for (const pl of s.players) {
         if (playerHasProtection(s, pl, "soggy_pile")) {
           addLog(s, `${pl.name} is protected from Soggy Pile!`);
           continue;
         }
-        const candidates = pl.compostPile.filter((c) => {
-          if (getEffectiveFunction(c) === "Moisture" && moistureProtected(pl)) return false;
-          return getEffectiveFunction(c) === "Moisture" || getEffectiveFunction(c) === "Nitrogen";
-        });
+        const candidates = soggyCandidates(pl);
         if (candidates.length > 0) {
           // Auto discard first eligible
           const toDiscard = candidates[0];
@@ -935,6 +1031,35 @@ function resolveActionInstantEffect(
     // Worm Party: each player passes 1 card from hand to player on left
     // Prompt the active player to choose; auto-pick hand[0] for others
     case "worm_party": {
+      // Facilitated mode: EVERY player chooses their own card via a sequential
+      // guided decision chain (no auto-picking for other players).
+      if (s.mode === "facilitated") {
+        const startIdx = s.players.findIndex((pl) => pl.id === p.id);
+        const order: string[] = [];
+        for (let k = 0; k < s.players.length; k++) {
+          const pl = s.players[(startIdx + k) % s.players.length];
+          if (pl.hand.length > 0) order.push(pl.id);
+          else addLog(s, `Worm Party — ${pl.name} has no cards to pass.`);
+        }
+        if (order.length === 0) {
+          addLog(s, `Worm Party — nobody has cards to pass.`);
+          return s;
+        }
+        const first = getPlayer(s, order[0])!;
+        s = {
+          ...s,
+          pendingDecision: {
+            type: "choose_worm_party_card",
+            playerId: first.id,
+            cardId: card.id,
+            options: first.hand.map((c) => ({ cardId: c.id, cardName: c.name })),
+            prompt: `${first.name}: Choose 1 card from your hand to pass to the player on your left (Worm Party).`,
+            meta: { wormChain: true, order, index: 0, chosen: {} },
+          },
+        };
+        return s;
+      }
+
       if (p.hand.length === 0) {
         addLog(s, `Worm Party — ${p.name} has no cards to pass, skipping their pass.`);
         // Auto-process for all other players
@@ -1195,7 +1320,7 @@ export function resolveDecision(
   if (decision.playerId !== playerId)
     return { state, error: "Not your decision to make" };
 
-  let s = { ...state, pendingDecision: null };
+  let s: GameState = { ...state, pendingDecision: null };
   const player = getPlayer(s, playerId)!;
 
   switch (decision.type) {
@@ -1477,7 +1602,69 @@ export function resolveDecision(
       const chosenId = decisionData.cardId as string;
       const myCard = player.hand.find((c) => c.id === chosenId);
       if (!myCard) return { state, error: "Card not in hand" };
+
+      // Facilitated sequential chain: record this player's choice, then hand
+      // the decision to the next eligible player; apply all passes at the end.
+      const meta = decision.meta as
+        | { wormChain?: boolean; order?: string[]; index?: number; chosen?: Record<string, string> }
+        | undefined;
+      if (meta?.wormChain && meta.order) {
+        const chosen = { ...(meta.chosen ?? {}), [playerId]: chosenId };
+        const order = meta.order;
+        let next = (meta.index ?? 0) + 1;
+        while (next < order.length && getPlayer(s, order[next])!.hand.length === 0) next++;
+        if (next < order.length) {
+          const np = getPlayer(s, order[next])!;
+          addLog(s, `${player.name} chose a card to pass (Worm Party).`);
+          s = {
+            ...s,
+            pendingDecision: {
+              type: "choose_worm_party_card",
+              playerId: np.id,
+              cardId: decision.cardId,
+              options: np.hand.map((c) => ({ cardId: c.id, cardName: c.name })),
+              prompt: `${np.name}: Choose 1 card from your hand to pass to the player on your left (Worm Party).`,
+              meta: { wormChain: true, order, index: next, chosen },
+            },
+          };
+          return { state: s };
+        }
+        s = applyWormPartyChain(s, chosen);
+        return { state: s };
+      }
+
       s = applyWormParty(s, playerId, chosenId);
+      return { state: s };
+    }
+
+    case "choose_soggy_pile_discard": {
+      const chosenId = decisionData.cardId as string;
+      const cardInPile = player.compostPile.find((c) => c.id === chosenId);
+      if (!cardInPile) return { state, error: "Card not in compost" };
+      const fn = getEffectiveFunction(cardInPile);
+      if (fn !== "Moisture" && fn !== "Nitrogen") {
+        return { state, error: "Must discard a Moisture or Nitrogen card" };
+      }
+      s = { ...s, discardPile: [cardInPile, ...s.discardPile] };
+      s = updatePlayer(s, {
+        ...getPlayer(s, playerId)!,
+        compostPile: removeOneById(getPlayer(s, playerId)!.compostPile, chosenId),
+      });
+      addLog(s, `${player.name} discarded ${cardInPile.name} from compost (Soggy Pile).`);
+
+      // Facilitated sequential chain: advance to the next affected player.
+      const soggyMeta = decision.meta as
+        | { soggyChain?: boolean; order?: string[]; index?: number }
+        | undefined;
+      if (soggyMeta?.soggyChain && soggyMeta.order) {
+        let next = (soggyMeta.index ?? 0) + 1;
+        while (next < soggyMeta.order.length && soggyCandidates(getPlayer(s, soggyMeta.order[next])!).length === 0) {
+          next++;
+        }
+        if (next < soggyMeta.order.length) {
+          s = pushSoggyDecision(s, decision.cardId, soggyMeta.order, next);
+        }
+      }
       return { state: s };
     }
 
@@ -2050,6 +2237,7 @@ export function endTurn(
       pendingDecision: {
         type: "choose_discard_to_limit",
         playerId,
+        cardId: "",
         prompt: `${player.name}: Too many cards! Discard ${discardCount} card${discardCount !== 1 ? "s" : ""} (max hand: ${player.maxHandSize}).`,
         options: player.hand.map((c) => ({ cardId: c.id, cardName: c.name })),
         meta: { count: discardCount },
@@ -2076,7 +2264,7 @@ export function endTurn(
 export function createGameState(
   gameId: string,
   playerNames: string[],
-  mode: "facilitator" | "standalone",
+  mode: GameState["mode"],
   botPlayerIndices: number[] = [],
   botSkillLevels: Record<number, BotSkillLevel> = {}
 ): GameState {
@@ -2300,7 +2488,7 @@ export function createWaitingRoom(
   gameId: string,
   hostName: string,
   maxPlayers: number,
-  mode: "online"
+  mode: "online" | "facilitated"
 ): GameState {
   const host: PlayerState = {
     id: "player_0",
@@ -2310,6 +2498,7 @@ export function createWaitingRoom(
     skipsNextTurn: false,
     maxHandSize: 5,
     drawsExtraCard: false,
+    isBot: false,
   };
   return {
     gameId,
@@ -2328,6 +2517,7 @@ export function createWaitingRoom(
     heroPlayedThisTurn: false,
     actionPlayedThisTurn: false,
     ongoingActionCard: null,
+    ongoingBenefitUsedThisTurn: false,
     maxPlayers,
   };
 }
@@ -2393,6 +2583,7 @@ export function addPlayerToRoom(
     skipsNextTurn: false,
     maxHandSize: 5,
     drawsExtraCard: false,
+    isBot: false,
   };
   return {
     state: { ...state, players: [...state.players, newPlayer] },
@@ -3166,7 +3357,6 @@ export function runBotTurnsIfNeeded(state: GameState): GameState {
   let iterations = 0;
   while (
     s.phase === "draw" &&
-    s.phase !== "game_over" &&
     s.players[s.currentPlayerIndex]?.isBot &&
     iterations < 20
   ) {

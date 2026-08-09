@@ -11,4 +11,6 @@ export type GameStateMode = (typeof GameStateMode)[keyof typeof GameStateMode];
 export const GameStateMode = {
   facilitator: "facilitator",
   standalone: "standalone",
+  online: "online",
+  facilitated: "facilitated",
 } as const;

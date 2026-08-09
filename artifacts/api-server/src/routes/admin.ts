@@ -62,12 +62,14 @@ router.put("/admin/cards/:cardId/copies", (req, res) => {
   const { copies } = req.body as { copies: number };
 
   if (typeof copies !== "number" || !Number.isInteger(copies) || copies < 0) {
-    return res.status(400).json({ error: "copies must be a non-negative integer" });
+    res.status(400).json({ error: "copies must be a non-negative integer" });
+    return;
   }
 
   const cards = getAllCards();
   if (!cards.find((c) => c.id === cardId)) {
-    return res.status(404).json({ error: "Card not found" });
+    res.status(404).json({ error: "Card not found" });
+    return;
   }
 
   setCardCopies(cardId, copies);
@@ -84,12 +86,14 @@ router.post("/admin/cards/:cardId/image", (req, res) => {
   };
 
   if (!imageData || !mimeType || !filename) {
-    return res.status(400).json({ error: "Missing imageData, mimeType, or filename" });
+    res.status(400).json({ error: "Missing imageData, mimeType, or filename" });
+    return;
   }
 
   const cards = getAllCards();
   if (!cards.find((c) => c.id === cardId)) {
-    return res.status(404).json({ error: "Card not found" });
+    res.status(404).json({ error: "Card not found" });
+    return;
   }
 
   try {
@@ -390,7 +394,7 @@ router.patch("/admin/users/:userId/reset-password", requireAdmin, async (req: Re
     return;
   }
   try {
-    await resetUserPassword(userId, newPassword);
+    await resetUserPassword(String(userId), newPassword);
     res.json({ success: true });
   } catch (err: any) {
     if (err?.code === "USER_NOT_FOUND") {

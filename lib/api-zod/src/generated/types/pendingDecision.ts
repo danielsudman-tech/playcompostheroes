@@ -5,6 +5,7 @@
  * Compost Heroes Game API
  * OpenAPI spec version: 0.1.0
  */
+import type { PendingDecisionMeta } from "./pendingDecisionMeta";
 import type { PendingDecisionOptionsItem } from "./pendingDecisionOptionsItem";
 
 export interface PendingDecision {
@@ -13,4 +14,5 @@ export interface PendingDecision {
   cardId: string;
   options?: PendingDecisionOptionsItem[];
   prompt: string;
+  meta?: PendingDecisionMeta;
 }

@@ -7,6 +7,7 @@
  */
 import type { ActiveModifier } from "./activeModifier";
 import type { Card } from "./card";
+import type { EffectAnnouncement } from "./effectAnnouncement";
 import type { GameStateMode } from "./gameStateMode";
 import type { GameStatePhase } from "./gameStatePhase";
 import type { PendingDecision } from "./pendingDecision";
@@ -22,7 +23,15 @@ export interface GameState {
   discardPile: Card[];
   activeModifiers: ActiveModifier[];
   pendingDecision: PendingDecision | null;
+  lastEffect?: EffectAnnouncement | null;
   log: string[];
   winner: string | null;
   turnNumber: number;
+  extraTurn?: boolean;
+  heroPlayedThisTurn?: boolean;
+  actionPlayedThisTurn?: boolean;
+  ongoingActionCard?: Card | null;
+  ongoingBenefitUsedThisTurn?: boolean;
+  maxPlayers?: number;
+  hasPassword?: boolean;
 }

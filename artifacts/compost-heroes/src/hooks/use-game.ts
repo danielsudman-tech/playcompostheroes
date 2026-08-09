@@ -1,7 +1,7 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { getGetGameQueryKey } from "@workspace/api-client-react";
-import type { GameAction } from "@workspace/api-client-react";
+import type { GameAction, GameState } from "@workspace/api-client-react";
 
 // ── Token management ──────────────────────────────────────────────────────────
 
@@ -89,14 +89,15 @@ export function useGameState(gameId: string | null, token?: string | null) {
         : `/api/games/${gameId}`;
       const r = await fetch(url);
       if (!r.ok) throw new Error("Failed to fetch game state");
-      return r.json();
+      return r.json() as Promise<GameState>;
     },
     enabled: !!gameId,
     // Online mode: SSE handles real-time updates; poll every 10s as a safety net
     // in case SSE silently drops so players never get permanently stuck.
     // Pass & Play: poll every 1.5s so the UI stays in sync.
     refetchInterval: (query) => {
-      if (query.state.data?.mode === "online") return 10000;
+      const m = query.state.data?.mode;
+      if (m === "online" || m === "facilitated") return 10000;
       return 1500;
     },
     staleTime: 1000,
@@ -211,7 +212,7 @@ export function useCreateNewGame() {
   return useMutation({
     mutationFn: async (data: {
       playerNames?: string[];
-      mode: "facilitator" | "standalone" | "online";
+      mode: "facilitator" | "standalone" | "online" | "facilitated";
       password?: string;
       hostName?: string;
       maxPlayers?: number;
@@ -297,8 +298,10 @@ export function useJoinRoom(gameId: string | null) {
       return r.json() as Promise<{ token: string; playerIndex: number; playerId: string; playerName: string }>;
     },
     onSuccess: (data) => {
-      if (gameId) storeToken(gameId, data.token);
-      queryClient.invalidateQueries({ queryKey: getGetGameQueryKey(gameId) });
+      if (gameId) {
+        storeToken(gameId, data.token);
+        queryClient.invalidateQueries({ queryKey: getGetGameQueryKey(gameId) });
+      }
     },
   });
 }
@@ -326,7 +329,7 @@ export function useStartGame(gameId: string | null, token?: string | null) {
       return r.json();
     },
     onSuccess: (data) => {
-      queryClient.setQueryData(getGetGameQueryKey(gameId), data);
+      if (gameId) queryClient.setQueryData(getGetGameQueryKey(gameId), data);
     },
   });
 }

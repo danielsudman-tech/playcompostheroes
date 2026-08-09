@@ -6,6 +6,7 @@
  * OpenAPI spec version: 0.1.0
  */
 import type { Card } from "./card";
+import type { PlayerStateBotSkillLevel } from "./playerStateBotSkillLevel";
 
 export interface PlayerState {
   id: string;
@@ -15,4 +16,6 @@ export interface PlayerState {
   skipsNextTurn: boolean;
   maxHandSize: number;
   drawsExtraCard: boolean;
+  isBot?: boolean;
+  botSkillLevel?: PlayerStateBotSkillLevel;
 }

@@ -9,6 +9,8 @@ import { WaitingRoom } from "@/components/WaitingRoom";
 import { PlayerMat } from "@/components/PlayerMat";
 import { GameCard } from "@/components/GameCard";
 import { DecisionModal } from "@/components/DecisionModal";
+import { EffectAnnouncementOverlay, type EffectAnnouncement } from "@/components/EffectAnnouncementOverlay";
+import { getDecisionStepInfo } from "@/lib/decisionSteps";
 import { OpponentPileModal } from "@/components/OpponentPileModal";
 import { TutorialHint, useTutorialMode } from "@/components/TutorialHint";
 import { Button } from "@/components/ui/button";
@@ -51,7 +53,10 @@ export default function Game() {
 
   // 2. Fetch game state (pass stored token so online games are filtered from first load)
   const { data: gameState, isLoading, error } = useGameState(gameId || null, storedToken);
-  const isOnline = gameState?.mode === "online";
+  // Facilitated mode reuses the whole online flow (tokens, SSE, hidden hands)
+  // and layers guided announcements/decisions on top.
+  const isFacilitated = gameState?.mode === "facilitated";
+  const isOnline = gameState?.mode === "online" || isFacilitated;
   const isWaiting = gameState?.phase === "waiting";
 
   // 3. Claim a slot once we know the mode is online.
@@ -203,6 +208,8 @@ export default function Game() {
     if (logLen > prevLogLength.current) {
       const latest = gameState.log[logLen - 1];
       prevLogLength.current = logLen;
+      // Facilitated mode has the richer effect-announcement overlay instead
+      if (isFacilitated) return;
       setAnnouncement(latest);
       if (announcementTimer.current) clearTimeout(announcementTimer.current);
       announcementTimer.current = setTimeout(() => setAnnouncement(null), 3500);
@@ -509,7 +516,7 @@ export default function Game() {
         <TutorialHint
           gameState={gameState}
           isMyTurn={isMyTurn}
-          localPlayerId={localPlayerId}
+          localPlayerId={localPlayerId ?? null}
         />
       )}
 
@@ -1396,13 +1403,52 @@ export default function Game() {
         />
       )}
 
-      {/* DECISION MODAL OVERLAY — never show for bot players */}
-      {isMyTurn && gameState.pendingDecision && !currentPlayer.isBot && (
+      {/* DECISION MODAL OVERLAY — never show for bot players.
+          The pending decision may belong to a non-current player (e.g. Worm Party,
+          Soggy Pile cascades). In facilitated mode the modal is keyed ONLY off the
+          decision owner's playerId — deliberately NOT gated on isMyTurn — so the
+          token-owning decision player can act even when it is not their turn. */}
+      {gameState.pendingDecision &&
+        (isFacilitated
+          ? gameState.pendingDecision.playerId === localPlayerId && !localPlayerFull?.isBot
+          : isMyTurn && !currentPlayer.isBot) && (
         <DecisionModal 
           decision={gameState.pendingDecision}
           gameState={gameState}
           onResolve={handleResolveDecision}
+          stepInfo={isFacilitated
+            ? getDecisionStepInfo(gameState.pendingDecision.type, gameState.pendingDecision.meta)
+            : null}
         />
+      )}
+
+      {/* FACILITATED: effect announcement broadcast to everyone */}
+      {isFacilitated && (
+        <EffectAnnouncementOverlay effect={gameState.lastEffect} />
+      )}
+
+      {/* FACILITATED: waiting state — someone else is making a choice */}
+      {isFacilitated &&
+        gameState.pendingDecision &&
+        gameState.pendingDecision.playerId !== localPlayerId &&
+        !gameState.players.find(p => p.id === gameState.pendingDecision!.playerId)?.isBot && (
+        <motion.div
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          className="fixed bottom-6 left-1/2 -translate-x-1/2 z-[70] max-w-[92vw]"
+        >
+          <div className="bg-card/97 backdrop-blur-lg border border-border shadow-2xl rounded-2xl px-5 py-3 flex items-center gap-3">
+            <Loader2 className="w-4 h-4 text-primary animate-spin shrink-0" />
+            <div className="min-w-0">
+              <div className="text-sm font-bold text-foreground">
+                {gameState.players.find(p => p.id === gameState.pendingDecision!.playerId)?.name ?? "Someone"} is choosing…
+              </div>
+              <div className="text-xs text-muted-foreground leading-snug truncate">
+                {gameState.pendingDecision.prompt}
+              </div>
+            </div>
+          </div>
+        </motion.div>
       )}
 
       {/* PASS DEVICE OVERLAY — shown when the current player changes in Pass & Play */}

@@ -12,6 +12,6 @@ export interface CreateGameRequest {
    * @minItems 2
    * @maxItems 4
    */
-  playerNames: string[];
+  playerNames?: string[];
   mode: CreateGameRequestMode;
 }

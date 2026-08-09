@@ -19,9 +19,11 @@ interface DecisionModalProps {
   decision: PendingDecision | null;
   gameState: GameState;
   onResolve: (data: Record<string, unknown>) => void;
+  /** Facilitated mode: show a guided "Step X of Y" banner above the prompt. */
+  stepInfo?: { step: number; total: number; label: string } | null;
 }
 
-const CARD_SELECTION_TYPES = new Set([
+export const CARD_SELECTION_TYPES = new Set([
   "choose_card_from_hand",
   "choose_card_from_discard",
   "choose_card_from_compost",
@@ -39,15 +41,19 @@ const CARD_SELECTION_TYPES = new Set([
   "choose_swap_my_card_breezy",
   "choose_worm_party_card",
   "choose_steal_card",
+  "choose_soggy_pile_discard",
+  "choose_card_to_swap_compost",
+  "choose_card_from_opponent_compost",
+  "choose_compost_to_swap_breezy",
 ]);
 
-const PLAYER_SELECTION_TYPES = new Set([
+export const PLAYER_SELECTION_TYPES = new Set([
   "choose_target_player",
   "choose_opponent_for_steal",
   "choose_swap_opponent_breezy",
 ]);
 
-const FUNCTION_SELECTION_TYPES = new Set([
+export const FUNCTION_SELECTION_TYPES = new Set([
   "choose_function",
   "choose_move_function",
 ]);
@@ -79,7 +85,7 @@ function getMultiSelectMode(decision: PendingDecision): MultiSelectMode {
   return null;
 }
 
-export function DecisionModal({ decision, gameState, onResolve }: DecisionModalProps) {
+export function DecisionModal({ decision, gameState, onResolve, stepInfo }: DecisionModalProps) {
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
 
   if (!decision) return null;
@@ -149,6 +155,14 @@ export function DecisionModal({ decision, gameState, onResolve }: DecisionModalP
           className="bg-card w-full max-w-2xl rounded-3xl shadow-2xl overflow-hidden border border-border"
         >
           <div className="p-6 bg-primary/10 border-b border-border">
+            {stepInfo && (
+              <div className="flex items-center justify-center gap-2 mb-2">
+                <span className="text-[11px] font-bold uppercase tracking-widest bg-primary text-primary-foreground rounded-full px-3 py-0.5">
+                  Step {stepInfo.step} of {stepInfo.total}
+                </span>
+                <span className="text-xs font-semibold text-muted-foreground">{stepInfo.label}</span>
+              </div>
+            )}
             <h2 className="text-2xl font-display font-bold text-foreground text-center">Action Required</h2>
             <p className="text-center text-muted-foreground mt-2 text-lg">{decision.prompt}</p>
             {isFixedMulti && (

@@ -111,7 +111,7 @@ export default function Lobby() {
   const logout = useLogout();
 
   const [tab, setTab] = useState<"create" | "browse">("create");
-  const [mode, setMode] = useState<"standalone" | "online">("standalone");
+  const [mode, setMode] = useState<"standalone" | "online" | "facilitated">("standalone");
 
   type SkillLevel = "easy" | "medium" | "hard";
 
@@ -167,14 +167,14 @@ export default function Lobby() {
   };
 
   const handleStartGame = () => {
-    if (mode === "online") {
+    if (mode === "online" || mode === "facilitated") {
       const name = hostName.trim();
       if (!name) {
         toast({ title: "Enter your name", description: "You need a name to create the room.", variant: "destructive" });
         return;
       }
       createGame.mutate(
-        { hostName: name, maxPlayers, mode: "online", password: gamePassword.trim() || undefined },
+        { hostName: name, maxPlayers, mode, password: gamePassword.trim() || undefined },
         {
           onSuccess: (data) => setLocation(`/game/${data.gameId}`),
           onError: (err) => toast({ title: "Failed to create room", description: err.message, variant: "destructive" }),
@@ -288,7 +288,7 @@ export default function Lobby() {
                   <label className="text-sm font-bold text-muted-foreground uppercase tracking-wider flex items-center gap-2">
                     <Settings2 className="w-4 h-4" /> Game Mode
                   </label>
-                  <div className="grid grid-cols-2 gap-2">
+                  <div className="grid grid-cols-3 gap-2">
                     <button
                       onClick={() => setMode("standalone")}
                       className={`p-3 rounded-xl border-2 transition-all flex flex-col items-center text-center gap-1 ${mode === "standalone" ? "border-primary bg-primary/10 text-primary" : "border-border hover:border-primary/50 text-muted-foreground"}`}
@@ -304,11 +304,24 @@ export default function Lobby() {
                       <span className="font-bold text-sm">Online</span>
                       <span className="text-[10px] opacity-80">Share a link</span>
                     </button>
+                    <button
+                      onClick={() => setMode("facilitated")}
+                      className={`p-3 rounded-xl border-2 transition-all flex flex-col items-center text-center gap-1 ${mode === "facilitated" ? "border-amber-500 bg-amber-500/10 text-amber-600" : "border-border hover:border-amber-500/50 text-muted-foreground"}`}
+                    >
+                      <Users className="w-4 h-4 shrink-0" />
+                      <span className="font-bold text-sm">Facilitated</span>
+                      <span className="text-[10px] opacity-80">Guided session</span>
+                    </button>
                   </div>
+                  {mode === "facilitated" && (
+                    <p className="text-xs text-muted-foreground bg-amber-50 dark:bg-amber-950/20 border border-amber-200/60 rounded-lg p-2 leading-snug">
+                      Everyone joins by link. Card effects are announced to all players and every choice becomes a guided step-by-step panel — great for Zoom sessions.
+                    </p>
+                  )}
                 </div>
 
                 {/* Online: host name + max players + password */}
-                {mode === "online" && (
+                {(mode === "online" || mode === "facilitated") && (
                   <div className="space-y-4">
                     <label className="text-sm font-bold text-muted-foreground uppercase tracking-wider flex items-center gap-2">
                       <Wifi className="w-4 h-4" /> Your Room
@@ -350,7 +363,7 @@ export default function Lobby() {
                 )}
 
                 {/* Pass & Play: player names */}
-                {mode !== "online" && (
+                {mode === "standalone" && (
                   <div className="space-y-4">
                     <div className="flex items-center justify-between">
                       <label className="text-sm font-bold text-muted-foreground uppercase tracking-wider flex items-center gap-2">

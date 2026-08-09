@@ -19,6 +19,8 @@ export type CreateGameRequestMode =
 export const CreateGameRequestMode = {
   facilitator: "facilitator",
   standalone: "standalone",
+  online: "online",
+  facilitated: "facilitated",
 } as const;
 
 export interface CreateGameRequest {
@@ -26,7 +28,7 @@ export interface CreateGameRequest {
    * @minItems 2
    * @maxItems 4
    */
-  playerNames: string[];
+  playerNames?: string[];
   mode: CreateGameRequestMode;
 }
 
@@ -54,12 +56,20 @@ export interface Card {
   cardText: string;
   factText: string;
   function: string;
+  imageKey: string | null;
+  baseId?: string;
   alternateFunctions?: string[];
   chosenFunction?: string;
-  imageKey: string | null;
 }
 
-export type CardState = Card;
+export type PlayerStateBotSkillLevel =
+  (typeof PlayerStateBotSkillLevel)[keyof typeof PlayerStateBotSkillLevel];
+
+export const PlayerStateBotSkillLevel = {
+  easy: "easy",
+  medium: "medium",
+  hard: "hard",
+} as const;
 
 export interface PlayerState {
   id: string;
@@ -69,6 +79,8 @@ export interface PlayerState {
   skipsNextTurn: boolean;
   maxHandSize: number;
   drawsExtraCard: boolean;
+  isBot?: boolean;
+  botSkillLevel?: PlayerStateBotSkillLevel;
 }
 
 export interface ActiveModifier {
@@ -80,12 +92,47 @@ export interface ActiveModifier {
 
 export type PendingDecisionOptionsItem = { [key: string]: unknown };
 
+export type PendingDecisionMeta = { [key: string]: unknown };
+
 export interface PendingDecision {
   type: string;
   playerId: string;
   cardId: string;
   options?: PendingDecisionOptionsItem[];
   prompt: string;
+  meta?: PendingDecisionMeta;
+}
+
+export type EffectEventKind =
+  (typeof EffectEventKind)[keyof typeof EffectEventKind];
+
+export const EffectEventKind = {
+  draw: "draw",
+  discard: "discard",
+  transfer: "transfer",
+  swap: "swap",
+  skip: "skip",
+  pile_shift: "pile_shift",
+  modifier: "modifier",
+  info: "info",
+} as const;
+
+export interface EffectEvent {
+  kind: EffectEventKind;
+  playerIds?: string[];
+  text: string;
+}
+
+export interface EffectAnnouncement {
+  id: string;
+  cardId: string;
+  cardName: string;
+  cardText: string;
+  imageKey: string | null;
+  playedById: string;
+  playedByName: string;
+  outcome: string[];
+  events: EffectEvent[];
 }
 
 export type GameStateMode = (typeof GameStateMode)[keyof typeof GameStateMode];
@@ -93,12 +140,15 @@ export type GameStateMode = (typeof GameStateMode)[keyof typeof GameStateMode];
 export const GameStateMode = {
   facilitator: "facilitator",
   standalone: "standalone",
+  online: "online",
+  facilitated: "facilitated",
 } as const;
 
 export type GameStatePhase =
   (typeof GameStatePhase)[keyof typeof GameStatePhase];
 
 export const GameStatePhase = {
+  waiting: "waiting",
   setup: "setup",
   draw: "draw",
   play: "play",
@@ -117,12 +167,17 @@ export interface GameState {
   discardPile: Card[];
   activeModifiers: ActiveModifier[];
   pendingDecision: PendingDecision | null;
+  lastEffect?: EffectAnnouncement | null;
   log: string[];
   winner: string | null;
   turnNumber: number;
-  heroPlayedThisTurn: boolean;
-  actionPlayedThisTurn: boolean;
-  ongoingActionCard: Card | null;
+  extraTurn?: boolean;
+  heroPlayedThisTurn?: boolean;
+  actionPlayedThisTurn?: boolean;
+  ongoingActionCard?: Card | null;
+  ongoingBenefitUsedThisTurn?: boolean;
+  maxPlayers?: number;
+  hasPassword?: boolean;
 }
 
 export type GameActionType =
@@ -133,8 +188,8 @@ export const GameActionType = {
   play_card: "play_card",
   end_turn: "end_turn",
   resolve_decision: "resolve_decision",
-  move_card_layer: "move_card_layer",
   activate_ongoing: "activate_ongoing",
+  move_card_layer: "move_card_layer",
   reset_game: "reset_game",
 } as const;
 
@@ -143,6 +198,8 @@ export type GameActionDecisionData = { [key: string]: unknown } | null;
 export interface GameAction {
   type: GameActionType;
   playerId: string;
+  token?: string | null;
+  targetFunction?: string | null;
   cardId?: string | null;
   targetPlayerId?: string | null;
   targetCardId?: string | null;

@@ -12,4 +12,6 @@ export type CreateGameRequestMode =
 export const CreateGameRequestMode = {
   facilitator: "facilitator",
   standalone: "standalone",
+  online: "online",
+  facilitated: "facilitated",
 } as const;

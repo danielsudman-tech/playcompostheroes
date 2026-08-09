@@ -18,4 +18,7 @@ export interface Card {
   factText: string;
   function: string;
   imageKey: string | null;
+  baseId?: string;
+  alternateFunctions?: string[];
+  chosenFunction?: string;
 }
