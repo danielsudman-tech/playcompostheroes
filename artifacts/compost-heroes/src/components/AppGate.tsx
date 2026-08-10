@@ -67,6 +67,16 @@ function PasswordInput({
   );
 }
 
+// Facilitated-mode game routes are open to guests — players just enter a
+// name at the table, no account needed.
+function isUngatedPath(): boolean {
+  try {
+    return /\/game\/[^/]+\/(table|host)\/?$/.test(window.location.pathname);
+  } catch {
+    return false;
+  }
+}
+
 export function AppGate({ children }: { children: ReactNode }) {
   const [status, setStatus] = useState<Status>("loading");
   const [user, setUser] = useState<RegisteredUser | null>(null);
@@ -206,6 +216,10 @@ export function AppGate({ children }: { children: ReactNode }) {
       setStatus("idle");
     }
   };
+
+  if (isUngatedPath()) {
+    return <UserContext.Provider value={{ user, logout }}>{children}</UserContext.Provider>;
+  }
 
   if (status === "loading" || status === "submitting") {
     return (

@@ -130,6 +130,11 @@ export default function FacilitatedGame() {
 
   const localPlayerId = claim?.playerId ?? null;
 
+  const [joinName, setJoinName] = useState("");
+  const [joinPassword, setJoinPassword] = useState("");
+  const [needsPassword, setNeedsPassword] = useState(false);
+  const [joinError, setJoinError] = useState<string | null>(null);
+  const [joining, setJoining] = useState(false);
   const [viewingOpponent, setViewingOpponent] = useState<PlayerState | null>(null);
   const [confirmCard, setConfirmCard] = useState<Card | null>(null);
   const [viewingDiscard, setViewingDiscard] = useState(false);
@@ -138,7 +143,10 @@ export default function FacilitatedGame() {
 
   useEffect(() => {
     if (!gameState) return;
-    if (gameState.mode !== "facilitated" || gameState.phase === "waiting" || !storedToken) {
+    // Only non-facilitated games belong on the classic screen. Facilitated
+    // players stay here — the table shows its own name-entry join form
+    // (no registration) while the game is waiting.
+    if (gameState.mode !== "facilitated") {
       setLocation(`/game/${gameId}`);
     }
   }, [gameState?.mode, gameState?.phase, storedToken, gameId, setLocation, gameState]);
@@ -174,8 +182,89 @@ export default function FacilitatedGame() {
     );
   }
 
-  if (gameState.mode !== "facilitated" || gameState.phase === "waiting") {
+  if (gameState.mode !== "facilitated") {
     return null;
+  }
+
+  if (gameState.phase === "waiting") {
+    const handleJoin = async (e: React.FormEvent) => {
+      e.preventDefault();
+      const name = joinName.trim();
+      if (!name || !gameId) return;
+      setJoining(true);
+      setJoinError(null);
+      try {
+        const r = await fetch(`/api/games/${gameId}/join`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ name, password: joinPassword || undefined }),
+        });
+        const data = await r.json();
+        if (r.status === 403 && data.requiresPassword) {
+          setNeedsPassword(true);
+          if (joinPassword) setJoinError(data.error ?? "Incorrect password");
+          setJoining(false);
+          return;
+        }
+        if (!r.ok) throw new Error(data.error ?? "Could not join the game");
+        storeToken(gameId, data.token);
+        window.location.reload();
+      } catch (err) {
+        setJoinError(err instanceof Error ? err.message : "Could not join the game");
+        setJoining(false);
+      }
+    };
+
+    return (
+      <div className="min-h-screen bg-background game-table-pattern flex flex-col items-center justify-center p-6">
+        <img src={compostHeroesLogo} alt="Compost Heroes" className="w-40 mb-6 drop-shadow-md" draggable={false} />
+        {localToken ? (
+          <div className="bg-card border-2 border-border rounded-3xl p-8 max-w-md w-full text-center shadow-xl">
+            <Loader2 className="w-8 h-8 text-primary animate-spin mx-auto mb-4" />
+            <h2 className="text-2xl font-display font-bold mb-2">You're at the table!</h2>
+            <p className="text-muted-foreground mb-6">Waiting for your facilitator to start the game.</p>
+            <div className="bg-muted rounded-2xl p-4 text-left">
+              <p className="text-xs font-bold uppercase tracking-wider text-muted-foreground mb-2">Players seated</p>
+              <div className="space-y-1.5">
+                {gameState.players.map((p) => (
+                  <div key={p.id} className="text-sm font-medium flex items-center gap-2">
+                    <span className="w-2 h-2 rounded-full bg-primary inline-block" /> {p.name}
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+        ) : (
+          <form onSubmit={handleJoin} className="bg-card border-2 border-border rounded-3xl p-8 max-w-md w-full text-center shadow-xl">
+            <h2 className="text-2xl font-display font-bold mb-2">Join the Game</h2>
+            <p className="text-muted-foreground mb-6">Enter your name to take a seat — no account needed.</p>
+            <input
+              autoFocus
+              value={joinName}
+              onChange={(e) => setJoinName(e.target.value)}
+              placeholder="Your name"
+              maxLength={30}
+              className="w-full h-12 px-4 rounded-xl border-2 border-border bg-background text-center text-lg font-medium focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary mb-4"
+              required
+            />
+            {needsPassword && (
+              <input
+                type="password"
+                value={joinPassword}
+                onChange={(e) => setJoinPassword(e.target.value)}
+                placeholder="Game password"
+                className="w-full h-12 px-4 rounded-xl border-2 border-border bg-background text-center text-lg font-medium focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary mb-4"
+                required
+              />
+            )}
+            {joinError && <p className="text-sm font-medium text-destructive mb-4">{joinError}</p>}
+            <Button type="submit" size="lg" className="w-full h-12 text-lg font-bold" disabled={joining || !joinName.trim()}>
+              {joining ? <Loader2 className="w-5 h-5 animate-spin" /> : "Take a Seat"}
+            </Button>
+          </form>
+        )}
+      </div>
+    );
   }
 
   const currentPlayer = gameState.players[gameState.currentPlayerIndex];
