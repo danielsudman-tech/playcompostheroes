@@ -24,6 +24,7 @@ interface WaitingRoomProps {
   playerIndex: number | null;
   token: string | null;
   hasPassword?: boolean;
+  isFacilitated?: boolean;
 }
 
 const SKILL_COLORS: Record<string, string> = {
@@ -40,7 +41,7 @@ const SKILL_LABELS: Record<string, string> = {
 
 const BOT_NAMES = ["Compost Carl", "Worm Wendy", "Rot Rita", "Pile Pete", "Mulch Max", "Decay Dana"];
 
-export function WaitingRoom({ gameId, players, maxPlayers, playerIndex, token, hasPassword }: WaitingRoomProps) {
+export function WaitingRoom({ gameId, players, maxPlayers, playerIndex, token, hasPassword, isFacilitated }: WaitingRoomProps) {
   const [, setLocation] = useLocation();
   const { toast } = useToast();
   const [copied, setCopied] = useState(false);
@@ -50,7 +51,9 @@ export function WaitingRoom({ gameId, players, maxPlayers, playerIndex, token, h
 
   const isHost = playerIndex === 0;
   const myPlayerId = playerIndex !== null ? players[playerIndex]?.id : null;
-  const shareUrl = `${window.location.origin}${import.meta.env.BASE_URL}game/${gameId}`.replace(/\/+\//, "/");
+  // Facilitated invites go to the table page, which is open to guests
+  // (name-only join, no registration).
+  const shareUrl = `${window.location.origin}${import.meta.env.BASE_URL}game/${gameId}${isFacilitated ? "/table" : ""}`.replace(/\/+\//, "/");
   const roomCode = gameId.toUpperCase();
 
   const totalCount = players.length + botSlots.length;

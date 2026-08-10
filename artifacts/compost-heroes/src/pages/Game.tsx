@@ -338,6 +338,7 @@ export default function Game() {
         playerIndex={playerIndex}
         token={localToken}
         hasPassword={(gameState as any)?.hasPassword}
+        isFacilitated={isFacilitated}
       />
     );
   }
