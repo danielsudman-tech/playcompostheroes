@@ -123,6 +123,7 @@ export default function Game() {
   const [announcement, setAnnouncement] = useState<string | null>(null);
   const announcementTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const prevLogLength = useRef(0);
+  const prevEffectId = useRef<string | null>(null);
 
   // Pass Device screen — shown in Pass & Play when the current player changes
   const [passScreen, setPassScreen] = useState<{ name: string; cardCount: number } | null>(null);
@@ -216,7 +217,13 @@ export default function Game() {
     if (logLen > prevLogLength.current) {
       const latest = gameState.log[logLen - 1];
       prevLogLength.current = logLen;
-      // Facilitated mode has the richer effect-announcement overlay instead
+      // If this update carried a new rich effect announcement, the overlay
+      // covers it — skip the plain text banner to avoid double-announcing.
+      const effectId = gameState.lastEffect?.id ?? null;
+      if (effectId && effectId !== prevEffectId.current) {
+        prevEffectId.current = effectId;
+        return;
+      }
       if (isFacilitated) return;
       setAnnouncement(latest);
       if (announcementTimer.current) clearTimeout(announcementTimer.current);
@@ -1425,16 +1432,12 @@ export default function Game() {
           decision={gameState.pendingDecision}
           gameState={gameState}
           onResolve={handleResolveDecision}
-          stepInfo={isFacilitated
-            ? getDecisionStepInfo(gameState.pendingDecision.type, gameState.pendingDecision.meta)
-            : null}
+          stepInfo={getDecisionStepInfo(gameState.pendingDecision.type, gameState.pendingDecision.meta)}
         />
       )}
 
-      {/* FACILITATED: effect announcement broadcast to everyone */}
-      {isFacilitated && (
-        <EffectAnnouncementOverlay effect={gameState.lastEffect} />
-      )}
+      {/* Effect announcement broadcast to everyone (all modes) */}
+      <EffectAnnouncementOverlay effect={gameState.lastEffect ?? null} />
 
       {/* FACILITATED: waiting state — someone else is making a choice */}
       {isFacilitated &&

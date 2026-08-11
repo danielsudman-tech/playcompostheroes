@@ -629,7 +629,9 @@ router.post("/games/:gameId/action", async (req, res) => {
   // effect — not just the human's intermediate step of a bot-completed chain.
   let stateAfterBots = runBotTurnsIfNeeded(result.state);
 
-  if (state.mode === "facilitated") {
+  // Rich effect announcements were built for facilitated mode but are
+  // spectator-safe (no hidden hand contents), so every mode gets them.
+  {
     if (
       type === "play_card" ||
       type === "resolve_decision" ||
