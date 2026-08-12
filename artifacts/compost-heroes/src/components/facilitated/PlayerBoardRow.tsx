@@ -2,7 +2,7 @@ import type { PlayerState, ActiveModifier, Card } from "@workspace/api-client-re
 import { cn } from "@/lib/utils";
 import { assetUrl } from "@/lib/assetUrl";
 import { GameCard } from "@/components/GameCard";
-import { Crosshair, AlertTriangle, Sparkles, User, Layers } from "lucide-react";
+import { Crosshair, AlertTriangle, Sparkles, User, Layers, ZoomIn } from "lucide-react";
 
 export const PILE_CATEGORIES = [
   { key: "moisture",   label: "Moisture",   iconSrc: assetUrl("icon-moisture.png"),   color: "text-blue-500",   border: "border-blue-500/30",   bg: "bg-blue-500/10",   match: (fn: string) => fn.toLowerCase().includes("moisture") },
@@ -29,6 +29,7 @@ interface PlayerBoardRowProps {
   isEligibleTarget: boolean;
   onTarget: () => void;
   onViewPile: () => void;
+  onZoomCard?: (card: Card) => void;
 }
 
 export function PlayerBoardRow({
@@ -40,6 +41,7 @@ export function PlayerBoardRow({
   isEligibleTarget,
   onTarget,
   onViewPile,
+  onZoomCard,
 }: PlayerBoardRowProps) {
   const collected = collectedCategoryCount(player.compostPile);
   const oneAway = collected === 4;
@@ -113,16 +115,21 @@ export function PlayerBoardRow({
       {PILE_CATEGORIES.map(cat => {
         const cards = player.compostPile.filter(c => c != null && cat.match(getEffectiveFn(c)));
         const has = cards.length > 0;
+        const topCard = cards[cards.length - 1];
 
         return (
-          <div key={cat.key} className="w-[92px] h-[126px] shrink-0 relative flex items-center justify-center">
+          <div
+            key={cat.key}
+            className="w-[92px] h-[126px] shrink-0 relative flex items-center justify-center"
+            onClick={!targetingActive && has && onZoomCard ? (e) => { e.stopPropagation(); onZoomCard(topCard); } : undefined}
+          >
              {!has ? (
                <div className={cn("w-full h-full rounded-xl border-2 border-dashed flex flex-col items-center justify-center gap-2 opacity-60 transition-colors group-hover:border-solid", cat.border, cat.bg)}>
                  <img src={cat.iconSrc} alt={cat.label} className="w-7 h-7 opacity-30 grayscale mix-blend-luminosity" draggable={false} />
                  <span className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground/50">Empty</span>
                </div>
              ) : (
-               <div className="relative w-full h-full scale-[0.85] origin-top-left">
+               <div className={cn("relative w-full h-full scale-[0.85] origin-top-left", !targetingActive && onZoomCard && "cursor-zoom-in")}>
                  {cards.map((c, idx) => (
                    <div
                      key={c.id}
@@ -135,6 +142,12 @@ export function PlayerBoardRow({
                      <GameCard card={c} size="sm" hoverable={false} />
                    </div>
                  ))}
+                 {/* Zoom hint on hover */}
+                 {!targetingActive && onZoomCard && (
+                   <div className="absolute inset-0 flex items-center justify-center opacity-0 hover:opacity-100 transition-opacity bg-black/30 rounded-xl z-20">
+                     <ZoomIn className="w-6 h-6 text-white drop-shadow" />
+                   </div>
+                 )}
                  {cards.length > 1 && (
                    <div className="absolute -bottom-2 -right-2 z-10 bg-card border-2 border-primary text-primary font-black text-xs rounded-full w-6 h-6 flex items-center justify-center shadow-lg">
                      {cards.length}

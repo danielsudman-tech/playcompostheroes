@@ -39,7 +39,9 @@ import {
   BookOpen,
   Crosshair,
   Crown,
-  AlertTriangle
+  AlertTriangle,
+  ChevronLeft,
+  ChevronRight,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -138,6 +140,8 @@ export default function FacilitatedGame() {
   const [viewingOpponent, setViewingOpponent] = useState<PlayerState | null>(null);
   const [confirmCard, setConfirmCard] = useState<Card | null>(null);
   const [viewingDiscard, setViewingDiscard] = useState(false);
+  const [discardIndex, setDiscardIndex] = useState(0);
+  const [zoomedCard, setZoomedCard] = useState<Card | null>(null);
   const [showRules, setShowRules] = useState(false);
   const [showLog, setShowLog] = useState(false);
 
@@ -460,6 +464,7 @@ export default function FacilitatedGame() {
                   isEligibleTarget={eligibleTargetIds.has(p.id)}
                   onTarget={() => handleTargetOpponent(p)}
                   onViewPile={() => setViewingOpponent(p)}
+                  onZoomCard={setZoomedCard}
                 />
               ))}
             </div>
@@ -478,6 +483,7 @@ export default function FacilitatedGame() {
                   isEligibleTarget={eligibleTargetIds.has(myRowPlayer.id)}
                   onTarget={() => handleTargetOpponent(myRowPlayer)}
                   onViewPile={() => setViewingOpponent(myRowPlayer)}
+                  onZoomCard={setZoomedCard}
                 />
               </div>
             </div>
@@ -554,7 +560,7 @@ export default function FacilitatedGame() {
             <div className="flex flex-col items-center gap-2">
               <span className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground flex items-center gap-1"><RefreshCcw className="w-3 h-3"/> Discard ({gameState.discardPile.length})</span>
               <button
-                onClick={gameState.discardPile.length > 0 ? () => setViewingDiscard(true) : undefined}
+                onClick={gameState.discardPile.length > 0 ? () => { setDiscardIndex(0); setViewingDiscard(true); } : undefined}
                 className={cn("relative transition-all", gameState.discardPile.length > 0 ? "cursor-pointer hover:-translate-y-1" : "cursor-default")}
                 data-testid="discard-pile"
               >
@@ -734,28 +740,90 @@ export default function FacilitatedGame() {
         )}
       </AnimatePresence>
 
-      {/* Discard pile browser */}
+      {/* Discard pile browser — single-card flip-through */}
       <AnimatePresence>
-        {viewingDiscard && (
+        {viewingDiscard && (() => {
+          const pile = [...gameState.discardPile].reverse(); // newest first
+          const clampedIdx = Math.min(discardIndex, pile.length - 1);
+          const card = pile[clampedIdx];
+          return (
+            <motion.div
+              key="discard-browser"
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              className="fixed inset-0 z-50 bg-black/75 backdrop-blur-md flex flex-col items-center justify-center p-6"
+              onClick={() => setViewingDiscard(false)}
+            >
+              {/* Header */}
+              <div className="flex items-center gap-4 mb-6" onClick={(e) => e.stopPropagation()}>
+                <h2 className="text-2xl font-display font-bold text-white">Discard Pile</h2>
+                <span className="text-white/60 text-sm font-medium">{clampedIdx + 1} of {pile.length}</span>
+                <button
+                  onClick={() => setViewingDiscard(false)}
+                  className="ml-2 bg-white/10 hover:bg-white/20 text-white rounded-full p-2 backdrop-blur-md transition-colors"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+
+              {/* Card + nav */}
+              <div className="flex items-center gap-6" onClick={(e) => e.stopPropagation()}>
+                <button
+                  disabled={clampedIdx === 0}
+                  onClick={() => setDiscardIndex(i => Math.max(0, i - 1))}
+                  className="bg-white/10 hover:bg-white/20 disabled:opacity-30 disabled:cursor-not-allowed text-white rounded-full p-3 backdrop-blur-md transition-colors"
+                >
+                  <ChevronLeft className="w-6 h-6" />
+                </button>
+
+                <AnimatePresence mode="wait">
+                  <motion.div
+                    key={card?.id ?? clampedIdx}
+                    initial={{ opacity: 0, x: 30 }}
+                    animate={{ opacity: 1, x: 0 }}
+                    exit={{ opacity: 0, x: -30 }}
+                    transition={{ duration: 0.18 }}
+                  >
+                    {card && <GameCard card={card} size="lg" hoverable={false} className="shadow-2xl" />}
+                  </motion.div>
+                </AnimatePresence>
+
+                <button
+                  disabled={clampedIdx >= pile.length - 1}
+                  onClick={() => setDiscardIndex(i => Math.min(pile.length - 1, i + 1))}
+                  className="bg-white/10 hover:bg-white/20 disabled:opacity-30 disabled:cursor-not-allowed text-white rounded-full p-3 backdrop-blur-md transition-colors"
+                >
+                  <ChevronRight className="w-6 h-6" />
+                </button>
+              </div>
+
+              <p className="mt-6 text-white/40 text-xs">Click outside to close · ← → to browse</p>
+            </motion.div>
+          );
+        })()}
+      </AnimatePresence>
+
+      {/* Card zoom lightbox (click any compost pile card on the board) */}
+      <AnimatePresence>
+        {zoomedCard && (
           <motion.div
+            key="card-zoom"
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
-            className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex flex-col p-6 md:p-12"
+            className="fixed inset-0 z-50 bg-black/75 backdrop-blur-md flex items-center justify-center p-6 cursor-zoom-out"
+            onClick={() => setZoomedCard(null)}
           >
-            <div className="flex justify-between items-center mb-6 max-w-5xl mx-auto w-full">
-              <h2 className="text-3xl font-display font-bold text-white">Discard Pile</h2>
-              <button onClick={() => setViewingDiscard(false)} className="bg-white/10 hover:bg-white/20 text-white rounded-full p-2 backdrop-blur-md transition-colors">
-                <X className="w-6 h-6" />
-              </button>
-            </div>
-            <div className="flex-1 overflow-y-auto max-w-5xl mx-auto w-full custom-scrollbar pb-12">
-              <div className="flex flex-wrap gap-4 justify-center">
-                {[...gameState.discardPile].reverse().map((card, i) => (
-                  <GameCard key={`${card.id}-${i}`} card={card} size="md" className="shadow-lg opacity-90 hover:opacity-100" />
-                ))}
-              </div>
-            </div>
+            <motion.div
+              initial={{ scale: 0.8, y: 20 }}
+              animate={{ scale: 1, y: 0 }}
+              exit={{ scale: 0.8, y: 20 }}
+              transition={{ type: "spring", stiffness: 380, damping: 30 }}
+              onClick={(e) => e.stopPropagation()}
+            >
+              <GameCard card={zoomedCard} size="lg" hoverable={false} className="shadow-2xl" />
+            </motion.div>
           </motion.div>
         )}
       </AnimatePresence>
