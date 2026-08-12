@@ -12,6 +12,8 @@ interface GameCardProps {
   className?: string;
   size?: "xs" | "sm" | "md" | "lg";
   hoverable?: boolean;
+  /** When false, hides the rule-text area below the image (the image already shows it). */
+  showText?: boolean;
 }
 
 export function GameCard({ 
@@ -20,7 +22,8 @@ export function GameCard({
   onClick, 
   className,
   size = "md",
-  hoverable = true
+  hoverable = true,
+  showText = true,
 }: GameCardProps) {
   const [isFlipped, setIsFlipped] = useState(isFaceDown);
   const [showDetails, setShowDetails] = useState(false);
@@ -115,25 +118,27 @@ export function GameCard({
         </div>
       </div>
 
-      {/* Text Area */}
-      <div className="p-2 bg-white/70 backdrop-blur-sm flex flex-col gap-1 shrink-0 z-10 h-[35%] overflow-hidden relative">
-        <p className="font-bold leading-tight" style={{ color }}>
-          {card.effectType === "instant" ? "⚡ " : "⏳ "}{card.effectType?.toUpperCase()}
-        </p>
-        <p className={cn(
-          "font-medium text-foreground/90 leading-tight flex-1",
-          size === "sm" ? "text-[8px] line-clamp-3" : "text-[10px] sm:text-xs overflow-y-auto"
-        )}>
-          {card.cardText}
-        </p>
-        
-        {/* Hover info button for small sizes */}
-        {size === "sm" && (
-          <div className="absolute bottom-1 right-1 opacity-0 group-hover:opacity-100 transition-opacity">
-            <Info className="w-3 h-3 text-muted-foreground" />
-          </div>
-        )}
-      </div>
+      {/* Text Area — hidden when showText=false (image already contains this info) */}
+      {showText && (
+        <div className="p-2 bg-white/70 backdrop-blur-sm flex flex-col gap-1 shrink-0 z-10 h-[35%] overflow-hidden relative">
+          <p className="font-bold leading-tight" style={{ color }}>
+            {card.effectType === "instant" ? "⚡ " : "⏳ "}{card.effectType?.toUpperCase()}
+          </p>
+          <p className={cn(
+            "font-medium text-foreground/90 leading-tight flex-1",
+            size === "sm" ? "text-[8px] line-clamp-3" : "text-[10px] sm:text-xs overflow-y-auto"
+          )}>
+            {card.cardText}
+          </p>
+          
+          {/* Hover info button for small sizes */}
+          {size === "sm" && (
+            <div className="absolute bottom-1 right-1 opacity-0 group-hover:opacity-100 transition-opacity">
+              <Info className="w-3 h-3 text-muted-foreground" />
+            </div>
+          )}
+        </div>
+      )}
 
     </motion.div>
   );

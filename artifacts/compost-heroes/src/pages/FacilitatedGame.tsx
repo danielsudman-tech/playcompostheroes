@@ -489,8 +489,8 @@ export default function FacilitatedGame() {
             </div>
           )}
 
-          {/* MY HAND FOOTER */}
-          <div className="shrink-0 h-[192px] bg-card/95 backdrop-blur-2xl border-t border-border/60 shadow-[0_-10px_40px_rgba(0,0,0,0.1)] z-20 flex flex-col relative before:absolute before:inset-0 before:bg-gradient-to-t before:from-background/20 before:to-transparent before:pointer-events-none">
+          {/* MY HAND FOOTER — tall enough to show full md cards (208px) + header */}
+          <div className="shrink-0 h-[268px] bg-card/95 backdrop-blur-2xl border-t border-border/60 shadow-[0_-10px_40px_rgba(0,0,0,0.1)] z-20 flex flex-col relative before:absolute before:inset-0 before:bg-gradient-to-t before:from-background/20 before:to-transparent before:pointer-events-none">
              <div className="px-6 py-2.5 border-b border-border/40 bg-muted/20 flex justify-between items-center relative z-10">
                <span className="text-xs font-bold uppercase tracking-widest text-muted-foreground flex items-center gap-2">
                  Your Hand <span className="bg-background px-2.5 py-0.5 rounded-full border shadow-sm">{me.hand.length} / {me.maxHandSize}</span>
@@ -516,7 +516,8 @@ export default function FacilitatedGame() {
                     >
                       <GameCard 
                         card={card} 
-                        size="md" 
+                        size="md"
+                        showText={false}
                         onClick={() => !isBlocked && handleCardClick(card)}
                         className={cn(
                           "transition-all duration-300",
@@ -712,28 +713,66 @@ export default function FacilitatedGame() {
         )}
       </AnimatePresence>
 
-      {/* Play confirmation modal */}
+      {/* Play confirmation modal — card on left, explanation on right */}
       <AnimatePresence>
         {confirmCard && (
           <motion.div
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
-            className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4"
+            className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-center justify-center p-6"
+            onClick={() => setConfirmCard(null)}
           >
             <motion.div
               initial={{ scale: 0.9, y: 20 }}
               animate={{ scale: 1, y: 0 }}
               exit={{ scale: 0.9, y: 20 }}
-              className="bg-card rounded-3xl shadow-2xl p-6 border flex flex-col items-center max-w-sm w-full"
+              className="bg-card rounded-3xl shadow-2xl border flex gap-0 overflow-hidden max-w-2xl w-full"
+              onClick={(e) => e.stopPropagation()}
             >
-              <h2 className="text-xl font-display font-bold mb-4">Play this card?</h2>
-              <GameCard card={confirmCard} size="md" className="mb-6 shadow-xl" hoverable={false} />
-              <div className="flex w-full gap-3">
-                <Button variant="outline" className="flex-1" onClick={() => setConfirmCard(null)}>Cancel</Button>
-                <Button className="flex-1 font-bold" onClick={() => handlePlayCard(confirmCard.id)} disabled={actionMutation.isPending}>
-                  {actionMutation.isPending ? <Loader2 className="w-4 h-4 animate-spin" /> : "Confirm Play"}
-                </Button>
+              {/* Full card — no text overlay */}
+              <div className="shrink-0 p-6 flex items-center justify-center bg-muted/30">
+                <GameCard card={confirmCard} size="lg" hoverable={false} showText={false} className="shadow-2xl" />
+              </div>
+
+              {/* Explanation panel */}
+              <div className="flex-1 flex flex-col justify-between p-6 min-w-0">
+                <div>
+                  <h2 className="text-2xl font-display font-bold mb-1" style={{ color: confirmCard.function ? undefined : undefined }}>
+                    {confirmCard.name}
+                  </h2>
+                  <div className="flex items-center gap-2 mb-4">
+                    <span className="text-xs font-bold uppercase tracking-wider px-2 py-0.5 rounded-full bg-primary/10 text-primary">
+                      {confirmCard.effectType === "instant" ? "⚡ Instant" : confirmCard.effectType === "ongoing" ? "⏳ Ongoing" : confirmCard.type}
+                    </span>
+                    {confirmCard.function && (
+                      <span className="text-xs text-muted-foreground font-medium">{confirmCard.function}</span>
+                    )}
+                  </div>
+
+                  <p className="text-base font-semibold text-foreground leading-snug mb-4">
+                    {confirmCard.cardText}
+                  </p>
+
+                  {confirmCard.effectType === "instant" && (
+                    <p className="text-sm text-muted-foreground">This card takes effect immediately and goes to the discard pile.</p>
+                  )}
+                  {confirmCard.effectType === "ongoing" && (
+                    <p className="text-sm text-muted-foreground">This card stays in play and its effect lasts until activated or removed.</p>
+                  )}
+                  {confirmCard.type === "hero" && (
+                    <p className="text-sm text-muted-foreground">Playing this hero card adds it to your compost pile. You can only play one hero per turn.</p>
+                  )}
+                </div>
+
+                <div className="flex gap-3 mt-6">
+                  <Button variant="outline" className="flex-1 h-12" onClick={() => setConfirmCard(null)}>
+                    Cancel
+                  </Button>
+                  <Button className="flex-1 h-12 font-bold text-base" onClick={() => handlePlayCard(confirmCard.id)} disabled={actionMutation.isPending}>
+                    {actionMutation.isPending ? <Loader2 className="w-4 h-4 animate-spin" /> : "Play Card"}
+                  </Button>
+                </div>
               </div>
             </motion.div>
           </motion.div>
@@ -840,7 +879,7 @@ export default function FacilitatedGame() {
               transition={{ type: "spring", stiffness: 380, damping: 30 }}
               onClick={(e) => e.stopPropagation()}
             >
-              <GameCard card={zoomedCard} size="lg" hoverable={false} className="shadow-2xl" />
+              <GameCard card={zoomedCard} size="lg" hoverable={false} showText={false} className="shadow-2xl" />
             </motion.div>
           </motion.div>
         )}
