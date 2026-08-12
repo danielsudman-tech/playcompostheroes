@@ -135,12 +135,6 @@ export function GameCard({
         )}
       </div>
 
-      {/* Fact Text tooltip/overlay (only in md/lg on hover) */}
-      {size !== "sm" && hoverable && card.factText && (
-        <div className="absolute inset-x-0 bottom-0 translate-y-full group-hover:translate-y-0 transition-transform duration-300 p-2 bg-black/80 text-white text-[10px] z-20 backdrop-blur-md border-t border-white/20">
-          <p className="italic">"{card.factText}"</p>
-        </div>
-      )}
     </motion.div>
   );
 }
