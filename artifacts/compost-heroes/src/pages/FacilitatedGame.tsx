@@ -740,12 +740,14 @@ export default function FacilitatedGame() {
         )}
       </AnimatePresence>
 
-      {/* Discard pile browser — single-card flip-through */}
+      {/* Discard pile browser — 3×3 paged grid */}
       <AnimatePresence>
         {viewingDiscard && (() => {
+          const PAGE = 9;
           const pile = [...gameState.discardPile].reverse(); // newest first
-          const clampedIdx = Math.min(discardIndex, pile.length - 1);
-          const card = pile[clampedIdx];
+          const totalPages = Math.max(1, Math.ceil(pile.length / PAGE));
+          const page = Math.min(discardIndex, totalPages - 1);
+          const pageCards = pile.slice(page * PAGE, page * PAGE + PAGE);
           return (
             <motion.div
               key="discard-browser"
@@ -756,9 +758,12 @@ export default function FacilitatedGame() {
               onClick={() => setViewingDiscard(false)}
             >
               {/* Header */}
-              <div className="flex items-center gap-4 mb-6" onClick={(e) => e.stopPropagation()}>
+              <div className="flex items-center gap-4 mb-5" onClick={(e) => e.stopPropagation()}>
                 <h2 className="text-2xl font-display font-bold text-white">Discard Pile</h2>
-                <span className="text-white/60 text-sm font-medium">{clampedIdx + 1} of {pile.length}</span>
+                <span className="text-white/60 text-sm font-medium">{pile.length} card{pile.length !== 1 ? "s" : ""}</span>
+                {totalPages > 1 && (
+                  <span className="text-white/40 text-sm">· page {page + 1} of {totalPages}</span>
+                )}
                 <button
                   onClick={() => setViewingDiscard(false)}
                   className="ml-2 bg-white/10 hover:bg-white/20 text-white rounded-full p-2 backdrop-blur-md transition-colors"
@@ -767,38 +772,51 @@ export default function FacilitatedGame() {
                 </button>
               </div>
 
-              {/* Card + nav */}
-              <div className="flex items-center gap-6" onClick={(e) => e.stopPropagation()}>
+              {/* Grid + page arrows */}
+              <div className="flex items-center gap-4" onClick={(e) => e.stopPropagation()}>
                 <button
-                  disabled={clampedIdx === 0}
-                  onClick={() => setDiscardIndex(i => Math.max(0, i - 1))}
-                  className="bg-white/10 hover:bg-white/20 disabled:opacity-30 disabled:cursor-not-allowed text-white rounded-full p-3 backdrop-blur-md transition-colors"
+                  disabled={page === 0}
+                  onClick={() => setDiscardIndex(p => Math.max(0, p - 1))}
+                  className="bg-white/10 hover:bg-white/20 disabled:opacity-20 disabled:cursor-not-allowed text-white rounded-full p-3 backdrop-blur-md transition-colors shrink-0"
                 >
                   <ChevronLeft className="w-6 h-6" />
                 </button>
 
                 <AnimatePresence mode="wait">
                   <motion.div
-                    key={card?.id ?? clampedIdx}
-                    initial={{ opacity: 0, x: 30 }}
+                    key={page}
+                    initial={{ opacity: 0, x: 24 }}
                     animate={{ opacity: 1, x: 0 }}
-                    exit={{ opacity: 0, x: -30 }}
+                    exit={{ opacity: 0, x: -24 }}
                     transition={{ duration: 0.18 }}
+                    className="grid grid-cols-3 gap-3"
                   >
-                    {card && <GameCard card={card} size="lg" hoverable={false} className="shadow-2xl" />}
+                    {pageCards.map((card, i) => (
+                      <div
+                        key={`${card.id}-${i}`}
+                        className="cursor-zoom-in"
+                        onClick={() => setZoomedCard(card)}
+                      >
+                        <GameCard card={card} size="md" hoverable={false} className="shadow-lg hover:scale-105 transition-transform duration-150" />
+                      </div>
+                    ))}
+                    {/* Fill empty slots so grid stays stable */}
+                    {Array.from({ length: PAGE - pageCards.length }).map((_, i) => (
+                      <div key={`empty-${i}`} className="w-36 h-52" />
+                    ))}
                   </motion.div>
                 </AnimatePresence>
 
                 <button
-                  disabled={clampedIdx >= pile.length - 1}
-                  onClick={() => setDiscardIndex(i => Math.min(pile.length - 1, i + 1))}
-                  className="bg-white/10 hover:bg-white/20 disabled:opacity-30 disabled:cursor-not-allowed text-white rounded-full p-3 backdrop-blur-md transition-colors"
+                  disabled={page >= totalPages - 1}
+                  onClick={() => setDiscardIndex(p => Math.min(totalPages - 1, p + 1))}
+                  className="bg-white/10 hover:bg-white/20 disabled:opacity-20 disabled:cursor-not-allowed text-white rounded-full p-3 backdrop-blur-md transition-colors shrink-0"
                 >
                   <ChevronRight className="w-6 h-6" />
                 </button>
               </div>
 
-              <p className="mt-6 text-white/40 text-xs">Click outside to close · ← → to browse</p>
+              <p className="mt-5 text-white/40 text-xs">Click a card to enlarge · click outside to close</p>
             </motion.div>
           );
         })()}
