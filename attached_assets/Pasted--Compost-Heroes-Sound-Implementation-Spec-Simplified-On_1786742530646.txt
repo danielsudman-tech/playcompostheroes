@@ -1,0 +1,68 @@
+# Compost Heroes — Sound Implementation Spec (Simplified)
+*One player per device/computer. Multiplayer session synced across devices.*
+
+---
+
+## 1. Core Principle
+
+Every sound event has a **single trigger and a single audio asset**. Whether a player hears it at full volume or ducked/muted depends only on one client-side check:
+
+> **Is this the active player (whose turn it is)?**
+
+Keep the sound palette small and reusable — a handful of core sounds, not a unique cue for every micro-action. This keeps gameplay feeling light and prevents audio fatigue, especially in multiplayer sessions with several players.
+
+---
+
+## 2. Sound Style
+
+**Nature-inspired, with playful animated energy** — earthy thuds, leaf rustles/crumples, water drops, soft wind, light chewing sounds. Grounded in real nature textures, but with a bit of cartoon bounce/pitch-play so it feels fun rather than literal or heavy. Should support gameplay, not compete with it.
+
+---
+
+## 3. Core Sound Event List (Simplified)
+
+| # | Event | Trigger | Sound Direction | Active Player Volume | Other Players' Volume |
+|---|-------|---------|------------------|----------------------|------------------------|
+| 1 | Place a Compost Hero | Any hero placed in own pile — new layer or stacked, no distinction | Earthy thud + light leaf-rustle, playful upward pitch-bend | 100% | 40–50% |
+| 2 | Draw or Discard | Player draws a card, or discards down to hand limit — same sound for both | Short, dry leaf-flick | 100% | 0% (silent) |
+| 3 | Action Card played | Any action card — immediate or ongoing, placed or resolved | Short gust/whoosh, bright and quick | 100% | 40–50% (ongoing effects that affect all players may warrant closer to full volume — optional, test in play) |
+| 4 | Layer completed | First hero placed on a previously-empty layer | One pleasant chime — single tone, not layer-specific | 100% | 100% |
+| 5 | Win — "I am a Compost Hero!" | Player completes all 5 layers | Short, satisfying fanfare — a quick rustle-and-chime swell, not a multi-part sequence | 100% | 100% |
+
+**Optional background layer:** a quiet, steady nature ambience (soft wind, distant birds) — low volume, same for all players, no variation or shifting based on game state.
+
+---
+
+## 4. Cut From Earlier Draft (for simplicity)
+
+To keep the game from feeling noisy, the following were removed rather than getting their own dedicated sound:
+- Separate sounds for new-layer vs. stacked hero placement — merged into one (#1)
+- Separate draw and discard sounds — merged into one (#2)
+- Separate "ongoing placed" and "ongoing cleared" sounds — merged into general action-card sound (#3)
+- 5 distinct layer-specific tones — replaced with a single shared "layer complete" chime (#4)
+- Multi-part win fanfare built from 5 layer tones — replaced with one short fanfare (#5)
+- Deck refill sound — cut, visually obvious already
+- Forced-play "uh-oh" sound — cut, existing pop-up/visual covers it; can revisit if it feels flat in playtesting
+- Dedicated "your turn" notification chime — cut, a visual highlight can do this job instead
+- Ambient shift while an Ongoing card is active — cut in favor of one steady background bed
+
+---
+
+## 5. Notification Pop-ups + Sound
+
+Keep existing pop-up notifications for other players' actions. Pair each pop-up with its ducked sound event (per volume table above) rather than adding new sounds.
+
+---
+
+## 6. Build Notes
+
+1. **Volume multiplier logic**, not duplicate assets — one sound file per event, scaled by `isActivePlayer` boolean.
+2. **Full-volume-for-everyone events** (#4, #5) are the exceptions — these carry information relevant to all players.
+3. **Silent-for-others events** (#2) are high-frequency, low-relevance actions — muting them for waiting players prevents audio clutter across a multi-player session.
+4. **Mute toggle** should be available and should mute all sound categories.
+5. Keep individual sound assets short and compressed (shared camp devices, variable wifi).
+6. For sourcing/producing clips: royalty-free libraries (Freesound.org, Zapsplat) for raw nature material, AI text-to-SFX tools for quick generation from these briefs, or a sound designer for a fully cohesive set.
+
+---
+
+*Simplified from an earlier, more granular draft — down to 5 core reusable sound events plus one optional ambient bed, in a nature-inspired, playfully animated style.*

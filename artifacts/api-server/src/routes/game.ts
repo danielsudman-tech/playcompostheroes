@@ -26,6 +26,8 @@ import {
   createGameId,
   gameHasPassword,
   getGame,
+  getGamesByFacilitator,
+  getTokenForPlayerIndex,
   getPlayerIndexForToken,
   removePlayerTokenByIndex,
   removeSseClient,
@@ -39,13 +41,17 @@ import { getUserByToken } from "../lib/userStore.js";
 
 // Registration rules: online games (and facilitated hosting) require a
 // registered account. Facilitated participants and Pass & Play never do.
-async function requireRegisteredUser(userToken: unknown): Promise<boolean> {
-  if (typeof userToken !== "string" || !userToken.trim()) return false;
+async function getRegisteredUser(userToken: unknown): Promise<{ id: string; name: string } | null> {
+  if (typeof userToken !== "string" || !userToken.trim()) return null;
   try {
-    return (await getUserByToken(userToken)) !== null;
+    return (await getUserByToken(userToken)) as { id: string; name: string } | null;
   } catch {
-    return false;
+    return null;
   }
+}
+
+async function requireRegisteredUser(userToken: unknown): Promise<boolean> {
+  return (await getRegisteredUser(userToken)) !== null;
 }
 
 const router: IRouter = Router();
@@ -80,9 +86,18 @@ export function serializeState(state: GameState, viewerIndex?: number) {
     }
   }
 
+  // Questions are facilitator-directed: the host (index 0) sees them all;
+  // every other viewer only sees their own (to render the "Asked" state).
+  let questions = state.questions;
+  if (isOnline && questions && viewerIndex !== 0) {
+    const viewerId = viewerIndex !== undefined ? state.players[viewerIndex]?.id : undefined;
+    questions = questions.filter((q) => q.playerId === viewerId);
+  }
+
   return {
     ...rest,
     pendingDecision,
+    questions,
     deckCount: deck.length,
     players: state.players.map((player, idx) => {
       if (!isOnline || idx === viewerIndex) {
@@ -130,7 +145,8 @@ router.post("/games", async (req, res) => {
   // Online / facilitated waiting-room: just the host name + max players.
   // Creating either requires a registered account.
   if (mode === "online" || mode === "facilitated") {
-    if (!(await requireRegisteredUser((req.body as { userToken?: string }).userToken))) {
+    const creator = await getRegisteredUser((req.body as { userToken?: string }).userToken);
+    if (!creator) {
       res.status(401).json({ error: "Sign in required to create this kind of room" });
       return;
     }
@@ -142,6 +158,10 @@ router.post("/games", async (req, res) => {
     const max = Math.min(4, Math.max(2, Number(maxPlayers) || 4));
     const gameId = createGameId();
     const state = createWaitingRoom(gameId, name, max, mode);
+    state.createdAt = Date.now();
+    state.facilitatorId = creator.id;
+    const label = ((req.body as { label?: string }).label ?? "").trim();
+    if (label) state.label = label.slice(0, 60);
     await storeGame(state);
     logEvent("game_created", { gameId, metadata: { mode, maxPlayers: max, hostName: name } });
 
@@ -469,6 +489,152 @@ router.post("/games/:gameId/pause", async (req, res) => {
   res.json(serializeState(state, 0));
 });
 
+// GET /api/facilitator/rooms — sessions created by the signed-in facilitator
+router.get("/facilitator/rooms", async (req, res) => {
+  const user = await getRegisteredUser(req.query.userToken);
+  if (!user) {
+    res.status(401).json({ error: "Sign in required" });
+    return;
+  }
+  try {
+    const games = await getGamesByFacilitator(user.id);
+    res.json(games.map((g) => ({
+      gameId: g.gameId,
+      mode: g.mode,
+      label: g.label ?? null,
+      phase: g.phase,
+      playerCount: g.players.length,
+      maxPlayers: g.maxPlayers ?? 4,
+      createdAt: g.createdAt ?? null,
+      endedAt: g.endedAt ?? null,
+      winner: g.winner,
+      paused: g.paused === true,
+      openQuestions: (g.questions ?? []).filter((q) => !q.resolved).length,
+    })));
+  } catch (err) {
+    console.error("[facilitator rooms]", err);
+    res.status(500).json({ error: "Failed to load sessions" });
+  }
+});
+
+// POST /api/games/:gameId/host-token — recover the host seat token for a
+// session's creator (signed-in account), e.g. reopening from another device.
+router.post("/games/:gameId/host-token", async (req, res) => {
+  const { gameId } = req.params as { gameId: string };
+  const user = await getRegisteredUser((req.body as { userToken?: string }).userToken);
+  if (!user) { res.status(401).json({ error: "Sign in required" }); return; }
+
+  const state = await getGame(gameId);
+  if (!state) { res.status(404).json({ error: "Game not found" }); return; }
+  if (state.mode !== "facilitated" || state.facilitatorId !== user.id) {
+    res.status(403).json({ error: "You are not the facilitator of this session" });
+    return;
+  }
+  const token = await getTokenForPlayerIndex(gameId, 0);
+  if (!token) { res.status(404).json({ error: "Host seat token not found" }); return; }
+  res.json({ token });
+});
+
+// POST /api/games/:gameId/message — facilitator broadcasts a message to all tables
+router.post("/games/:gameId/message", async (req, res) => {
+  const { gameId } = req.params as { gameId: string };
+  const { token, text } = req.body as { token?: string; text?: string };
+
+  const check = await requireHost(gameId, token);
+  if ("error" in check) { res.status(check.status).json({ error: check.error }); return; }
+
+  if (check.state.phase === "game_over") { res.status(409).json({ error: "The session has ended" }); return; }
+
+  const trimmed = (text ?? "").trim();
+  if (!trimmed) { res.status(400).json({ error: "Message text is required" }); return; }
+
+  const state: GameState = {
+    ...check.state,
+    hostMessage: { id: `msg_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`, text: trimmed.slice(0, 300), ts: Date.now() },
+  };
+  state.log = [...state.log.slice(-49), `📢 Facilitator: ${trimmed.slice(0, 300)}`];
+  await storeGame(state);
+  broadcast(gameId, state);
+  res.json(serializeState(state, 0));
+});
+
+// POST /api/games/:gameId/question — participant flags a question for the facilitator
+router.post("/games/:gameId/question", async (req, res) => {
+  const { gameId } = req.params as { gameId: string };
+  const { token, text } = req.body as { token?: string; text?: string };
+
+  const state = await getGame(gameId);
+  if (!state) { res.status(404).json({ error: "Game not found" }); return; }
+  if (state.mode !== "facilitated") { res.status(400).json({ error: "Questions are only available in facilitated games" }); return; }
+  if (state.phase === "game_over") { res.status(409).json({ error: "The session has ended" }); return; }
+  if (!token) { res.status(403).json({ error: "Player token required" }); return; }
+  const idx = await getPlayerIndexForToken(gameId, token);
+  if (idx === null || idx === undefined || !state.players[idx]) {
+    res.status(403).json({ error: "Invalid player token" });
+    return;
+  }
+
+  const player = state.players[idx];
+  const questions = [...(state.questions ?? [])];
+  // One open question per player at a time.
+  const alreadyOpen = questions.some((q) => q.playerId === player.id && !q.resolved);
+  if (alreadyOpen) { res.status(409).json({ error: "You already have a question waiting — the facilitator will get to it!" }); return; }
+
+  questions.push({
+    id: `q_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
+    playerId: player.id,
+    playerName: player.name,
+    text: (text ?? "").trim().slice(0, 300),
+    ts: Date.now(),
+    resolved: false,
+  });
+  const newState: GameState = { ...state, questions };
+  await storeGame(newState);
+  broadcast(gameId, newState);
+  res.json({ ok: true });
+});
+
+// POST /api/games/:gameId/question/:questionId/resolve — facilitator clears a flag
+router.post("/games/:gameId/question/:questionId/resolve", async (req, res) => {
+  const { gameId, questionId } = req.params as { gameId: string; questionId: string };
+  const { token } = req.body as { token?: string };
+
+  const check = await requireHost(gameId, token);
+  if ("error" in check) { res.status(check.status).json({ error: check.error }); return; }
+
+  const questions = (check.state.questions ?? []).map((q) =>
+    q.id === questionId ? { ...q, resolved: true } : q
+  );
+  const state: GameState = { ...check.state, questions };
+  await storeGame(state);
+  broadcast(gameId, state);
+  res.json(serializeState(state, 0));
+});
+
+// POST /api/games/:gameId/end — facilitator ends the session for everyone
+router.post("/games/:gameId/end", async (req, res) => {
+  const { gameId } = req.params as { gameId: string };
+  const { token } = req.body as { token?: string };
+
+  const check = await requireHost(gameId, token);
+  if ("error" in check) { res.status(check.status).json({ error: check.error }); return; }
+  if (check.state.phase === "game_over") { res.status(409).json({ error: "Game is already over" }); return; }
+
+  const state: GameState = {
+    ...check.state,
+    phase: "game_over",
+    endedByHost: true,
+    endedAt: Date.now(),
+    paused: false,
+    pendingDecision: null,
+  };
+  state.log = [...state.log.slice(-49), "🏁 The facilitator ended the session."];
+  logEvent("game_ended_by_host", { gameId, metadata: { turnNumber: state.turnNumber, players: state.players.length } });
+  await storeGame(state);
+  broadcast(gameId, state);
+  res.json(serializeState(state, 0));
+});
+
 /**
  * Build a sensible decisionData for the facilitator stepping in on a stuck
  * decision. Skips when the decision is optional; otherwise picks the first
@@ -564,6 +730,13 @@ router.post("/games/:gameId/action", async (req, res) => {
     return;
   }
 
+  // Once a game is over (naturally or ended by the facilitator), only a
+  // reset can touch it — no further gameplay mutations.
+  if (state.phase === "game_over" && type !== "reset_game") {
+    res.status(409).json({ error: "The game is over" });
+    return;
+  }
+
   // Multiplayer (online/facilitated): the acting player must present a valid
   // token, and it must belong to the playerId they claim to act as.
   if (state.mode === "online" || state.mode === "facilitated") {
@@ -633,6 +806,12 @@ router.post("/games/:gameId/action", async (req, res) => {
         });
         // Reuse the same gameId so the URL and React Query cache stay valid
         let newState = createGameState(gameId, playerNames, state.mode, botIndices, botSkillLevels);
+        // Preserve facilitator/session metadata across resets so the room
+        // stays on its creator's dashboard.
+        newState.facilitatorId = state.facilitatorId;
+        newState.createdAt = state.createdAt;
+        newState.label = state.label;
+        newState.maxPlayers = state.maxPlayers;
         newState = runBotTurnsIfNeeded(newState);
         await storeGame(newState);
         broadcast(newState.gameId, newState);

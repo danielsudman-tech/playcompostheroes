@@ -1,67 +1,28 @@
 /**
- * Compost Heroes — Nature-inspired Web Audio synthesizer
+ * Compost Heroes — Nature-inspired Web Audio synthesizer (Simplified)
  *
- * Every sound is built from noise textures + short tonal shapes —
- * no oscillator drones. Feel: earthy thuds, water drops, leaf rustles, wind.
+ * Five core sound events, one steady optional ambient bed.
+ * Feel: earthy thuds, leaf rustles, water drops, soft wind — playfully animated.
  */
 import { useCallback, useEffect, useRef, useState } from "react";
-
-// ─── Layer / function mapping ────────────────────────────────────────────────
-
-export const LAYER_FUNCTIONS = ["Moisture", "Carbon", "Decomposer", "Nitrogen", "Airflow"] as const;
-export type LayerFunction = (typeof LAYER_FUNCTIONS)[number];
-
-const LAYER_INDEX: Partial<Record<string, number>> = {
-  Moisture: 0, Carbon: 1, Decomposer: 2, Nitrogen: 3, Airflow: 4,
-};
-export function layerIndex(fn: string): number {
-  return LAYER_INDEX[fn] ?? 0;
-}
 
 // ─── Sound event type ────────────────────────────────────────────────────────
 
 export type SoundEvent =
-  | "draw"
-  | "hero_new_layer"
-  | "hero_stacking"
-  | "action_immediate"
-  | "ongoing_place"
-  | "ongoing_clear"
-  | "layer_complete"
-  | "win"
-  | "forced_play"
-  | "discard_limit"
-  | "deck_refill"
-  | "turn_to_me";
+  | "hero_place"      // any hero placed in pile (new layer or stacking)
+  | "draw_discard"    // draw a card, or discard to hand limit — same sound
+  | "action_card"     // any action card played (immediate or ongoing)
+  | "layer_complete"  // first hero on a previously-empty layer — full volume everyone
+  | "win";            // player completes all 5 layers — full volume everyone
 
 // Duck factors for non-active players (0 = silent, 1 = full)
 const DUCK: Record<SoundEvent, number> = {
-  draw: 0,
-  hero_new_layer: 0.45,
-  hero_stacking: 0.45,
-  action_immediate: 0.45,
-  ongoing_place: 0.95,
-  ongoing_clear: 0.95,
-  layer_complete: 1.0,
-  win: 1.0,
-  forced_play: 0.65,
-  discard_limit: 0,
-  deck_refill: 0.25,
-  turn_to_me: 1.0,
+  hero_place:    0.45,
+  draw_discard:  0,      // high-frequency, low-relevance — silent for waiting players
+  action_card:   0.45,
+  layer_complete: 1.0,   // carries info for everyone
+  win:           1.0,
 };
-
-/**
- * Events that carry game-state information and must always be audible,
- * even when the player has toggled the mute button ("effects off" mode).
- * Per Build Notes §5: layer_complete, win, ongoing_place, ongoing_clear
- * are full-volume-for-everyone signals, not ambient/effect audio.
- */
-const UNMUTABLE: ReadonlySet<SoundEvent> = new Set<SoundEvent>([
-  "layer_complete",
-  "win",
-  "ongoing_place",
-  "ongoing_clear",
-]);
 
 // ─── Hook ────────────────────────────────────────────────────────────────────
 
@@ -70,7 +31,7 @@ export function useSoundEngine() {
     () => localStorage.getItem("ch-muted") === "1"
   );
   const ctxRef = useRef<AudioContext | null>(null);
-  const ambientRef = useRef<{ osc: OscillatorNode; gain: GainNode } | null>(null);
+  const ambientRef = useRef<{ src: AudioBufferSourceNode; gain: GainNode } | null>(null);
 
   const toggleMute = useCallback(() => {
     setMuted((m) => {
@@ -91,9 +52,8 @@ export function useSoundEngine() {
     } catch { return null; }
   }, []);
 
-  // ── Core primitives ───────────────────────────────────────────────────────
+  // ── Primitives ────────────────────────────────────────────────────────────
 
-  /** White noise buffer source through a bandpass/lowpass filter, volume-enveloped */
   function makeNoise(
     ctx: AudioContext,
     vol: number,
@@ -108,7 +68,6 @@ export function useSoundEngine() {
     const buf = ctx.createBuffer(1, bufSize, ctx.sampleRate);
     const data = buf.getChannelData(0);
     for (let i = 0; i < bufSize; i++) data[i] = Math.random() * 2 - 1;
-
     const src = ctx.createBufferSource();
     src.buffer = buf;
     const filt = ctx.createBiquadFilter();
@@ -119,83 +78,12 @@ export function useSoundEngine() {
     gain.gain.setValueAtTime(0.0001, start);
     gain.gain.linearRampToValueAtTime(vol, start + attackTime);
     gain.gain.exponentialRampToValueAtTime(0.0001, start + duration);
-
     src.connect(filt); filt.connect(gain); gain.connect(ctx.destination);
     src.start(start); src.stop(start + duration + 0.05);
   }
 
-  /** Amplitude-modulated noise — gives a "crunchy" or "chewing" texture */
-  function makeCrunchNoise(
-    ctx: AudioContext,
-    vol: number,
-    start: number,
-    duration: number,
-    filterFreq = 1200,
-    modRate = 12,
-  ) {
-    const bufSize = Math.ceil(ctx.sampleRate * (duration + 0.05));
-    const buf = ctx.createBuffer(1, bufSize, ctx.sampleRate);
-    const data = buf.getChannelData(0);
-    for (let i = 0; i < bufSize; i++) data[i] = Math.random() * 2 - 1;
-
-    const src = ctx.createBufferSource();
-    src.buffer = buf;
-    const filt = ctx.createBiquadFilter();
-    filt.type = "bandpass";
-    filt.frequency.value = filterFreq;
-    filt.Q.value = 2;
-
-    // Modulator drives the gain — makes it choppy/crunchy
-    const mod = ctx.createOscillator();
-    const modGain = ctx.createGain();
-    mod.frequency.value = modRate;
-    modGain.gain.value = 0.4;
-    mod.connect(modGain);
-
-    const masterGain = ctx.createGain();
-    masterGain.gain.setValueAtTime(0.0001, start);
-    masterGain.gain.linearRampToValueAtTime(vol, start + 0.02);
-    masterGain.gain.exponentialRampToValueAtTime(0.0001, start + duration);
-
-    src.connect(filt); filt.connect(masterGain);
-    modGain.connect(masterGain.gain);
-    masterGain.connect(ctx.destination);
-
-    mod.start(start); mod.stop(start + duration + 0.05);
-    src.start(start); src.stop(start + duration + 0.05);
-  }
-
-  /** Short pitched sine with fast attack — water-drop / tap feel */
-  function makeWaterDrop(
-    ctx: AudioContext,
-    vol: number,
-    start: number,
-    freq = 1800,
-    decay = 0.35,
-  ) {
-    const osc = ctx.createOscillator();
-    const gain = ctx.createGain();
-    osc.type = "sine";
-    // Brief pitch bend downward — that "plink" character
-    osc.frequency.setValueAtTime(freq, start);
-    osc.frequency.exponentialRampToValueAtTime(freq * 0.65, start + decay * 0.6);
-    gain.gain.setValueAtTime(vol, start);
-    gain.gain.exponentialRampToValueAtTime(0.0001, start + decay);
-    osc.connect(gain); gain.connect(ctx.destination);
-    osc.start(start); osc.stop(start + decay + 0.02);
-  }
-
-  /** Low-frequency thud — a pillow-soft impact from filtered noise + low tone */
-  function makeThud(
-    ctx: AudioContext,
-    vol: number,
-    start: number,
-    freq = 80,
-    duration = 0.28,
-  ) {
-    // Low-pass noise layer
+  function makeThud(ctx: AudioContext, vol: number, start: number, freq = 80, duration = 0.28) {
     makeNoise(ctx, vol * 0.55, start, duration, "lowpass", 180, 1, 0.003);
-    // Sub-bass sine
     const osc = ctx.createOscillator();
     const gain = ctx.createGain();
     osc.type = "sine";
@@ -207,66 +95,33 @@ export function useSoundEngine() {
     osc.start(start); osc.stop(start + duration + 0.02);
   }
 
-  // ── Five layer nature tones ───────────────────────────────────────────────
-  //  0 Moisture   — water drop (high plinking sine)
-  //  1 Carbon     — hollow wood knock (filtered thud)
-  //  2 Decomposer — organic leaf crunch + mid tone
-  //  3 Nitrogen   — sharp grass snap (short broadband crack)
-  //  4 Airflow    — breathy wind tone (high sine + soft noise)
-
-  function playLayerTone(ctx: AudioContext, idx: number, vol: number, t: number) {
-    switch (idx) {
-      case 0: { // Moisture — water drop
-        makeWaterDrop(ctx, vol * 0.7, t, 2100, 0.45);
-        makeWaterDrop(ctx, vol * 0.25, t + 0.04, 3200, 0.25); // overtone shimmer
-        break;
-      }
-      case 1: { // Carbon — wood knock
-        makeNoise(ctx, vol * 0.55, t, 0.18, "bandpass", 420, 3, 0.002);
-        makeThud(ctx, vol * 0.45, t, 110, 0.22);
-        break;
-      }
-      case 2: { // Decomposer — leaf crunch
-        makeCrunchNoise(ctx, vol * 0.6, t, 0.22, 900, 16);
-        const osc = ctx.createOscillator();
-        const g = ctx.createGain();
-        osc.type = "triangle";
-        osc.frequency.setValueAtTime(330, t);
-        g.gain.setValueAtTime(vol * 0.3, t + 0.03);
-        g.gain.exponentialRampToValueAtTime(0.0001, t + 0.4);
-        osc.connect(g); g.connect(ctx.destination);
-        osc.start(t + 0.03); osc.stop(t + 0.42);
-        break;
-      }
-      case 3: { // Nitrogen — grass snap / click
-        makeNoise(ctx, vol * 0.7, t, 0.08, "highpass", 2500, 0.8, 0.001);
-        makeNoise(ctx, vol * 0.3, t + 0.04, 0.1, "bandpass", 1200, 2, 0.001);
-        break;
-      }
-      case 4: { // Airflow — breathy wind chime
-        const osc = ctx.createOscillator();
-        const g = ctx.createGain();
-        osc.type = "sine";
-        osc.frequency.setValueAtTime(1047, t);
-        osc.frequency.linearRampToValueAtTime(980, t + 0.6);
-        g.gain.setValueAtTime(0.0001, t);
-        g.gain.linearRampToValueAtTime(vol * 0.35, t + 0.07);
-        g.gain.exponentialRampToValueAtTime(0.0001, t + 0.75);
-        osc.connect(g); g.connect(ctx.destination);
-        osc.start(t); osc.stop(t + 0.77);
-        makeNoise(ctx, vol * 0.12, t, 0.6, "bandpass", 3800, 0.5, 0.06);
-        break;
-      }
-    }
+  function makeChime(ctx: AudioContext, vol: number, start: number, freq = 1760, decay = 0.9) {
+    // Clean bell-like sine with gentle pitch drift
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
+    osc.type = "sine";
+    osc.frequency.setValueAtTime(freq, start);
+    osc.frequency.exponentialRampToValueAtTime(freq * 0.92, start + decay * 0.5);
+    gain.gain.setValueAtTime(vol, start);
+    gain.gain.exponentialRampToValueAtTime(0.0001, start + decay);
+    osc.connect(gain); gain.connect(ctx.destination);
+    osc.start(start); osc.stop(start + decay + 0.05);
+    // Soft second harmonic
+    const osc2 = ctx.createOscillator();
+    const g2 = ctx.createGain();
+    osc2.type = "sine";
+    osc2.frequency.value = freq * 2.01;
+    g2.gain.setValueAtTime(vol * 0.18, start);
+    g2.gain.exponentialRampToValueAtTime(0.0001, start + decay * 0.4);
+    osc2.connect(g2); g2.connect(ctx.destination);
+    osc2.start(start); osc2.stop(start + decay * 0.45);
   }
 
   // ── Main play ─────────────────────────────────────────────────────────────
 
   const play = useCallback(
-    (event: SoundEvent, isActivePlayer: boolean, extra?: { layerIdx?: number }) => {
-      // Unmutable events bypass the mute toggle — they carry game-state info
-      // that every player needs to hear regardless of their preference.
-      if (muted && !UNMUTABLE.has(event)) return;
+    (event: SoundEvent, isActivePlayer: boolean) => {
+      if (muted) return;
 
       const ctx = getCtx();
       if (!ctx) return;
@@ -279,27 +134,33 @@ export function useSoundEngine() {
 
       try {
         switch (event) {
-          case "draw": {
-            // Leaf/paper riffle — bandpass noise burst
-            makeNoise(ctx, vol * 0.22, t, 0.14, "bandpass", 4500, 1.2, 0.002);
-            makeNoise(ctx, vol * 0.1, t + 0.04, 0.1, "bandpass", 3000, 2, 0.004);
+          case "hero_place": {
+            // Earthy thud + light leaf-rustle, playful upward pitch-bend
+            makeThud(ctx, vol * 0.8, t, 75, 0.30);
+            makeNoise(ctx, vol * 0.14, t + 0.05, 0.18, "bandpass", 2800, 1.2, 0.004);
+            // Upward pitch-bend: a brief bright chirp
+            const osc = ctx.createOscillator();
+            const g = ctx.createGain();
+            osc.type = "sine";
+            osc.frequency.setValueAtTime(320, t + 0.06);
+            osc.frequency.exponentialRampToValueAtTime(680, t + 0.22);
+            g.gain.setValueAtTime(vol * 0.12, t + 0.06);
+            g.gain.exponentialRampToValueAtTime(0.0001, t + 0.28);
+            osc.connect(g); g.connect(ctx.destination);
+            osc.start(t + 0.06); osc.stop(t + 0.30);
             break;
           }
-          case "hero_new_layer": {
-            // Organic squish/plop — low thud + slight wet crunch
-            makeThud(ctx, vol * 0.8, t, 75, 0.32);
-            makeCrunchNoise(ctx, vol * 0.18, t + 0.04, 0.16, 600, 20);
+
+          case "draw_discard": {
+            // Short, dry leaf-flick
+            makeNoise(ctx, vol * 0.20, t, 0.12, "bandpass", 4800, 1.2, 0.002);
+            makeNoise(ctx, vol * 0.08, t + 0.04, 0.08, "bandpass", 3200, 2, 0.003);
             break;
           }
-          case "hero_stacking": {
-            // Double squish — two thuds with different character
-            makeThud(ctx, vol * 0.75, t, 85, 0.25);
-            makeThud(ctx, vol * 0.6, t + 0.14, 65, 0.22);
-            break;
-          }
-          case "action_immediate": {
-            // Whoosh/swish — swept bandpass noise
-            const bufSize = Math.ceil(ctx.sampleRate * 0.28);
+
+          case "action_card": {
+            // Short gust/whoosh — swept bandpass noise
+            const bufSize = Math.ceil(ctx.sampleRate * 0.26);
             const buf = ctx.createBuffer(1, bufSize, ctx.sampleRate);
             const data = buf.getChannelData(0);
             for (let i = 0; i < bufSize; i++) data[i] = Math.random() * 2 - 1;
@@ -307,80 +168,34 @@ export function useSoundEngine() {
             src.buffer = buf;
             const filt = ctx.createBiquadFilter();
             filt.type = "bandpass";
-            filt.frequency.setValueAtTime(300, t);
-            filt.frequency.exponentialRampToValueAtTime(3500, t + 0.14);
-            filt.frequency.exponentialRampToValueAtTime(800, t + 0.28);
+            filt.frequency.setValueAtTime(280, t);
+            filt.frequency.exponentialRampToValueAtTime(3800, t + 0.13);
+            filt.frequency.exponentialRampToValueAtTime(900, t + 0.26);
             filt.Q.value = 1;
             const gain = ctx.createGain();
             gain.gain.setValueAtTime(0.0001, t);
-            gain.gain.linearRampToValueAtTime(vol * 0.32, t + 0.05);
-            gain.gain.exponentialRampToValueAtTime(0.0001, t + 0.28);
+            gain.gain.linearRampToValueAtTime(vol * 0.30, t + 0.05);
+            gain.gain.exponentialRampToValueAtTime(0.0001, t + 0.26);
             src.connect(filt); filt.connect(gain); gain.connect(ctx.destination);
-            src.start(t); src.stop(t + 0.3);
+            src.start(t); src.stop(t + 0.28);
             break;
           }
-          case "ongoing_place": {
-            // Leaves settling — slow-attack mid noise with a soft tone settling in
-            makeNoise(ctx, vol * 0.18, t, 0.55, "bandpass", 1600, 0.8, 0.12);
-            makeNoise(ctx, vol * 0.1, t + 0.2, 0.4, "bandpass", 2800, 1, 0.06);
-            const osc = ctx.createOscillator();
-            const g = ctx.createGain();
-            osc.type = "sine";
-            osc.frequency.setValueAtTime(220, t);
-            osc.frequency.linearRampToValueAtTime(330, t + 0.5);
-            g.gain.setValueAtTime(0.0001, t);
-            g.gain.linearRampToValueAtTime(vol * 0.15, t + 0.3);
-            g.gain.exponentialRampToValueAtTime(0.0001, t + 0.65);
-            osc.connect(g); g.connect(ctx.destination);
-            osc.start(t); osc.stop(t + 0.67);
-            break;
-          }
-          case "ongoing_clear": {
-            // Quick flutter — brief high-ish noise burst
-            makeNoise(ctx, vol * 0.2, t, 0.18, "bandpass", 2200, 1.5, 0.003);
-            makeNoise(ctx, vol * 0.1, t + 0.06, 0.12, "highpass", 3500, 1, 0.003);
-            break;
-          }
+
           case "layer_complete": {
-            const idx = extra?.layerIdx ?? 0;
-            playLayerTone(ctx, idx, vol, t);
+            // Single pleasant chime — one shared tone for every layer
+            makeChime(ctx, vol * 0.65, t, 1760, 0.95);
+            // Gentle leaf-rustle underneath to keep it earthy
+            makeNoise(ctx, vol * 0.10, t, 0.35, "bandpass", 3500, 0.8, 0.04);
             break;
           }
+
           case "win": {
-            // All 5 layer tones in sequence, then a broad wind swell
-            for (let i = 0; i < 5; i++) {
-              playLayerTone(ctx, i, vol * 0.75, t + i * 0.26);
-            }
-            // Closing: moisture + airflow together
-            playLayerTone(ctx, 0, vol * 0.5, t + 5 * 0.26 + 0.1);
-            playLayerTone(ctx, 4, vol * 0.45, t + 5 * 0.26 + 0.1);
-            // Broad wind swell underneath
-            makeNoise(ctx, vol * 0.12, t + 0.3, 1.6, "lowpass", 500, 0.5, 0.4);
-            break;
-          }
-          case "forced_play": {
-            // Descending squish — heavier thud pitching down
-            makeThud(ctx, vol * 0.85, t, 95, 0.35);
-            makeNoise(ctx, vol * 0.2, t + 0.05, 0.2, "bandpass", 700, 2, 0.01);
-            makeCrunchNoise(ctx, vol * 0.15, t + 0.12, 0.15, 500, 10);
-            break;
-          }
-          case "discard_limit": {
-            // Soft leaf flick — very brief high-freq noise
-            makeNoise(ctx, vol * 0.15, t, 0.1, "bandpass", 5000, 1, 0.001);
-            break;
-          }
-          case "deck_refill": {
-            // Shuffling leaves — mid noise, longer
-            makeNoise(ctx, vol * 0.2, t, 0.5, "bandpass", 2200, 0.8, 0.03);
-            makeNoise(ctx, vol * 0.14, t + 0.1, 0.4, "bandpass", 3500, 1.2, 0.05);
-            makeCrunchNoise(ctx, vol * 0.1, t + 0.15, 0.3, 1500, 18);
-            break;
-          }
-          case "turn_to_me": {
-            // Two water drops — ready notification
-            makeWaterDrop(ctx, vol * 0.5, t, 1600, 0.3);
-            makeWaterDrop(ctx, vol * 0.65, t + 0.22, 2000, 0.38);
+            // Short rustle-and-chime swell — quick, satisfying, not multi-part
+            makeNoise(ctx, vol * 0.14, t, 0.5, "bandpass", 2500, 0.7, 0.06);
+            makeChime(ctx, vol * 0.65, t + 0.10, 1760, 1.0);
+            makeChime(ctx, vol * 0.50, t + 0.28, 2093, 0.85);
+            makeChime(ctx, vol * 0.40, t + 0.46, 2637, 0.70);
+            makeNoise(ctx, vol * 0.10, t + 0.3, 0.55, "lowpass", 500, 0.5, 0.18);
             break;
           }
         }
@@ -391,26 +206,38 @@ export function useSoundEngine() {
     [muted, getCtx] // eslint-disable-line react-hooks/exhaustive-deps
   );
 
-  // ── Ongoing ambient (soft wind breath) ───────────────────────────────────
+  // ── Steady ambient bed ────────────────────────────────────────────────────
+  // Quiet, constant nature ambience — same for all players, no game-state variation.
 
   const startAmbient = useCallback(() => {
-    if (muted) return;
+    if (muted || ambientRef.current) return;
     const ctx = getCtx();
-    if (!ctx || ambientRef.current) return;
+    if (!ctx) return;
     try {
-      // Slow-breathing low-pass noise — forest floor ambience
-      const osc = ctx.createOscillator();
+      const sampleRate = ctx.sampleRate;
+      // 4-second looping low-pass noise — soft wind
+      const loopSecs = 4;
+      const bufSize = Math.ceil(sampleRate * loopSecs);
+      const buf = ctx.createBuffer(1, bufSize, sampleRate);
+      const data = buf.getChannelData(0);
+      for (let i = 0; i < bufSize; i++) data[i] = Math.random() * 2 - 1;
+
+      const src = ctx.createBufferSource();
+      src.buffer = buf;
+      src.loop = true;
+
+      const filt = ctx.createBiquadFilter();
+      filt.type = "lowpass";
+      filt.frequency.value = 320;
+      filt.Q.value = 0.5;
+
       const gain = ctx.createGain();
-      osc.type = "sawtooth"; // slightly richer than sine for wind feel
-      osc.frequency.setValueAtTime(48, ctx.currentTime);
-      osc.frequency.linearRampToValueAtTime(52, ctx.currentTime + 5);
-      osc.frequency.linearRampToValueAtTime(46, ctx.currentTime + 10);
       gain.gain.setValueAtTime(0.0001, ctx.currentTime);
-      gain.gain.linearRampToValueAtTime(0.025, ctx.currentTime + 2.0);
-      osc.connect(gain);
-      gain.connect(ctx.destination);
-      osc.start();
-      ambientRef.current = { osc, gain };
+      gain.gain.linearRampToValueAtTime(0.018, ctx.currentTime + 2.5);
+
+      src.connect(filt); filt.connect(gain); gain.connect(ctx.destination);
+      src.start();
+      ambientRef.current = { src, gain };
     } catch { /* ignore */ }
   }, [muted, getCtx]);
 
@@ -419,8 +246,8 @@ export function useSoundEngine() {
     const amb = ambientRef.current;
     if (!ctx || !amb) return;
     try {
-      amb.gain.gain.linearRampToValueAtTime(0.0001, ctx.currentTime + 1.2);
-      amb.osc.stop(ctx.currentTime + 1.3);
+      amb.gain.gain.linearRampToValueAtTime(0.0001, ctx.currentTime + 1.0);
+      amb.src.stop(ctx.currentTime + 1.1);
     } catch { /* ignore */ }
     ambientRef.current = null;
   }, []);

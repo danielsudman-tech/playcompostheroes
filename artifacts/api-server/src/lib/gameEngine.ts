@@ -100,6 +100,29 @@ export interface GameState {
   paused?: boolean;
   /** Facilitated mode only: rich announcement of the most recent card effect, broadcast to all players. */
   lastEffect?: EffectAnnouncement | null;
+  /** Epoch ms when the room was created (online/facilitated). */
+  createdAt?: number;
+  /** Facilitated mode: optional session label chosen by the facilitator. */
+  label?: string;
+  /** Registered user id of the room creator (online/facilitated). */
+  facilitatorId?: string;
+  /** Facilitated mode: latest broadcast message from the facilitator, shown to all tables. */
+  hostMessage?: { id: string; text: string; ts: number } | null;
+  /** Facilitated mode: participant question flags for the facilitator. */
+  questions?: QuestionFlag[];
+  /** True when the facilitator ended the session manually. */
+  endedByHost?: boolean;
+  /** Epoch ms when the game finished (win or manual end). */
+  endedAt?: number;
+}
+
+export interface QuestionFlag {
+  id: string;
+  playerId: string;
+  playerName: string;
+  text: string;
+  ts: number;
+  resolved: boolean;
 }
 
 /** Structured description of a resolved effect, for spectator visualization in facilitated mode. */

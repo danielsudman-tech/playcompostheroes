@@ -28,6 +28,12 @@ export const CreateGameBody = zod.object({
     .max(createGameBodyPlayerNamesMax)
     .optional(),
   mode: zod.enum(["facilitator", "standalone", "online", "facilitated"]),
+  userToken: zod
+    .string()
+    .optional()
+    .describe(
+      "Registered-account token. Required when mode is online or facilitated.",
+    ),
 });
 
 /**
@@ -182,6 +188,629 @@ export const GetGameResponse = zod.object({
   maxPlayers: zod.number().optional(),
   paused: zod.boolean().optional(),
   hasPassword: zod.boolean().optional(),
+  createdAt: zod.number().nullish(),
+  endedAt: zod.number().nullish(),
+  label: zod.string().nullish(),
+  endedByHost: zod.boolean().optional(),
+  hostMessage: zod
+    .object({
+      id: zod.string(),
+      text: zod.string(),
+      ts: zod.number(),
+    })
+    .nullish(),
+  questions: zod
+    .array(
+      zod.object({
+        id: zod.string(),
+        playerId: zod.string(),
+        playerName: zod.string(),
+        text: zod.string(),
+        ts: zod.number(),
+        resolved: zod.boolean(),
+      }),
+    )
+    .optional(),
+});
+
+/**
+ * @summary List sessions created by the signed-in facilitator
+ */
+export const GetFacilitatorRoomsQueryParams = zod.object({
+  userToken: zod.coerce.string(),
+});
+
+export const GetFacilitatorRoomsResponseItem = zod.object({
+  gameId: zod.string(),
+  mode: zod.string(),
+  label: zod.string().nullish(),
+  phase: zod.string(),
+  playerCount: zod.number(),
+  maxPlayers: zod.number(),
+  createdAt: zod.number().nullish(),
+  endedAt: zod.number().nullish(),
+  winner: zod.string().nullish(),
+  paused: zod.boolean(),
+  openQuestions: zod.number(),
+});
+export const GetFacilitatorRoomsResponse = zod.array(
+  GetFacilitatorRoomsResponseItem,
+);
+
+/**
+ * @summary Recover the host seat token for a session's creator
+ */
+export const RecoverHostTokenParams = zod.object({
+  gameId: zod.coerce.string(),
+});
+
+export const RecoverHostTokenBody = zod.object({
+  userToken: zod.string(),
+});
+
+export const RecoverHostTokenResponse = zod.object({
+  token: zod.string(),
+});
+
+/**
+ * @summary Facilitator broadcasts a message to all tables (host token required)
+ */
+export const SendHostMessageParams = zod.object({
+  gameId: zod.coerce.string(),
+});
+
+export const SendHostMessageBody = zod.object({
+  token: zod.string(),
+  text: zod.string(),
+});
+
+export const SendHostMessageResponse = zod.object({
+  gameId: zod.string(),
+  mode: zod.enum(["facilitator", "standalone", "online", "facilitated"]),
+  phase: zod.enum([
+    "waiting",
+    "setup",
+    "draw",
+    "play",
+    "effect_resolution",
+    "end_turn",
+    "game_over",
+  ]),
+  currentPlayerIndex: zod.number(),
+  players: zod.array(
+    zod.object({
+      id: zod.string(),
+      name: zod.string(),
+      hand: zod.array(
+        zod.object({
+          id: zod.string(),
+          name: zod.string(),
+          type: zod.enum(["hero", "action"]),
+          layer: zod.string().nullable(),
+          effectType: zod.enum(["instant", "ongoing"]),
+          cardText: zod.string(),
+          factText: zod.string(),
+          function: zod.string(),
+          imageKey: zod.string().nullable(),
+          baseId: zod.string().optional(),
+          alternateFunctions: zod.array(zod.string()).optional(),
+          chosenFunction: zod.string().optional(),
+        }),
+      ),
+      compostPile: zod.array(
+        zod.object({
+          id: zod.string(),
+          name: zod.string(),
+          type: zod.enum(["hero", "action"]),
+          layer: zod.string().nullable(),
+          effectType: zod.enum(["instant", "ongoing"]),
+          cardText: zod.string(),
+          factText: zod.string(),
+          function: zod.string(),
+          imageKey: zod.string().nullable(),
+          baseId: zod.string().optional(),
+          alternateFunctions: zod.array(zod.string()).optional(),
+          chosenFunction: zod.string().optional(),
+        }),
+      ),
+      skipsNextTurn: zod.boolean(),
+      maxHandSize: zod.number(),
+      drawsExtraCard: zod.boolean(),
+      isBot: zod.boolean().optional(),
+      botSkillLevel: zod.enum(["easy", "medium", "hard"]).optional(),
+    }),
+  ),
+  deckCount: zod.number(),
+  discardPile: zod.array(
+    zod.object({
+      id: zod.string(),
+      name: zod.string(),
+      type: zod.enum(["hero", "action"]),
+      layer: zod.string().nullable(),
+      effectType: zod.enum(["instant", "ongoing"]),
+      cardText: zod.string(),
+      factText: zod.string(),
+      function: zod.string(),
+      imageKey: zod.string().nullable(),
+      baseId: zod.string().optional(),
+      alternateFunctions: zod.array(zod.string()).optional(),
+      chosenFunction: zod.string().optional(),
+    }),
+  ),
+  activeModifiers: zod.array(
+    zod.object({
+      cardId: zod.string(),
+      cardName: zod.string(),
+      effect: zod.string(),
+      appliedByPlayerId: zod.string(),
+    }),
+  ),
+  pendingDecision: zod
+    .object({
+      type: zod.string(),
+      playerId: zod.string(),
+      cardId: zod.string(),
+      options: zod.array(zod.record(zod.string(), zod.unknown())).optional(),
+      prompt: zod.string(),
+      meta: zod.record(zod.string(), zod.unknown()).optional(),
+    })
+    .nullable(),
+  lastEffect: zod
+    .object({
+      id: zod.string(),
+      cardId: zod.string(),
+      cardName: zod.string(),
+      cardText: zod.string(),
+      imageKey: zod.string().nullable(),
+      playedById: zod.string(),
+      playedByName: zod.string(),
+      outcome: zod.array(zod.string()),
+      events: zod.array(
+        zod.object({
+          kind: zod.enum([
+            "draw",
+            "discard",
+            "transfer",
+            "swap",
+            "skip",
+            "pile_shift",
+            "modifier",
+            "info",
+          ]),
+          playerIds: zod.array(zod.string()).optional(),
+          text: zod.string(),
+        }),
+      ),
+    })
+    .nullish(),
+  log: zod.array(zod.string()),
+  winner: zod.string().nullable(),
+  turnNumber: zod.number(),
+  extraTurn: zod.boolean().optional(),
+  heroPlayedThisTurn: zod.boolean().optional(),
+  actionPlayedThisTurn: zod.boolean().optional(),
+  ongoingActionCard: zod
+    .object({
+      id: zod.string(),
+      name: zod.string(),
+      type: zod.enum(["hero", "action"]),
+      layer: zod.string().nullable(),
+      effectType: zod.enum(["instant", "ongoing"]),
+      cardText: zod.string(),
+      factText: zod.string(),
+      function: zod.string(),
+      imageKey: zod.string().nullable(),
+      baseId: zod.string().optional(),
+      alternateFunctions: zod.array(zod.string()).optional(),
+      chosenFunction: zod.string().optional(),
+    })
+    .nullish(),
+  ongoingBenefitUsedThisTurn: zod.boolean().optional(),
+  maxPlayers: zod.number().optional(),
+  paused: zod.boolean().optional(),
+  hasPassword: zod.boolean().optional(),
+  createdAt: zod.number().nullish(),
+  endedAt: zod.number().nullish(),
+  label: zod.string().nullish(),
+  endedByHost: zod.boolean().optional(),
+  hostMessage: zod
+    .object({
+      id: zod.string(),
+      text: zod.string(),
+      ts: zod.number(),
+    })
+    .nullish(),
+  questions: zod
+    .array(
+      zod.object({
+        id: zod.string(),
+        playerId: zod.string(),
+        playerName: zod.string(),
+        text: zod.string(),
+        ts: zod.number(),
+        resolved: zod.boolean(),
+      }),
+    )
+    .optional(),
+});
+
+/**
+ * @summary Participant flags a question for the facilitator
+ */
+export const AskQuestionParams = zod.object({
+  gameId: zod.coerce.string(),
+});
+
+export const AskQuestionBody = zod.object({
+  token: zod.string(),
+  text: zod.string().optional(),
+});
+
+export const AskQuestionResponse = zod.object({
+  ok: zod.boolean(),
+});
+
+/**
+ * @summary Facilitator resolves a participant question (host token required)
+ */
+export const ResolveQuestionParams = zod.object({
+  gameId: zod.coerce.string(),
+  questionId: zod.coerce.string(),
+});
+
+export const ResolveQuestionBody = zod.object({
+  token: zod.string(),
+});
+
+export const ResolveQuestionResponse = zod.object({
+  gameId: zod.string(),
+  mode: zod.enum(["facilitator", "standalone", "online", "facilitated"]),
+  phase: zod.enum([
+    "waiting",
+    "setup",
+    "draw",
+    "play",
+    "effect_resolution",
+    "end_turn",
+    "game_over",
+  ]),
+  currentPlayerIndex: zod.number(),
+  players: zod.array(
+    zod.object({
+      id: zod.string(),
+      name: zod.string(),
+      hand: zod.array(
+        zod.object({
+          id: zod.string(),
+          name: zod.string(),
+          type: zod.enum(["hero", "action"]),
+          layer: zod.string().nullable(),
+          effectType: zod.enum(["instant", "ongoing"]),
+          cardText: zod.string(),
+          factText: zod.string(),
+          function: zod.string(),
+          imageKey: zod.string().nullable(),
+          baseId: zod.string().optional(),
+          alternateFunctions: zod.array(zod.string()).optional(),
+          chosenFunction: zod.string().optional(),
+        }),
+      ),
+      compostPile: zod.array(
+        zod.object({
+          id: zod.string(),
+          name: zod.string(),
+          type: zod.enum(["hero", "action"]),
+          layer: zod.string().nullable(),
+          effectType: zod.enum(["instant", "ongoing"]),
+          cardText: zod.string(),
+          factText: zod.string(),
+          function: zod.string(),
+          imageKey: zod.string().nullable(),
+          baseId: zod.string().optional(),
+          alternateFunctions: zod.array(zod.string()).optional(),
+          chosenFunction: zod.string().optional(),
+        }),
+      ),
+      skipsNextTurn: zod.boolean(),
+      maxHandSize: zod.number(),
+      drawsExtraCard: zod.boolean(),
+      isBot: zod.boolean().optional(),
+      botSkillLevel: zod.enum(["easy", "medium", "hard"]).optional(),
+    }),
+  ),
+  deckCount: zod.number(),
+  discardPile: zod.array(
+    zod.object({
+      id: zod.string(),
+      name: zod.string(),
+      type: zod.enum(["hero", "action"]),
+      layer: zod.string().nullable(),
+      effectType: zod.enum(["instant", "ongoing"]),
+      cardText: zod.string(),
+      factText: zod.string(),
+      function: zod.string(),
+      imageKey: zod.string().nullable(),
+      baseId: zod.string().optional(),
+      alternateFunctions: zod.array(zod.string()).optional(),
+      chosenFunction: zod.string().optional(),
+    }),
+  ),
+  activeModifiers: zod.array(
+    zod.object({
+      cardId: zod.string(),
+      cardName: zod.string(),
+      effect: zod.string(),
+      appliedByPlayerId: zod.string(),
+    }),
+  ),
+  pendingDecision: zod
+    .object({
+      type: zod.string(),
+      playerId: zod.string(),
+      cardId: zod.string(),
+      options: zod.array(zod.record(zod.string(), zod.unknown())).optional(),
+      prompt: zod.string(),
+      meta: zod.record(zod.string(), zod.unknown()).optional(),
+    })
+    .nullable(),
+  lastEffect: zod
+    .object({
+      id: zod.string(),
+      cardId: zod.string(),
+      cardName: zod.string(),
+      cardText: zod.string(),
+      imageKey: zod.string().nullable(),
+      playedById: zod.string(),
+      playedByName: zod.string(),
+      outcome: zod.array(zod.string()),
+      events: zod.array(
+        zod.object({
+          kind: zod.enum([
+            "draw",
+            "discard",
+            "transfer",
+            "swap",
+            "skip",
+            "pile_shift",
+            "modifier",
+            "info",
+          ]),
+          playerIds: zod.array(zod.string()).optional(),
+          text: zod.string(),
+        }),
+      ),
+    })
+    .nullish(),
+  log: zod.array(zod.string()),
+  winner: zod.string().nullable(),
+  turnNumber: zod.number(),
+  extraTurn: zod.boolean().optional(),
+  heroPlayedThisTurn: zod.boolean().optional(),
+  actionPlayedThisTurn: zod.boolean().optional(),
+  ongoingActionCard: zod
+    .object({
+      id: zod.string(),
+      name: zod.string(),
+      type: zod.enum(["hero", "action"]),
+      layer: zod.string().nullable(),
+      effectType: zod.enum(["instant", "ongoing"]),
+      cardText: zod.string(),
+      factText: zod.string(),
+      function: zod.string(),
+      imageKey: zod.string().nullable(),
+      baseId: zod.string().optional(),
+      alternateFunctions: zod.array(zod.string()).optional(),
+      chosenFunction: zod.string().optional(),
+    })
+    .nullish(),
+  ongoingBenefitUsedThisTurn: zod.boolean().optional(),
+  maxPlayers: zod.number().optional(),
+  paused: zod.boolean().optional(),
+  hasPassword: zod.boolean().optional(),
+  createdAt: zod.number().nullish(),
+  endedAt: zod.number().nullish(),
+  label: zod.string().nullish(),
+  endedByHost: zod.boolean().optional(),
+  hostMessage: zod
+    .object({
+      id: zod.string(),
+      text: zod.string(),
+      ts: zod.number(),
+    })
+    .nullish(),
+  questions: zod
+    .array(
+      zod.object({
+        id: zod.string(),
+        playerId: zod.string(),
+        playerName: zod.string(),
+        text: zod.string(),
+        ts: zod.number(),
+        resolved: zod.boolean(),
+      }),
+    )
+    .optional(),
+});
+
+/**
+ * @summary Facilitator ends the session for everyone (host token required)
+ */
+export const EndSessionParams = zod.object({
+  gameId: zod.coerce.string(),
+});
+
+export const EndSessionBody = zod.object({
+  token: zod.string(),
+});
+
+export const EndSessionResponse = zod.object({
+  gameId: zod.string(),
+  mode: zod.enum(["facilitator", "standalone", "online", "facilitated"]),
+  phase: zod.enum([
+    "waiting",
+    "setup",
+    "draw",
+    "play",
+    "effect_resolution",
+    "end_turn",
+    "game_over",
+  ]),
+  currentPlayerIndex: zod.number(),
+  players: zod.array(
+    zod.object({
+      id: zod.string(),
+      name: zod.string(),
+      hand: zod.array(
+        zod.object({
+          id: zod.string(),
+          name: zod.string(),
+          type: zod.enum(["hero", "action"]),
+          layer: zod.string().nullable(),
+          effectType: zod.enum(["instant", "ongoing"]),
+          cardText: zod.string(),
+          factText: zod.string(),
+          function: zod.string(),
+          imageKey: zod.string().nullable(),
+          baseId: zod.string().optional(),
+          alternateFunctions: zod.array(zod.string()).optional(),
+          chosenFunction: zod.string().optional(),
+        }),
+      ),
+      compostPile: zod.array(
+        zod.object({
+          id: zod.string(),
+          name: zod.string(),
+          type: zod.enum(["hero", "action"]),
+          layer: zod.string().nullable(),
+          effectType: zod.enum(["instant", "ongoing"]),
+          cardText: zod.string(),
+          factText: zod.string(),
+          function: zod.string(),
+          imageKey: zod.string().nullable(),
+          baseId: zod.string().optional(),
+          alternateFunctions: zod.array(zod.string()).optional(),
+          chosenFunction: zod.string().optional(),
+        }),
+      ),
+      skipsNextTurn: zod.boolean(),
+      maxHandSize: zod.number(),
+      drawsExtraCard: zod.boolean(),
+      isBot: zod.boolean().optional(),
+      botSkillLevel: zod.enum(["easy", "medium", "hard"]).optional(),
+    }),
+  ),
+  deckCount: zod.number(),
+  discardPile: zod.array(
+    zod.object({
+      id: zod.string(),
+      name: zod.string(),
+      type: zod.enum(["hero", "action"]),
+      layer: zod.string().nullable(),
+      effectType: zod.enum(["instant", "ongoing"]),
+      cardText: zod.string(),
+      factText: zod.string(),
+      function: zod.string(),
+      imageKey: zod.string().nullable(),
+      baseId: zod.string().optional(),
+      alternateFunctions: zod.array(zod.string()).optional(),
+      chosenFunction: zod.string().optional(),
+    }),
+  ),
+  activeModifiers: zod.array(
+    zod.object({
+      cardId: zod.string(),
+      cardName: zod.string(),
+      effect: zod.string(),
+      appliedByPlayerId: zod.string(),
+    }),
+  ),
+  pendingDecision: zod
+    .object({
+      type: zod.string(),
+      playerId: zod.string(),
+      cardId: zod.string(),
+      options: zod.array(zod.record(zod.string(), zod.unknown())).optional(),
+      prompt: zod.string(),
+      meta: zod.record(zod.string(), zod.unknown()).optional(),
+    })
+    .nullable(),
+  lastEffect: zod
+    .object({
+      id: zod.string(),
+      cardId: zod.string(),
+      cardName: zod.string(),
+      cardText: zod.string(),
+      imageKey: zod.string().nullable(),
+      playedById: zod.string(),
+      playedByName: zod.string(),
+      outcome: zod.array(zod.string()),
+      events: zod.array(
+        zod.object({
+          kind: zod.enum([
+            "draw",
+            "discard",
+            "transfer",
+            "swap",
+            "skip",
+            "pile_shift",
+            "modifier",
+            "info",
+          ]),
+          playerIds: zod.array(zod.string()).optional(),
+          text: zod.string(),
+        }),
+      ),
+    })
+    .nullish(),
+  log: zod.array(zod.string()),
+  winner: zod.string().nullable(),
+  turnNumber: zod.number(),
+  extraTurn: zod.boolean().optional(),
+  heroPlayedThisTurn: zod.boolean().optional(),
+  actionPlayedThisTurn: zod.boolean().optional(),
+  ongoingActionCard: zod
+    .object({
+      id: zod.string(),
+      name: zod.string(),
+      type: zod.enum(["hero", "action"]),
+      layer: zod.string().nullable(),
+      effectType: zod.enum(["instant", "ongoing"]),
+      cardText: zod.string(),
+      factText: zod.string(),
+      function: zod.string(),
+      imageKey: zod.string().nullable(),
+      baseId: zod.string().optional(),
+      alternateFunctions: zod.array(zod.string()).optional(),
+      chosenFunction: zod.string().optional(),
+    })
+    .nullish(),
+  ongoingBenefitUsedThisTurn: zod.boolean().optional(),
+  maxPlayers: zod.number().optional(),
+  paused: zod.boolean().optional(),
+  hasPassword: zod.boolean().optional(),
+  createdAt: zod.number().nullish(),
+  endedAt: zod.number().nullish(),
+  label: zod.string().nullish(),
+  endedByHost: zod.boolean().optional(),
+  hostMessage: zod
+    .object({
+      id: zod.string(),
+      text: zod.string(),
+      ts: zod.number(),
+    })
+    .nullish(),
+  questions: zod
+    .array(
+      zod.object({
+        id: zod.string(),
+        playerId: zod.string(),
+        playerName: zod.string(),
+        text: zod.string(),
+        ts: zod.number(),
+        resolved: zod.boolean(),
+      }),
+    )
+    .optional(),
 });
 
 /**
@@ -341,6 +970,29 @@ export const PauseGameResponse = zod.object({
   maxPlayers: zod.number().optional(),
   paused: zod.boolean().optional(),
   hasPassword: zod.boolean().optional(),
+  createdAt: zod.number().nullish(),
+  endedAt: zod.number().nullish(),
+  label: zod.string().nullish(),
+  endedByHost: zod.boolean().optional(),
+  hostMessage: zod
+    .object({
+      id: zod.string(),
+      text: zod.string(),
+      ts: zod.number(),
+    })
+    .nullish(),
+  questions: zod
+    .array(
+      zod.object({
+        id: zod.string(),
+        playerId: zod.string(),
+        playerName: zod.string(),
+        text: zod.string(),
+        ts: zod.number(),
+        resolved: zod.boolean(),
+      }),
+    )
+    .optional(),
 });
 
 /**
@@ -499,6 +1151,29 @@ export const FacilitatorResolveResponse = zod.object({
   maxPlayers: zod.number().optional(),
   paused: zod.boolean().optional(),
   hasPassword: zod.boolean().optional(),
+  createdAt: zod.number().nullish(),
+  endedAt: zod.number().nullish(),
+  label: zod.string().nullish(),
+  endedByHost: zod.boolean().optional(),
+  hostMessage: zod
+    .object({
+      id: zod.string(),
+      text: zod.string(),
+      ts: zod.number(),
+    })
+    .nullish(),
+  questions: zod
+    .array(
+      zod.object({
+        id: zod.string(),
+        playerId: zod.string(),
+        playerName: zod.string(),
+        text: zod.string(),
+        ts: zod.number(),
+        resolved: zod.boolean(),
+      }),
+    )
+    .optional(),
 });
 
 /**
@@ -672,4 +1347,27 @@ export const PerformActionResponse = zod.object({
   maxPlayers: zod.number().optional(),
   paused: zod.boolean().optional(),
   hasPassword: zod.boolean().optional(),
+  createdAt: zod.number().nullish(),
+  endedAt: zod.number().nullish(),
+  label: zod.string().nullish(),
+  endedByHost: zod.boolean().optional(),
+  hostMessage: zod
+    .object({
+      id: zod.string(),
+      text: zod.string(),
+      ts: zod.number(),
+    })
+    .nullish(),
+  questions: zod
+    .array(
+      zod.object({
+        id: zod.string(),
+        playerId: zod.string(),
+        playerName: zod.string(),
+        text: zod.string(),
+        ts: zod.number(),
+        resolved: zod.boolean(),
+      }),
+    )
+    .optional(),
 });

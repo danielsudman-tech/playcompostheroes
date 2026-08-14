@@ -30,6 +30,11 @@ export function createGameId(): string {
 // ── Game state ────────────────────────────────────────────────────────────────
 
 export async function storeGame(state: GameState): Promise<void> {
+  // Stamp the finish time once, regardless of how the game ended (win or
+  // manual end), so post-session summaries can show duration.
+  if (state.phase === "game_over" && !state.endedAt) {
+    state.endedAt = Date.now();
+  }
   gameStateCache.set(state.gameId, state);
   await pool.query(
     `INSERT INTO compost_games (game_id, state, updated_at)
@@ -114,6 +119,21 @@ export async function getAllWaitingRooms(): Promise<Array<{
   });
 }
 
+// ── Facilitator sessions ──────────────────────────────────────────────────────
+
+export async function getGamesByFacilitator(facilitatorId: string): Promise<GameState[]> {
+  const result = await pool.query(
+    `SELECT state FROM compost_games
+     WHERE state->>'facilitatorId' = $1
+     ORDER BY updated_at DESC
+     LIMIT 50`,
+    [facilitatorId]
+  );
+  return result.rows.map((row) =>
+    typeof row.state === "string" ? JSON.parse(row.state) : row.state
+  );
+}
+
 // ── Tokens ────────────────────────────────────────────────────────────────────
 
 export async function claimSlot(
@@ -160,6 +180,19 @@ export async function claimSlot(
   if (!tokenIndexCache.has(gameId)) tokenIndexCache.set(gameId, new Map());
   tokenIndexCache.get(gameId)!.set(token, nextIndex);
   return { token, playerIndex: nextIndex };
+}
+
+/** Look up the seat token for a given player index (host recovery). */
+export async function getTokenForPlayerIndex(
+  gameId: string,
+  playerIndex: number
+): Promise<string | null> {
+  const result = await pool.query(
+    `SELECT token FROM compost_game_tokens
+     WHERE game_id = $1 AND player_index = $2`,
+    [gameId, playerIndex]
+  );
+  return (result.rows[0]?.token as string | undefined) ?? null;
 }
 
 export async function getPlayerIndexForToken(

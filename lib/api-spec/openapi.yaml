@@ -70,6 +70,231 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
 
+  /facilitator/rooms:
+    get:
+      operationId: getFacilitatorRooms
+      tags: [game]
+      summary: List sessions created by the signed-in facilitator
+      parameters:
+        - name: userToken
+          in: query
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Sessions
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/FacilitatorRoomSummary"
+        "401":
+          description: Sign in required
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /games/{gameId}/host-token:
+    post:
+      operationId: recoverHostToken
+      tags: [game]
+      summary: Recover the host seat token for a session's creator
+      parameters:
+        - name: gameId
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                userToken:
+                  type: string
+              required: [userToken]
+      responses:
+        "200":
+          description: Host seat token
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  token:
+                    type: string
+                required: [token]
+        "403":
+          description: Not the facilitator of this session
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /games/{gameId}/message:
+    post:
+      operationId: sendHostMessage
+      tags: [game]
+      summary: Facilitator broadcasts a message to all tables (host token required)
+      parameters:
+        - name: gameId
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                token:
+                  type: string
+                text:
+                  type: string
+              required: [token, text]
+      responses:
+        "200":
+          description: Updated game state
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/GameState"
+        "403":
+          description: Not the host
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /games/{gameId}/question:
+    post:
+      operationId: askQuestion
+      tags: [game]
+      summary: Participant flags a question for the facilitator
+      parameters:
+        - name: gameId
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                token:
+                  type: string
+                text:
+                  type: string
+              required: [token]
+      responses:
+        "200":
+          description: Question recorded
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ok:
+                    type: boolean
+                required: [ok]
+        "409":
+          description: Player already has an open question
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /games/{gameId}/question/{questionId}/resolve:
+    post:
+      operationId: resolveQuestion
+      tags: [game]
+      summary: Facilitator resolves a participant question (host token required)
+      parameters:
+        - name: gameId
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: questionId
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                token:
+                  type: string
+              required: [token]
+      responses:
+        "200":
+          description: Updated game state
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/GameState"
+        "403":
+          description: Not the host
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /games/{gameId}/end:
+    post:
+      operationId: endSession
+      tags: [game]
+      summary: Facilitator ends the session for everyone (host token required)
+      parameters:
+        - name: gameId
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                token:
+                  type: string
+              required: [token]
+      responses:
+        "200":
+          description: Final game state
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/GameState"
+        "403":
+          description: Not the host
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "409":
+          description: Game already over
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
   /games/{gameId}/pause:
     post:
       operationId: pauseGame
@@ -397,6 +622,54 @@ components:
         - outcome
         - events
 
+    FacilitatorRoomSummary:
+      type: object
+      properties:
+        gameId:
+          type: string
+        mode:
+          type: string
+        label:
+          type: string
+          nullable: true
+        phase:
+          type: string
+        playerCount:
+          type: integer
+        maxPlayers:
+          type: integer
+        createdAt:
+          type: number
+          nullable: true
+        endedAt:
+          type: number
+          nullable: true
+        winner:
+          type: string
+          nullable: true
+        paused:
+          type: boolean
+        openQuestions:
+          type: integer
+      required: [gameId, mode, phase, playerCount, maxPlayers, paused, openQuestions]
+
+    QuestionFlag:
+      type: object
+      properties:
+        id:
+          type: string
+        playerId:
+          type: string
+        playerName:
+          type: string
+        text:
+          type: string
+        ts:
+          type: number
+        resolved:
+          type: boolean
+      required: [id, playerId, playerName, text, ts, resolved]
+
     GameState:
       type: object
       properties:
@@ -456,6 +729,32 @@ components:
           type: boolean
         hasPassword:
           type: boolean
+        createdAt:
+          type: number
+          nullable: true
+        endedAt:
+          type: number
+          nullable: true
+        label:
+          type: string
+          nullable: true
+        endedByHost:
+          type: boolean
+        hostMessage:
+          type: object
+          nullable: true
+          properties:
+            id:
+              type: string
+            text:
+              type: string
+            ts:
+              type: number
+          required: [id, text, ts]
+        questions:
+          type: array
+          items:
+            $ref: "#/components/schemas/QuestionFlag"
       required:
         - gameId
         - mode

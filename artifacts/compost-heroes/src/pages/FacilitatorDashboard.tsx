@@ -9,6 +9,9 @@ import {
   useNudgePlayer,
   usePauseGame,
   useFacilitatorResolve,
+  useSendHostMessage,
+  useResolveQuestion,
+  useEndSession,
   getStoredToken,
   storeToken,
 } from "@/hooks/use-game";
@@ -33,7 +36,16 @@ import {
   Hourglass,
   ArrowLeft,
   Crown,
+  Megaphone,
+  Send,
+  HelpCircle,
+  Check,
+  Copy,
+  Flag,
+  Trophy,
+  Clock,
 } from "lucide-react";
+import { useState } from "react";
 
 /**
  * Facilitator dashboard for corporate sessions: all players' piles and win
@@ -75,6 +87,33 @@ export default function FacilitatorDashboard() {
   const nudgeMutation = useNudgePlayer(gameId || null, token);
   const pauseMutation = usePauseGame(gameId || null, token);
   const resolveMutation = useFacilitatorResolve(gameId || null, token);
+  const messageMutation = useSendHostMessage(gameId || null, token);
+  const resolveQuestionMutation = useResolveQuestion(gameId || null, token);
+  const endMutation = useEndSession(gameId || null, token);
+
+  const [broadcastText, setBroadcastText] = useState("");
+  const [confirmEnd, setConfirmEnd] = useState(false);
+  const [codeCopied, setCodeCopied] = useState(false);
+
+  const handleSendBroadcast = () => {
+    const text = broadcastText.trim();
+    if (!text) return;
+    messageMutation.mutate(text, {
+      onSuccess: () => {
+        setBroadcastText("");
+        toast({ title: "Message sent", description: "Everyone sees it on their table now." });
+      },
+      onError: (e) => toast({ title: "Failed to send", description: (e as Error).message, variant: "destructive" }),
+    });
+  };
+
+  const copySessionCode = async () => {
+    try {
+      await navigator.clipboard.writeText((gameId ?? "").toUpperCase());
+      setCodeCopied(true);
+      setTimeout(() => setCodeCopied(false), 1500);
+    } catch {}
+  };
 
   // Gate: not facilitated, no token, or not the host → back to the game
   useEffect(() => {
@@ -142,6 +181,15 @@ export default function FacilitatorDashboard() {
         <span className="flex items-center gap-1.5 text-xs font-bold uppercase tracking-wider bg-amber-500/15 text-amber-700 dark:text-amber-400 border border-amber-500/30 rounded-full px-2.5 py-1 shrink-0">
           <Crown className="w-3.5 h-3.5" /> Facilitator
         </span>
+        <button
+          onClick={copySessionCode}
+          title="Copy session code — participants enter this on the home page"
+          className="flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-mono font-bold border bg-background/80 border-border text-foreground/80 hover:bg-muted/60 transition-colors shrink-0"
+          data-testid="session-code"
+        >
+          {(gameId ?? "").toUpperCase()}
+          {codeCopied ? <Check className="w-3 h-3 text-green-600" /> : <Copy className="w-3 h-3 opacity-60" />}
+        </button>
         <div
           className={cn(
             "flex-1 min-w-0 flex items-center gap-2 rounded-full px-3 py-1 border text-sm font-bold truncate",
@@ -217,7 +265,124 @@ export default function FacilitatorDashboard() {
                 Waiting on <strong className="text-foreground">{decisionOwner?.name}</strong>
               </span>
             )}
+            <div className="flex-1" />
+            {gameState.phase !== "game_over" && (
+              confirmEnd ? (
+                <span className="flex items-center gap-1.5">
+                  <span className="text-xs font-bold text-destructive">End for everyone?</span>
+                  <Button
+                    size="sm"
+                    variant="destructive"
+                    className="font-bold rounded-xl"
+                    disabled={endMutation.isPending}
+                    onClick={() =>
+                      endMutation.mutate(undefined, {
+                        onSuccess: () => { setConfirmEnd(false); toast({ title: "Session ended", description: "All tables see the final summary." }); },
+                        onError: (e) => { setConfirmEnd(false); toast({ title: "Failed", description: (e as Error).message, variant: "destructive" }); },
+                      })
+                    }
+                    data-testid="button-confirm-end"
+                  >
+                    {endMutation.isPending ? <Loader2 className="w-4 h-4 animate-spin" /> : "Yes, end it"}
+                  </Button>
+                  <Button size="sm" variant="ghost" className="rounded-xl" onClick={() => setConfirmEnd(false)}>Cancel</Button>
+                </span>
+              ) : (
+                <Button
+                  size="sm"
+                  variant="outline"
+                  className="font-bold rounded-xl border-destructive/40 text-destructive hover:bg-destructive/10"
+                  disabled={isWaitingRoom}
+                  onClick={() => setConfirmEnd(true)}
+                  data-testid="button-end-session"
+                >
+                  <Flag className="w-4 h-4 mr-1.5" /> End session
+                </Button>
+              )
+            )}
           </div>
+
+          {/* Broadcast a message to all tables */}
+          <div className="flex items-center gap-2 bg-card/90 backdrop-blur-md border border-border rounded-2xl px-3 py-2">
+            <Megaphone className="w-4 h-4 text-primary shrink-0" />
+            <input
+              value={broadcastText}
+              onChange={(e) => setBroadcastText(e.target.value)}
+              onKeyDown={(e) => { if (e.key === "Enter") handleSendBroadcast(); }}
+              maxLength={300}
+              placeholder="Broadcast a message to every table (e.g. '5 minutes left!' or 'Great move, Team B!')"
+              className="flex-1 min-w-0 bg-transparent text-sm focus:outline-none placeholder:text-muted-foreground/60"
+              data-testid="input-broadcast"
+            />
+            <Button
+              size="sm"
+              className="font-bold rounded-xl shrink-0"
+              disabled={!broadcastText.trim() || messageMutation.isPending}
+              onClick={handleSendBroadcast}
+              data-testid="button-send-broadcast"
+            >
+              {messageMutation.isPending ? <Loader2 className="w-4 h-4 animate-spin" /> : <><Send className="w-4 h-4 mr-1.5" /> Send</>}
+            </Button>
+          </div>
+
+          {/* Participant questions */}
+          {(gameState.questions ?? []).filter((q) => !q.resolved).length > 0 && (
+            <div className="bg-orange-50 dark:bg-orange-950/20 border border-orange-200/70 dark:border-orange-800/40 rounded-2xl px-3 py-2 space-y-1.5">
+              <span className="flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-widest text-orange-700 dark:text-orange-400">
+                <HelpCircle className="w-3.5 h-3.5" /> Questions from participants
+              </span>
+              {(gameState.questions ?? []).filter((q) => !q.resolved).map((q) => (
+                <div key={q.id} className="flex items-center gap-2 bg-card/80 rounded-xl px-3 py-1.5" data-testid={`question-${q.id}`}>
+                  <span className="text-sm min-w-0 flex-1 truncate">
+                    <strong className="text-foreground">{q.playerName}</strong>
+                    <span className="text-muted-foreground"> {q.text ? `— ${q.text}` : "raised a hand"}</span>
+                  </span>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    className="rounded-xl font-bold shrink-0 h-7"
+                    disabled={resolveQuestionMutation.isPending}
+                    onClick={() =>
+                      resolveQuestionMutation.mutate(q.id, {
+                        onError: (e) => toast({ title: "Failed", description: (e as Error).message, variant: "destructive" }),
+                      })
+                    }
+                  >
+                    <Check className="w-3.5 h-3.5 mr-1" /> Done
+                  </Button>
+                </div>
+              ))}
+            </div>
+          )}
+
+          {/* Post-session summary */}
+          {gameState.phase === "game_over" && (
+            <div className="bg-card/95 backdrop-blur-md border-2 border-primary/30 rounded-2xl px-4 py-3 space-y-2" data-testid="session-summary">
+              <span className="flex items-center gap-2 text-sm font-extrabold text-foreground">
+                <Trophy className="w-4 h-4 text-amber-500" />
+                {gameState.winner
+                  ? `${gameState.players.find((p) => p.id === gameState.winner)?.name ?? "Someone"} won the game!`
+                  : "Session ended by facilitator"}
+              </span>
+              <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs text-muted-foreground">
+                <span className="flex items-center gap-1">
+                  <Clock className="w-3 h-3" />
+                  {(() => {
+                    const start = gameState.createdAt;
+                    const end = gameState.endedAt ?? Date.now();
+                    if (!start) return `${gameState.turnNumber} turns played`;
+                    const mins = Math.max(1, Math.round((end - start) / 60000));
+                    return `${mins} min · ${gameState.turnNumber} turns`;
+                  })()}
+                </span>
+                {gameState.players.map((p) => (
+                  <span key={p.id}>
+                    <strong className="text-foreground">{p.name}</strong>: {collectedCategoryCount(p.compostPile)}/5 layers
+                  </span>
+                ))}
+              </div>
+            </div>
+          )}
 
           {/* Player grid */}
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">

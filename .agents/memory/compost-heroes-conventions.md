@@ -14,3 +14,9 @@ description: Durable architectural decisions for the Compost Heroes game
 - Lobby "/" is ungated; Pass & Play needs no account. Online requires sign-in — enforced server-side (create/join/claim take `userToken`, validated via userStore) AND client-side (AppGate gates /game/:id only when game mode is online; `?signin=1` forces the gate UI from ungated pages).
 - Facilitated: participants join with session code (= gameId) + name only via the lobby's "Have a code?" screen → /game/:code/table; hosting requires an account.
 **Why:** product policy from Danny's landing-page spec — zero friction for participants, accountability for hosts/online play.
+
+## Facilitator session management
+- Facilitated sessions carry `facilitatorId` (account id), `label`, `createdAt`, `endedAt` in GameState; `storeGame` stamps `endedAt` on any `game_over`. Resets must preserve this metadata or the room drops off the creator's dashboard.
+- Host capability = seat-0 token, but the creator can re-mint it from any device via account-authorized host-token recovery — never rely solely on localStorage tokens for facilitator re-entry.
+- Participant questions are facilitator-directed: `serializeState` redacts them so non-host viewers only see their own. Any new facilitator-directed field must be redacted the same way (public GET + SSE both go through serializeState).
+- After `game_over` (natural or host-ended), all gameplay/question/message mutations return 409; only `reset_game` is allowed.

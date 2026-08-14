@@ -1,10 +1,17 @@
 /**
  * useGameSounds — diffs consecutive game states and fires the right sound.
  *
+ * Five core events per the simplified spec:
+ *   1. hero_place     — any hero placed in pile (new layer or stacking)
+ *   2. draw_discard   — draw a card, or discard to hand limit (same sound)
+ *   3. action_card    — any action card played (immediate or ongoing, placed or resolved)
+ *   4. layer_complete — first hero on a previously-empty layer (full volume, all players)
+ *   5. win            — player completes all 5 layers (full volume, all players)
+ *
  * Attach once per page. Returns { muted, toggleMute } for the UI mute button.
  */
 import { useEffect, useRef } from "react";
-import { useSoundEngine, layerIndex } from "./use-sound-engine";
+import { useSoundEngine } from "./use-sound-engine";
 import type { GameState } from "@workspace/api-client-react";
 
 // Shape we snapshot from each state update for diffing
@@ -12,17 +19,14 @@ interface Snapshot {
   phase: string;
   currentPlayerIndex: number;
   winner: string | null;
-  ongoingId: string | null;
-  // Per-player: hand size and compost-pile function multiset
   players: {
     id: string;
     handLen: number;
-    // map from function → count
+    // map from pile-function → count, to detect first-card-in-layer
     pileByFn: Record<string, number>;
     pileLen: number;
   }[];
   discardLen: number;
-  deckLen: number;
 }
 
 function snapshot(gs: GameState): Snapshot {
@@ -30,7 +34,6 @@ function snapshot(gs: GameState): Snapshot {
     phase: gs.phase,
     currentPlayerIndex: gs.currentPlayerIndex,
     winner: gs.winner ?? null,
-    ongoingId: gs.ongoingActionCard?.id ?? null,
     players: gs.players.map((p) => {
       const pileByFn: Record<string, number> = {};
       for (const card of p.compostPile ?? []) {
@@ -44,7 +47,6 @@ function snapshot(gs: GameState): Snapshot {
       };
     }),
     discardLen: gs.discardPile?.length ?? 0,
-    deckLen: (gs as any).deck?.length ?? 0,
   };
 }
 
@@ -54,6 +56,21 @@ export function useGameSounds(
 ) {
   const { play, startAmbient, stopAmbient, muted, toggleMute } = useSoundEngine();
   const prevRef = useRef<Snapshot | null>(null);
+  const ambientStarted = useRef(false);
+
+  // Start/stop the steady ambient bed based on game phase
+  useEffect(() => {
+    if (!gameState) return;
+    if (gameState.phase !== "waiting" && gameState.phase !== "game_over") {
+      if (!ambientStarted.current) {
+        startAmbient();
+        ambientStarted.current = true;
+      }
+    } else {
+      stopAmbient();
+      ambientStarted.current = false;
+    }
+  }, [gameState?.phase, startAmbient, stopAmbient]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     if (!gameState || !localPlayerId) return;
@@ -68,128 +85,70 @@ export function useGameSounds(
     const currentPlayer = gameState.players[curr.currentPlayerIndex];
     const isActivePlayer = currentPlayer?.id === localPlayerId;
 
-    // ── 1. Turn passed to me ──────────────────────────────────────────────
-    if (
-      curr.currentPlayerIndex !== prev.currentPlayerIndex &&
-      isActivePlayer &&
-      curr.phase === "play"
-    ) {
-      play("turn_to_me", true);
-      return; // dominant event this tick — don't stack other sounds
-    }
-
-    // ── 2. Win ────────────────────────────────────────────────────────────
+    // ── 1. Win ────────────────────────────────────────────────────────────
     if (curr.phase === "game_over" && prev.phase !== "game_over") {
       play("win", true); // full volume for everyone
       stopAmbient();
+      ambientStarted.current = false;
       return;
     }
 
-    // ── 3. Ongoing card placed / cleared ─────────────────────────────────
-    if (curr.ongoingId !== prev.ongoingId) {
-      if (curr.ongoingId && !prev.ongoingId) {
-        play("ongoing_place", isActivePlayer);
-        startAmbient();
-      } else if (!curr.ongoingId && prev.ongoingId) {
-        play("ongoing_clear", isActivePlayer);
-        stopAmbient();
-      } else {
-        // replaced with a different card
-        play("ongoing_clear", isActivePlayer);
-        setTimeout(() => {
-          play("ongoing_place", isActivePlayer);
-          startAmbient();
-        }, 300);
-      }
-    }
-
-    // ── 4. Per-player changes ─────────────────────────────────────────────
+    // ── 2. Per-player pile and hand changes ───────────────────────────────
     for (const currP of curr.players) {
       const prevP = prev.players.find((p) => p.id === currP.id);
       if (!prevP) continue;
 
-      const isSelf = currP.id === localPlayerId;
-      // For other players' sounds use isActivePlayer flag based on who is
-      // the *current* turn player (who caused the action)
       const isActor = currentPlayer?.id === currP.id;
 
-      // 4a. Hand grew → draw (only meaningful for the active player)
-      if (isSelf && currP.handLen > prevP.handLen && curr.phase !== "game_over") {
-        play("draw", true); // always self
-      }
-
-      // 4b. Compost pile changed — detect hero placement type
+      // 2a. Compost pile grew → hero placed
       if (currP.pileLen > prevP.pileLen) {
-        // Find which function was added (or grew)
+        // Detect if any function's first card was just placed (layer_complete)
+        let layerCompleted = false;
         for (const fn of Object.keys(currP.pileByFn)) {
           const currCount = currP.pileByFn[fn] ?? 0;
           const prevCount = prevP.pileByFn[fn] ?? 0;
-          if (currCount > prevCount) {
-            const isFirst = prevCount === 0;
-            if (isFirst) {
-              // New layer — play hero_new_layer + layer_complete chime
-              play("hero_new_layer", isActor);
-              // Small delay so the chime sits on top of the plop
-              const idx = layerIndex(fn);
-              setTimeout(() => play("layer_complete", true, { layerIdx: idx }), 220);
-            } else {
-              // Stacking on existing layer
-              play("hero_stacking", isActor);
-            }
-            break; // one function changed per tick
+          if (currCount > prevCount && prevCount === 0) {
+            layerCompleted = true;
+            break;
           }
+        }
+
+        play("hero_place", isActor);
+
+        if (layerCompleted) {
+          // Small delay so the chime sits on top of the thud
+          setTimeout(() => play("layer_complete", true), 220);
         }
       }
 
-      // 4c. Hand shrank — could be: played a card or discarded to limit
-      if (currP.handLen < prevP.handLen && currP.id === localPlayerId) {
-        // Discard to limit happens in end_turn phase
-        if (curr.phase === "end_turn" || curr.phase === "effect_resolution") {
-          play("discard_limit", true);
-        }
-        // Action card plays are inferred from the discard pile growing
-        // (handled below) to avoid double-firing
+      // 2b. Self drew a card (hand grew)
+      if (currP.id === localPlayerId && currP.handLen > prevP.handLen && curr.phase !== "game_over") {
+        play("draw_discard", true);
+      }
+
+      // 2c. Self discarded to hand limit (hand shrank during end_turn / effect_resolution)
+      if (
+        currP.id === localPlayerId &&
+        currP.handLen < prevP.handLen &&
+        (curr.phase === "end_turn" || curr.phase === "effect_resolution")
+      ) {
+        play("draw_discard", true);
       }
     }
 
-    // ── 5. Discard pile grew → action card played ─────────────────────────
+    // ── 3. Action card played (discard pile grew with an action on top) ───
     if (curr.discardLen > prev.discardLen) {
       const topCard = gameState.discardPile[gameState.discardPile.length - 1];
       if (topCard?.type === "action") {
-        // Check if it's a "forced" / self-harm effect via lastEffect
-        const lastEffect = (gameState as any).lastEffect;
-        const isForced =
-          lastEffect?.type === "forced" ||
-          lastEffect?.description?.toLowerCase().includes("forced") ||
-          lastEffect?.description?.toLowerCase().includes("discard from compost");
-        if (isForced) {
-          play("forced_play", isActivePlayer);
-        } else {
-          play("action_immediate", isActivePlayer);
-        }
+        play("action_card", isActivePlayer);
       }
     }
 
-    // ── 6. Deck refill — discard pile collapsed back into draw pile ────────
-    if (
-      curr.deckLen > 0 &&
-      prev.deckLen > 0 &&
-      curr.discardLen < prev.discardLen - 5 &&
-      curr.deckLen > prev.deckLen + 5
-    ) {
-      play("deck_refill", isActivePlayer);
-    }
-  }, [gameState, localPlayerId, play, startAmbient, stopAmbient]);
+    // Note: ongoing card placement is already covered by the discard-grew
+    // branch above (the card lands in the discard pile when played). Clearing
+    // of an ongoing on turn-end is intentionally silent per the simplified spec.
 
-  // Sync ambient with ongoing card on mount / reconnect
-  useEffect(() => {
-    if (!gameState) return;
-    if (gameState.ongoingActionCard) {
-      startAmbient();
-    } else {
-      stopAmbient();
-    }
-  }, [!!gameState?.ongoingActionCard]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [gameState, localPlayerId, play, stopAmbient]); // eslint-disable-line react-hooks/exhaustive-deps
 
   return { muted, toggleMute };
 }

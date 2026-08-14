@@ -6,6 +6,7 @@ export type AnalyticsEventType =
   | "game_created"
   | "player_joined"
   | "game_completed"
+  | "game_ended_by_host"
   | "facilitator_resolve";
 
 interface LogEventOptions {

@@ -17,13 +17,22 @@ import type {
 } from "@tanstack/react-query";
 
 import type {
+  AskQuestion200,
+  AskQuestionBody,
   CreateGameRequest,
+  EndSessionBody,
   ErrorResponse,
   FacilitatorResolveRequest,
+  FacilitatorRoomSummary,
   GameAction,
   GameState,
+  GetFacilitatorRoomsParams,
   HealthStatus,
   PauseGameRequest,
+  RecoverHostToken200,
+  RecoverHostTokenBody,
+  ResolveQuestionBody,
+  SendHostMessageBody,
 } from "./api.schemas";
 
 import { customFetch } from "../custom-fetch";
@@ -273,6 +282,545 @@ export function useGetGame<
 
   return { ...query, queryKey: queryOptions.queryKey };
 }
+
+/**
+ * @summary List sessions created by the signed-in facilitator
+ */
+export const getGetFacilitatorRoomsUrl = (
+  params: GetFacilitatorRoomsParams,
+) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? "null" : value.toString());
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0
+    ? `/api/facilitator/rooms?${stringifiedParams}`
+    : `/api/facilitator/rooms`;
+};
+
+export const getFacilitatorRooms = async (
+  params: GetFacilitatorRoomsParams,
+  options?: RequestInit,
+): Promise<FacilitatorRoomSummary[]> => {
+  return customFetch<FacilitatorRoomSummary[]>(
+    getGetFacilitatorRoomsUrl(params),
+    {
+      ...options,
+      method: "GET",
+    },
+  );
+};
+
+export const getGetFacilitatorRoomsQueryKey = (
+  params?: GetFacilitatorRoomsParams,
+) => {
+  return [`/api/facilitator/rooms`, ...(params ? [params] : [])] as const;
+};
+
+export const getGetFacilitatorRoomsQueryOptions = <
+  TData = Awaited<ReturnType<typeof getFacilitatorRooms>>,
+  TError = ErrorType<ErrorResponse>,
+>(
+  params: GetFacilitatorRoomsParams,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof getFacilitatorRooms>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey =
+    queryOptions?.queryKey ?? getGetFacilitatorRoomsQueryKey(params);
+
+  const queryFn: QueryFunction<
+    Awaited<ReturnType<typeof getFacilitatorRooms>>
+  > = ({ signal }) =>
+    getFacilitatorRooms(params, { signal, ...requestOptions });
+
+  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof getFacilitatorRooms>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type GetFacilitatorRoomsQueryResult = NonNullable<
+  Awaited<ReturnType<typeof getFacilitatorRooms>>
+>;
+export type GetFacilitatorRoomsQueryError = ErrorType<ErrorResponse>;
+
+/**
+ * @summary List sessions created by the signed-in facilitator
+ */
+
+export function useGetFacilitatorRooms<
+  TData = Awaited<ReturnType<typeof getFacilitatorRooms>>,
+  TError = ErrorType<ErrorResponse>,
+>(
+  params: GetFacilitatorRoomsParams,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof getFacilitatorRooms>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getGetFacilitatorRoomsQueryOptions(params, options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+/**
+ * @summary Recover the host seat token for a session's creator
+ */
+export const getRecoverHostTokenUrl = (gameId: string) => {
+  return `/api/games/${gameId}/host-token`;
+};
+
+export const recoverHostToken = async (
+  gameId: string,
+  recoverHostTokenBody: RecoverHostTokenBody,
+  options?: RequestInit,
+): Promise<RecoverHostToken200> => {
+  return customFetch<RecoverHostToken200>(getRecoverHostTokenUrl(gameId), {
+    ...options,
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...options?.headers },
+    body: JSON.stringify(recoverHostTokenBody),
+  });
+};
+
+export const getRecoverHostTokenMutationOptions = <
+  TError = ErrorType<ErrorResponse>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof recoverHostToken>>,
+    TError,
+    { gameId: string; data: BodyType<RecoverHostTokenBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof recoverHostToken>>,
+  TError,
+  { gameId: string; data: BodyType<RecoverHostTokenBody> },
+  TContext
+> => {
+  const mutationKey = ["recoverHostToken"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof recoverHostToken>>,
+    { gameId: string; data: BodyType<RecoverHostTokenBody> }
+  > = (props) => {
+    const { gameId, data } = props ?? {};
+
+    return recoverHostToken(gameId, data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type RecoverHostTokenMutationResult = NonNullable<
+  Awaited<ReturnType<typeof recoverHostToken>>
+>;
+export type RecoverHostTokenMutationBody = BodyType<RecoverHostTokenBody>;
+export type RecoverHostTokenMutationError = ErrorType<ErrorResponse>;
+
+/**
+ * @summary Recover the host seat token for a session's creator
+ */
+export const useRecoverHostToken = <
+  TError = ErrorType<ErrorResponse>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof recoverHostToken>>,
+    TError,
+    { gameId: string; data: BodyType<RecoverHostTokenBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof recoverHostToken>>,
+  TError,
+  { gameId: string; data: BodyType<RecoverHostTokenBody> },
+  TContext
+> => {
+  return useMutation(getRecoverHostTokenMutationOptions(options));
+};
+
+/**
+ * @summary Facilitator broadcasts a message to all tables (host token required)
+ */
+export const getSendHostMessageUrl = (gameId: string) => {
+  return `/api/games/${gameId}/message`;
+};
+
+export const sendHostMessage = async (
+  gameId: string,
+  sendHostMessageBody: SendHostMessageBody,
+  options?: RequestInit,
+): Promise<GameState> => {
+  return customFetch<GameState>(getSendHostMessageUrl(gameId), {
+    ...options,
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...options?.headers },
+    body: JSON.stringify(sendHostMessageBody),
+  });
+};
+
+export const getSendHostMessageMutationOptions = <
+  TError = ErrorType<ErrorResponse>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof sendHostMessage>>,
+    TError,
+    { gameId: string; data: BodyType<SendHostMessageBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof sendHostMessage>>,
+  TError,
+  { gameId: string; data: BodyType<SendHostMessageBody> },
+  TContext
+> => {
+  const mutationKey = ["sendHostMessage"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof sendHostMessage>>,
+    { gameId: string; data: BodyType<SendHostMessageBody> }
+  > = (props) => {
+    const { gameId, data } = props ?? {};
+
+    return sendHostMessage(gameId, data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type SendHostMessageMutationResult = NonNullable<
+  Awaited<ReturnType<typeof sendHostMessage>>
+>;
+export type SendHostMessageMutationBody = BodyType<SendHostMessageBody>;
+export type SendHostMessageMutationError = ErrorType<ErrorResponse>;
+
+/**
+ * @summary Facilitator broadcasts a message to all tables (host token required)
+ */
+export const useSendHostMessage = <
+  TError = ErrorType<ErrorResponse>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof sendHostMessage>>,
+    TError,
+    { gameId: string; data: BodyType<SendHostMessageBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof sendHostMessage>>,
+  TError,
+  { gameId: string; data: BodyType<SendHostMessageBody> },
+  TContext
+> => {
+  return useMutation(getSendHostMessageMutationOptions(options));
+};
+
+/**
+ * @summary Participant flags a question for the facilitator
+ */
+export const getAskQuestionUrl = (gameId: string) => {
+  return `/api/games/${gameId}/question`;
+};
+
+export const askQuestion = async (
+  gameId: string,
+  askQuestionBody: AskQuestionBody,
+  options?: RequestInit,
+): Promise<AskQuestion200> => {
+  return customFetch<AskQuestion200>(getAskQuestionUrl(gameId), {
+    ...options,
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...options?.headers },
+    body: JSON.stringify(askQuestionBody),
+  });
+};
+
+export const getAskQuestionMutationOptions = <
+  TError = ErrorType<ErrorResponse>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof askQuestion>>,
+    TError,
+    { gameId: string; data: BodyType<AskQuestionBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof askQuestion>>,
+  TError,
+  { gameId: string; data: BodyType<AskQuestionBody> },
+  TContext
+> => {
+  const mutationKey = ["askQuestion"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof askQuestion>>,
+    { gameId: string; data: BodyType<AskQuestionBody> }
+  > = (props) => {
+    const { gameId, data } = props ?? {};
+
+    return askQuestion(gameId, data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type AskQuestionMutationResult = NonNullable<
+  Awaited<ReturnType<typeof askQuestion>>
+>;
+export type AskQuestionMutationBody = BodyType<AskQuestionBody>;
+export type AskQuestionMutationError = ErrorType<ErrorResponse>;
+
+/**
+ * @summary Participant flags a question for the facilitator
+ */
+export const useAskQuestion = <
+  TError = ErrorType<ErrorResponse>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof askQuestion>>,
+    TError,
+    { gameId: string; data: BodyType<AskQuestionBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof askQuestion>>,
+  TError,
+  { gameId: string; data: BodyType<AskQuestionBody> },
+  TContext
+> => {
+  return useMutation(getAskQuestionMutationOptions(options));
+};
+
+/**
+ * @summary Facilitator resolves a participant question (host token required)
+ */
+export const getResolveQuestionUrl = (gameId: string, questionId: string) => {
+  return `/api/games/${gameId}/question/${questionId}/resolve`;
+};
+
+export const resolveQuestion = async (
+  gameId: string,
+  questionId: string,
+  resolveQuestionBody: ResolveQuestionBody,
+  options?: RequestInit,
+): Promise<GameState> => {
+  return customFetch<GameState>(getResolveQuestionUrl(gameId, questionId), {
+    ...options,
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...options?.headers },
+    body: JSON.stringify(resolveQuestionBody),
+  });
+};
+
+export const getResolveQuestionMutationOptions = <
+  TError = ErrorType<ErrorResponse>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof resolveQuestion>>,
+    TError,
+    { gameId: string; questionId: string; data: BodyType<ResolveQuestionBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof resolveQuestion>>,
+  TError,
+  { gameId: string; questionId: string; data: BodyType<ResolveQuestionBody> },
+  TContext
+> => {
+  const mutationKey = ["resolveQuestion"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof resolveQuestion>>,
+    { gameId: string; questionId: string; data: BodyType<ResolveQuestionBody> }
+  > = (props) => {
+    const { gameId, questionId, data } = props ?? {};
+
+    return resolveQuestion(gameId, questionId, data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type ResolveQuestionMutationResult = NonNullable<
+  Awaited<ReturnType<typeof resolveQuestion>>
+>;
+export type ResolveQuestionMutationBody = BodyType<ResolveQuestionBody>;
+export type ResolveQuestionMutationError = ErrorType<ErrorResponse>;
+
+/**
+ * @summary Facilitator resolves a participant question (host token required)
+ */
+export const useResolveQuestion = <
+  TError = ErrorType<ErrorResponse>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof resolveQuestion>>,
+    TError,
+    { gameId: string; questionId: string; data: BodyType<ResolveQuestionBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof resolveQuestion>>,
+  TError,
+  { gameId: string; questionId: string; data: BodyType<ResolveQuestionBody> },
+  TContext
+> => {
+  return useMutation(getResolveQuestionMutationOptions(options));
+};
+
+/**
+ * @summary Facilitator ends the session for everyone (host token required)
+ */
+export const getEndSessionUrl = (gameId: string) => {
+  return `/api/games/${gameId}/end`;
+};
+
+export const endSession = async (
+  gameId: string,
+  endSessionBody: EndSessionBody,
+  options?: RequestInit,
+): Promise<GameState> => {
+  return customFetch<GameState>(getEndSessionUrl(gameId), {
+    ...options,
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...options?.headers },
+    body: JSON.stringify(endSessionBody),
+  });
+};
+
+export const getEndSessionMutationOptions = <
+  TError = ErrorType<ErrorResponse>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof endSession>>,
+    TError,
+    { gameId: string; data: BodyType<EndSessionBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof endSession>>,
+  TError,
+  { gameId: string; data: BodyType<EndSessionBody> },
+  TContext
+> => {
+  const mutationKey = ["endSession"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof endSession>>,
+    { gameId: string; data: BodyType<EndSessionBody> }
+  > = (props) => {
+    const { gameId, data } = props ?? {};
+
+    return endSession(gameId, data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type EndSessionMutationResult = NonNullable<
+  Awaited<ReturnType<typeof endSession>>
+>;
+export type EndSessionMutationBody = BodyType<EndSessionBody>;
+export type EndSessionMutationError = ErrorType<ErrorResponse>;
+
+/**
+ * @summary Facilitator ends the session for everyone (host token required)
+ */
+export const useEndSession = <
+  TError = ErrorType<ErrorResponse>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof endSession>>,
+    TError,
+    { gameId: string; data: BodyType<EndSessionBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof endSession>>,
+  TError,
+  { gameId: string; data: BodyType<EndSessionBody> },
+  TContext
+> => {
+  return useMutation(getEndSessionMutationOptions(options));
+};
 
 /**
  * @summary Facilitator pauses or resumes a facilitated game (host token required)

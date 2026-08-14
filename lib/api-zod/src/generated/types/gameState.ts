@@ -8,10 +8,12 @@
 import type { ActiveModifier } from "./activeModifier";
 import type { Card } from "./card";
 import type { EffectAnnouncement } from "./effectAnnouncement";
+import type { GameStateHostMessage } from "./gameStateHostMessage";
 import type { GameStateMode } from "./gameStateMode";
 import type { GameStatePhase } from "./gameStatePhase";
 import type { PendingDecision } from "./pendingDecision";
 import type { PlayerState } from "./playerState";
+import type { QuestionFlag } from "./questionFlag";
 
 export interface GameState {
   gameId: string;
@@ -35,4 +37,10 @@ export interface GameState {
   maxPlayers?: number;
   paused?: boolean;
   hasPassword?: boolean;
+  createdAt?: number | null;
+  endedAt?: number | null;
+  label?: string | null;
+  endedByHost?: boolean;
+  hostMessage?: GameStateHostMessage;
+  questions?: QuestionFlag[];
 }

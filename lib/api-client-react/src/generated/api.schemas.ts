@@ -30,6 +30,8 @@ export interface CreateGameRequest {
    */
   playerNames?: string[];
   mode: CreateGameRequestMode;
+  /** Registered-account token. Required when mode is online or facilitated. */
+  userToken?: string;
 }
 
 export type CardType = (typeof CardType)[keyof typeof CardType];
@@ -135,6 +137,29 @@ export interface EffectAnnouncement {
   events: EffectEvent[];
 }
 
+export interface FacilitatorRoomSummary {
+  gameId: string;
+  mode: string;
+  label?: string | null;
+  phase: string;
+  playerCount: number;
+  maxPlayers: number;
+  createdAt?: number | null;
+  endedAt?: number | null;
+  winner?: string | null;
+  paused: boolean;
+  openQuestions: number;
+}
+
+export interface QuestionFlag {
+  id: string;
+  playerId: string;
+  playerName: string;
+  text: string;
+  ts: number;
+  resolved: boolean;
+}
+
 export type GameStateMode = (typeof GameStateMode)[keyof typeof GameStateMode];
 
 export const GameStateMode = {
@@ -156,6 +181,12 @@ export const GameStatePhase = {
   end_turn: "end_turn",
   game_over: "game_over",
 } as const;
+
+export type GameStateHostMessage = {
+  id: string;
+  text: string;
+  ts: number;
+} | null;
 
 export interface GameState {
   gameId: string;
@@ -179,6 +210,12 @@ export interface GameState {
   maxPlayers?: number;
   paused?: boolean;
   hasPassword?: boolean;
+  createdAt?: number | null;
+  endedAt?: number | null;
+  label?: string | null;
+  endedByHost?: boolean;
+  hostMessage?: GameStateHostMessage;
+  questions?: QuestionFlag[];
 }
 
 export interface PauseGameRequest {
@@ -215,3 +252,37 @@ export interface GameAction {
   targetCardId?: string | null;
   decisionData?: GameActionDecisionData;
 }
+
+export type GetFacilitatorRoomsParams = {
+  userToken: string;
+};
+
+export type RecoverHostTokenBody = {
+  userToken: string;
+};
+
+export type RecoverHostToken200 = {
+  token: string;
+};
+
+export type SendHostMessageBody = {
+  token: string;
+  text: string;
+};
+
+export type AskQuestionBody = {
+  token: string;
+  text?: string;
+};
+
+export type AskQuestion200 = {
+  ok: boolean;
+};
+
+export type ResolveQuestionBody = {
+  token: string;
+};
+
+export type EndSessionBody = {
+  token: string;
+};

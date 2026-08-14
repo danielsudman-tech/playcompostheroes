@@ -10,6 +10,7 @@ import {
   useGameAction,
   useClaimSlot,
   useGameSse,
+  useAskQuestion,
   getStoredToken,
   storeToken,
 } from "@/hooks/use-game";
@@ -45,6 +46,9 @@ import {
   ChevronRight,
   Volume2,
   VolumeX,
+  Megaphone,
+  Hand,
+  Send,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -150,6 +154,24 @@ export default function FacilitatedGame() {
   const [zoomedCard, setZoomedCard] = useState<Card | null>(null);
   const [showRules, setShowRules] = useState(false);
   const [showLog, setShowLog] = useState(false);
+
+  // Facilitator broadcast + participant questions
+  const [dismissedMsgId, setDismissedMsgId] = useState<string | null>(null);
+  const [askOpen, setAskOpen] = useState(false);
+  const [askText, setAskText] = useState("");
+  const askMutation = useAskQuestion(gameId || null, localToken);
+  const myOpenQuestion = !!(gameState?.questions ?? []).some((q) => q.playerId === localPlayerId && !q.resolved);
+
+  const handleAskQuestion = () => {
+    askMutation.mutate(askText.trim(), {
+      onSuccess: () => {
+        setAskOpen(false);
+        setAskText("");
+        toast({ title: "Question sent 🙋", description: "Your facilitator has been notified." });
+      },
+      onError: (e) => toast({ title: "Couldn't send", description: (e as Error).message, variant: "destructive" }),
+    });
+  };
 
   useEffect(() => {
     if (!gameState) return;
@@ -423,6 +445,59 @@ export default function FacilitatedGame() {
           >
             <BookOpen className="w-4 h-4" /> <span className="hidden sm:inline">Rules</span>
           </button>
+          {claim && (
+            <div className="relative">
+              <button
+                onClick={() => setAskOpen((v) => !v)}
+                disabled={myOpenQuestion}
+                title={myOpenQuestion ? "Your question is with the facilitator" : "Ask the facilitator a question"}
+                className={cn(
+                  "flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold border transition-colors",
+                  myOpenQuestion
+                    ? "bg-orange-500/15 border-orange-500/40 text-orange-700 dark:text-orange-400 cursor-default"
+                    : askOpen
+                      ? "bg-orange-500 text-white border-orange-400"
+                      : "bg-card border-border text-muted-foreground hover:bg-muted/50"
+                )}
+                data-testid="button-ask-question"
+              >
+                <Hand className="w-4 h-4" /> <span className="hidden sm:inline">{myOpenQuestion ? "Asked" : "Ask"}</span>
+              </button>
+              <AnimatePresence>
+                {askOpen && !myOpenQuestion && (
+                  <motion.div
+                    initial={{ opacity: 0, y: -6 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    exit={{ opacity: 0, y: -6 }}
+                    className="absolute right-0 top-full mt-2 w-72 bg-card border border-border rounded-2xl shadow-xl p-3 space-y-2 z-50"
+                  >
+                    <p className="text-xs font-bold text-foreground">Ask your facilitator</p>
+                    <input
+                      value={askText}
+                      onChange={(e) => setAskText(e.target.value)}
+                      onKeyDown={(e) => { if (e.key === "Enter") handleAskQuestion(); }}
+                      maxLength={300}
+                      autoFocus
+                      placeholder="Type your question (optional)…"
+                      className="w-full h-9 px-3 rounded-xl border border-border bg-background/50 text-sm focus:outline-none focus:ring-2 focus:ring-primary/20"
+                      data-testid="input-question"
+                    />
+                    <Button
+                      size="sm"
+                      className="w-full rounded-xl font-bold"
+                      disabled={askMutation.isPending}
+                      onClick={handleAskQuestion}
+                      data-testid="button-send-question"
+                    >
+                      {askMutation.isPending ? <Loader2 className="w-4 h-4 animate-spin" /> : (
+                        <><Send className="w-4 h-4 mr-1.5" /> {askText.trim() ? "Send question" : "Raise hand 🙋"}</>
+                      )}
+                    </Button>
+                  </motion.div>
+                )}
+              </AnimatePresence>
+            </div>
+          )}
           <button
             onClick={toggleSoundMute}
             title={soundMuted ? "Unmute sounds" : "Mute sounds"}
@@ -441,6 +516,33 @@ export default function FacilitatedGame() {
           </div>
         </div>
       </header>
+
+      {/* FACILITATOR BROADCAST BANNER */}
+      <AnimatePresence>
+        {gameState.hostMessage && gameState.hostMessage.id !== dismissedMsgId && (
+          <motion.div
+            initial={{ opacity: 0, height: 0 }}
+            animate={{ opacity: 1, height: "auto" }}
+            exit={{ opacity: 0, height: 0 }}
+            className="shrink-0 bg-primary/10 border-b border-primary/30 overflow-hidden z-20"
+            data-testid="broadcast-banner"
+          >
+            <div className="flex items-center gap-2.5 px-4 py-2">
+              <Megaphone className="w-4 h-4 text-primary shrink-0" />
+              <span className="flex-1 min-w-0 text-sm font-semibold text-foreground truncate">
+                <span className="text-primary font-bold">Facilitator:</span> {gameState.hostMessage.text}
+              </span>
+              <button
+                onClick={() => setDismissedMsgId(gameState.hostMessage!.id)}
+                className="text-muted-foreground hover:text-foreground shrink-0"
+                title="Dismiss"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
 
       {/* MAIN CONTENT SPLIT */}
       <div className="flex-1 flex flex-row overflow-hidden relative">

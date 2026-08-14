@@ -14,4 +14,6 @@ export interface CreateGameRequest {
    */
   playerNames?: string[];
   mode: CreateGameRequestMode;
+  /** Registered-account token. Required when mode is online or facilitated. */
+  userToken?: string;
 }

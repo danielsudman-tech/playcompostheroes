@@ -126,10 +126,9 @@ export default function Lobby() {
   const [maxPlayers, setMaxPlayers] = useState(4);
   const [gamePassword, setGamePassword] = useState("");
 
-  // Facilitated: participants join with a code; hosts flip to the setup form.
+  // Facilitated: participants join with a code; hosts use /facilitator.
   const [joinCode, setJoinCode] = useState("");
   const [joiningCode, setJoiningCode] = useState(false);
-  const [showFacilitatorSetup, setShowFacilitatorSetup] = useState(false);
 
   const requestSignIn = () => {
     window.location.search = "signin=1";
@@ -349,7 +348,7 @@ export default function Lobby() {
                 </div>
 
                 {/* Facilitated: join with a code (participants) */}
-                {mode === "facilitated" && !showFacilitatorSetup && (
+                {mode === "facilitated" && (
                   <div className="space-y-4">
                     <div className="text-center space-y-1">
                       <h3 className="font-bold text-lg text-foreground">Have a code from your facilitator?</h3>
@@ -377,28 +376,10 @@ export default function Lobby() {
                       )}
                     </Button>
                     <button
-                      onClick={() => setShowFacilitatorSetup(true)}
+                      onClick={() => setLocation("/facilitator")}
                       className="w-full text-center text-xs text-muted-foreground hover:text-foreground transition-colors font-medium underline underline-offset-2"
                     >
-                      Hosting a session? Create a facilitated room
-                    </button>
-                  </div>
-                )}
-
-                {/* Facilitated host setup requires an account */}
-                {mode === "facilitated" && showFacilitatorSetup && !currentUser && (
-                  <div className="space-y-4 text-center">
-                    <p className="text-sm text-muted-foreground bg-amber-50 dark:bg-amber-950/20 border border-amber-200/60 rounded-lg p-3 leading-snug">
-                      Hosting a facilitated session requires a free account. Participants only need the code you share with them.
-                    </p>
-                    <Button size="lg" className="w-full h-12 rounded-xl font-bold" onClick={requestSignIn}>
-                      Sign in to host
-                    </Button>
-                    <button
-                      onClick={() => setShowFacilitatorSetup(false)}
-                      className="text-xs text-muted-foreground hover:text-foreground transition-colors font-medium underline underline-offset-2"
-                    >
-                      Back to join with a code
+                      Hosting a session? Open the facilitator dashboard
                     </button>
                   </div>
                 )}
@@ -415,8 +396,8 @@ export default function Lobby() {
                   </div>
                 )}
 
-                {/* Online / facilitated host: name + max players + password */}
-                {((mode === "online" && !!currentUser) || (mode === "facilitated" && showFacilitatorSetup && !!currentUser)) && (
+                {/* Online host: name + max players + password */}
+                {mode === "online" && !!currentUser && (
                   <div className="space-y-4">
                     <label className="text-sm font-bold text-muted-foreground uppercase tracking-wider flex items-center gap-2">
                       <Wifi className="w-4 h-4" /> Your Room
@@ -543,7 +524,7 @@ export default function Lobby() {
                   </div>
                 )}
 
-                {(mode === "standalone" || ((mode === "online" || (mode === "facilitated" && showFacilitatorSetup)) && !!currentUser)) && (
+                {(mode === "standalone" || (mode === "online" && !!currentUser)) && (
                   <Button
                     size="lg"
                     className="w-full h-14 text-xl font-display tracking-wide rounded-xl shadow-lg shadow-primary/25 hover:shadow-xl hover:shadow-primary/30 hover:-translate-y-1 transition-all"
@@ -557,14 +538,6 @@ export default function Lobby() {
                       </span>
                     )}
                   </Button>
-                )}
-                {mode === "facilitated" && showFacilitatorSetup && !!currentUser && (
-                  <button
-                    onClick={() => setShowFacilitatorSetup(false)}
-                    className="w-full text-center text-xs text-muted-foreground hover:text-foreground transition-colors font-medium underline underline-offset-2"
-                  >
-                    Back to join with a code
-                  </button>
                 )}
               </div>
             </motion.div>

@@ -7,6 +7,8 @@
  */
 
 export * from "./activeModifier";
+export * from "./askQuestion200";
+export * from "./askQuestionBody";
 export * from "./card";
 export * from "./cardEffectType";
 export * from "./cardType";
@@ -15,14 +17,18 @@ export * from "./createGameRequestMode";
 export * from "./effectAnnouncement";
 export * from "./effectEvent";
 export * from "./effectEventKind";
+export * from "./endSessionBody";
 export * from "./errorResponse";
 export * from "./facilitatorResolveRequest";
+export * from "./facilitatorRoomSummary";
 export * from "./gameAction";
 export * from "./gameActionDecisionData";
 export * from "./gameActionType";
 export * from "./gameState";
+export * from "./gameStateHostMessage";
 export * from "./gameStateMode";
 export * from "./gameStatePhase";
+export * from "./getFacilitatorRoomsParams";
 export * from "./healthStatus";
 export * from "./pauseGameRequest";
 export * from "./pendingDecision";
@@ -30,3 +36,8 @@ export * from "./pendingDecisionMeta";
 export * from "./pendingDecisionOptionsItem";
 export * from "./playerState";
 export * from "./playerStateBotSkillLevel";
+export * from "./questionFlag";
+export * from "./recoverHostToken200";
+export * from "./recoverHostTokenBody";
+export * from "./resolveQuestionBody";
+export * from "./sendHostMessageBody";

@@ -226,6 +226,7 @@ export function useCreateNewGame() {
       password?: string;
       hostName?: string;
       maxPlayers?: number;
+      label?: string;
       botPlayerIndices?: number[];
       botSkillLevels?: Record<number, "easy" | "medium" | "hard">;
     }) => {
@@ -321,6 +322,86 @@ export function usePauseGame(gameId: string | null, token: string | null) {
       if (!r.ok) {
         const err = await r.json().catch(() => ({}));
         throw new Error((err as any).error ?? "Failed to update pause state");
+      }
+      return r.json() as Promise<GameState>;
+    },
+    onSuccess: (data) => {
+      if (gameId) queryClient.setQueryData(getGetGameQueryKey(gameId), data);
+    },
+  });
+}
+
+export function useSendHostMessage(gameId: string | null, token: string | null) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async (text: string) => {
+      const r = await fetch(`/api/games/${gameId}/message`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ token, text }),
+      });
+      if (!r.ok) {
+        const err = await r.json().catch(() => ({}));
+        throw new Error((err as any).error ?? "Failed to send message");
+      }
+      return r.json() as Promise<GameState>;
+    },
+    onSuccess: (data) => {
+      if (gameId) queryClient.setQueryData(getGetGameQueryKey(gameId), data);
+    },
+  });
+}
+
+export function useAskQuestion(gameId: string | null, token: string | null) {
+  return useMutation({
+    mutationFn: async (text: string) => {
+      const r = await fetch(`/api/games/${gameId}/question`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ token, text }),
+      });
+      if (!r.ok) {
+        const err = await r.json().catch(() => ({}));
+        throw new Error((err as any).error ?? "Failed to send question");
+      }
+      return r.json() as Promise<{ ok: boolean }>;
+    },
+  });
+}
+
+export function useResolveQuestion(gameId: string | null, token: string | null) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async (questionId: string) => {
+      const r = await fetch(`/api/games/${gameId}/question/${questionId}/resolve`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ token }),
+      });
+      if (!r.ok) {
+        const err = await r.json().catch(() => ({}));
+        throw new Error((err as any).error ?? "Failed to resolve question");
+      }
+      return r.json() as Promise<GameState>;
+    },
+    onSuccess: (data) => {
+      if (gameId) queryClient.setQueryData(getGetGameQueryKey(gameId), data);
+    },
+  });
+}
+
+export function useEndSession(gameId: string | null, token: string | null) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async () => {
+      const r = await fetch(`/api/games/${gameId}/end`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ token }),
+      });
+      if (!r.ok) {
+        const err = await r.json().catch(() => ({}));
+        throw new Error((err as any).error ?? "Failed to end session");
       }
       return r.json() as Promise<GameState>;
     },
