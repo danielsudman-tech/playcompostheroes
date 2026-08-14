@@ -333,6 +333,11 @@ export default function FacilitatedGame() {
     setConfirmCard(null);
     actionMutation.mutate({ type: "play_card", playerId: localPlayerId, cardId });
   };
+
+  const handleMoveLayer = (cardId: string) => {
+    if (!isMyTurn || !localPlayerId || actionMutation.isPending) return;
+    actionMutation.mutate({ type: "move_card_layer" as any, playerId: localPlayerId, cardId });
+  };
   const handleActivateOngoing = () => {
     if (!isMyTurn || !localPlayerId || actionMutation.isPending) return;
     actionMutation.mutate({ type: "activate_ongoing", playerId: localPlayerId });
@@ -478,6 +483,7 @@ export default function FacilitatedGame() {
                   onTarget={() => handleTargetOpponent(p)}
                   onViewPile={() => setViewingOpponent(p)}
                   onZoomCard={setZoomedCard}
+                  onMoveLayer={p.id === localPlayerId && isMyTurn && !isInlineTargeting ? handleMoveLayer : undefined}
                 />
               ))}
             </div>
@@ -497,6 +503,7 @@ export default function FacilitatedGame() {
                   onTarget={() => handleTargetOpponent(myRowPlayer)}
                   onViewPile={() => setViewingOpponent(myRowPlayer)}
                   onZoomCard={setZoomedCard}
+                  onMoveLayer={isMyTurn && !isInlineTargeting ? handleMoveLayer : undefined}
                 />
               </div>
             </div>

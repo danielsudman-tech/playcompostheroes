@@ -2,7 +2,7 @@ import type { PlayerState, ActiveModifier, Card } from "@workspace/api-client-re
 import { cn } from "@/lib/utils";
 import { assetUrl } from "@/lib/assetUrl";
 import { GameCard } from "@/components/GameCard";
-import { Crosshair, AlertTriangle, Sparkles, User, Layers, ZoomIn } from "lucide-react";
+import { Crosshair, AlertTriangle, Sparkles, User, Layers, ZoomIn, ArrowLeftRight } from "lucide-react";
 
 export const PILE_CATEGORIES = [
   { key: "moisture",   label: "Moisture",   iconSrc: assetUrl("icon-moisture.png"),   color: "text-blue-500",   border: "border-blue-500/30",   bg: "bg-blue-500/10",   match: (fn: string) => fn.toLowerCase().includes("moisture") },
@@ -20,6 +20,15 @@ export function collectedCategoryCount(pile: Card[]): number {
   return PILE_CATEGORIES.filter((cat) => pile.some((c) => c != null && cat.match(getEffectiveFn(c)))).length;
 }
 
+/** Returns true if this card can be moved to a different layer slot right now. */
+function isMovable(card: Card, pile: Card[]): boolean {
+  const validFns: string[] = (card as any).alternateFunctions ?? [];
+  if (validFns.length <= 1) return false;
+  const occupiedFns = new Set(pile.filter(c => c.id !== card.id).map(c => getEffectiveFn(c)));
+  const currentFn = getEffectiveFn(card);
+  return validFns.some(fn => fn !== currentFn && !occupiedFns.has(fn));
+}
+
 interface PlayerBoardRowProps {
   player: PlayerState;
   isMe: boolean;
@@ -30,6 +39,8 @@ interface PlayerBoardRowProps {
   onTarget: () => void;
   onViewPile: () => void;
   onZoomCard?: (card: Card) => void;
+  /** When provided, movable cards show a "move layer" button. Only pass for own row on own turn. */
+  onMoveLayer?: (cardId: string) => void;
 }
 
 export function PlayerBoardRow({
@@ -42,6 +53,7 @@ export function PlayerBoardRow({
   onTarget,
   onViewPile,
   onZoomCard,
+  onMoveLayer,
 }: PlayerBoardRowProps) {
   const collected = collectedCategoryCount(player.compostPile);
   const oneAway = collected === 4;
@@ -116,6 +128,7 @@ export function PlayerBoardRow({
         const cards = player.compostPile.filter(c => c != null && cat.match(getEffectiveFn(c)));
         const has = cards.length > 0;
         const topCard = cards[cards.length - 1];
+        const canMove = onMoveLayer && topCard && isMovable(topCard, player.compostPile);
 
         return (
           <div
@@ -142,12 +155,29 @@ export function PlayerBoardRow({
                      <GameCard card={c} size="sm" hoverable={false} />
                    </div>
                  ))}
-                 {/* Zoom hint on hover */}
-                 {!targetingActive && onZoomCard && (
+
+                 {/* Zoom hint on hover (hidden when move button is showing) */}
+                 {!targetingActive && onZoomCard && !canMove && (
                    <div className="absolute inset-0 flex items-center justify-center opacity-0 hover:opacity-100 transition-opacity bg-black/30 rounded-xl z-20">
                      <ZoomIn className="w-6 h-6 text-white drop-shadow" />
                    </div>
                  )}
+
+                 {/* Move-layer button — shown when this card has an alternate function available */}
+                 {canMove && (
+                   <button
+                     onClick={(e) => {
+                       e.stopPropagation();
+                       onMoveLayer!(topCard.id);
+                     }}
+                     title="Move to a different layer"
+                     className="absolute bottom-1 right-1 z-30 flex items-center gap-1 px-1.5 py-0.5 rounded-lg bg-primary text-primary-foreground text-[9px] font-bold shadow-lg hover:bg-primary/90 active:scale-95 transition-transform"
+                   >
+                     <ArrowLeftRight className="w-3 h-3 shrink-0" />
+                     Move
+                   </button>
+                 )}
+
                  {cards.length > 1 && (
                    <div className="absolute -bottom-2 -right-2 z-10 bg-card border-2 border-primary text-primary font-black text-xs rounded-full w-6 h-6 flex items-center justify-center shadow-lg">
                      {cards.length}
