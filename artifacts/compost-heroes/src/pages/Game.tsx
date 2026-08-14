@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from "react";
+import { useGameSounds } from "@/hooks/use-game-sounds";
 import { useParams, useLocation } from "wouter";
 import { motion, AnimatePresence } from "framer-motion";
 import confetti from "canvas-confetti";
@@ -37,6 +38,8 @@ import {
   MoveRight,
   Bell,
   BookOpen,
+  Volume2,
+  VolumeX,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -132,55 +135,8 @@ export default function Game() {
 
   const [handPileOpen, setHandPileOpen] = useState(false);
 
-  // Sound effect utility (Web Audio API — no external files needed)
-  const playSound = useCallback((type: "draw" | "play_action" | "play_hero" | "error") => {
-    try {
-      const ctx = new (window.AudioContext || (window as any).webkitAudioContext)();
-      const osc = ctx.createOscillator();
-      const gain = ctx.createGain();
-      osc.connect(gain);
-      gain.connect(ctx.destination);
-
-      switch (type) {
-        case "draw":
-          osc.type = "sine";
-          osc.frequency.setValueAtTime(330, ctx.currentTime);
-          osc.frequency.linearRampToValueAtTime(520, ctx.currentTime + 0.12);
-          gain.gain.setValueAtTime(0.18, ctx.currentTime);
-          gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.22);
-          osc.start(); osc.stop(ctx.currentTime + 0.22);
-          break;
-        case "play_action":
-          osc.type = "triangle";
-          osc.frequency.setValueAtTime(440, ctx.currentTime);
-          osc.frequency.linearRampToValueAtTime(660, ctx.currentTime + 0.15);
-          gain.gain.setValueAtTime(0.22, ctx.currentTime);
-          gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.28);
-          osc.start(); osc.stop(ctx.currentTime + 0.28);
-          break;
-        case "play_hero":
-          osc.type = "sine";
-          osc.frequency.setValueAtTime(523, ctx.currentTime);
-          osc.frequency.setValueAtTime(659, ctx.currentTime + 0.1);
-          osc.frequency.setValueAtTime(784, ctx.currentTime + 0.22);
-          gain.gain.setValueAtTime(0.2, ctx.currentTime);
-          gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.45);
-          osc.start(); osc.stop(ctx.currentTime + 0.45);
-          break;
-        case "error":
-          osc.type = "sawtooth";
-          osc.frequency.setValueAtTime(220, ctx.currentTime);
-          osc.frequency.linearRampToValueAtTime(110, ctx.currentTime + 0.18);
-          gain.gain.setValueAtTime(0.18, ctx.currentTime);
-          gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.22);
-          osc.start(); osc.stop(ctx.currentTime + 0.22);
-          break;
-      }
-      setTimeout(() => ctx.close(), 1000);
-    } catch (_) {
-      // Audio not available in this environment
-    }
-  }, []);
+  // Sound system
+  const { muted: soundMuted, toggleMute: toggleSoundMute } = useGameSounds(gameState ?? undefined, localPlayerId ?? undefined);
 
   // Facilitated rooms use the dedicated Zoom-friendly table layout once play begins.
   // Online mode is untouched — this only redirects facilitated-mode players with a token.
@@ -426,7 +382,6 @@ export default function Game() {
 
   const handleDrawCard = () => {
     if (!isMyTurn || !localPlayerId || actionMutation.isPending) return;
-    playSound("draw");
     actionMutation.mutate({ type: "draw_card", playerId: localPlayerId });
   };
 
@@ -446,7 +401,6 @@ export default function Game() {
       toast({ title: "Card no longer available", description: "That card is not in your hand.", variant: "destructive" });
       return;
     }
-    playSound(card.type === "hero" ? "play_hero" : "play_action");
     setConfirmCard(null);
     actionMutation.mutate({ type: "play_card", playerId: localPlayerId, cardId });
   };
@@ -523,6 +477,13 @@ export default function Game() {
           >
             <History className="w-3.5 h-3.5" />
             Recap
+          </button>
+          <button
+            onClick={toggleSoundMute}
+            title={soundMuted ? "Unmute sounds" : "Mute sounds"}
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-bold backdrop-blur-md border shadow-sm transition-colors duration-200 bg-background/90 border-border text-muted-foreground hover:text-foreground"
+          >
+            {soundMuted ? <VolumeX className="w-3.5 h-3.5" /> : <Volume2 className="w-3.5 h-3.5" />}
           </button>
         </div>
       )}

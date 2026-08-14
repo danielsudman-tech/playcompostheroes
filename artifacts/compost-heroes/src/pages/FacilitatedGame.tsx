@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback } from "react";
+import { useGameSounds } from "@/hooks/use-game-sounds";
 import { useParams, useLocation } from "wouter";
 import { motion, AnimatePresence } from "framer-motion";
 import confetti from "canvas-confetti";
@@ -42,6 +43,8 @@ import {
   AlertTriangle,
   ChevronLeft,
   ChevronRight,
+  Volume2,
+  VolumeX,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -131,6 +134,9 @@ export default function FacilitatedGame() {
   });
 
   const localPlayerId = claim?.playerId ?? null;
+
+  // Sound system
+  const { muted: soundMuted, toggleMute: toggleSoundMute } = useGameSounds(gameState ?? undefined, localPlayerId ?? undefined);
 
   const [joinName, setJoinName] = useState("");
   const [joinPassword, setJoinPassword] = useState("");
@@ -411,6 +417,13 @@ export default function FacilitatedGame() {
             )}
           >
             <BookOpen className="w-4 h-4" /> <span className="hidden sm:inline">Rules</span>
+          </button>
+          <button
+            onClick={toggleSoundMute}
+            title={soundMuted ? "Unmute sounds" : "Mute sounds"}
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold border transition-colors bg-card border-border text-muted-foreground hover:bg-muted/50"
+          >
+            {soundMuted ? <VolumeX className="w-4 h-4" /> : <Volume2 className="w-4 h-4" />}
           </button>
           <div
             className={cn(

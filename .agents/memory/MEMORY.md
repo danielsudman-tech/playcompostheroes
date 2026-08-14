@@ -1,2 +1,3 @@
 - [Compost Heroes conventions](compost-heroes-conventions.md) — facilitated mode reuses the online flow (tokens/SSE/hidden hands, token must match acting player); API contract is spec-first via lib/api-spec + orval codegen.
 - [Facilitated table testing](facilitated-table-testing.md) — screenshot game routes with `?token=` + `?ut=` (app gate); board must fit 4 players at 900px with my row pinned above the hand.
+- [Sound system architecture](sound-system.md) — Web Audio synthesis, state-diff trigger, volume ducking by isActivePlayer.

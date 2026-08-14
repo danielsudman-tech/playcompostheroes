@@ -1,0 +1,71 @@
+# Compost Heroes — Sound Implementation Spec
+*One player per device/computer. Multiplayer session synced across devices.*
+
+---
+
+## 1. Core Principle
+
+Every sound event has a **single trigger and a single audio asset**. Whether a player hears it at full volume or ducked/muted depends only on one client-side check:
+
+> **Is this the active player (whose turn it is)?**
+
+Do not create separate "active" and "waiting" sound files — use one asset per event and apply a volume multiplier based on turn state. This keeps the sound system simple to build and easy to maintain.
+
+---
+
+## 2. Sound Event List
+
+| # | Event | Trigger | Sound Feel | Active Player Volume | Other Players' Volume |
+|---|-------|---------|-------------|----------------------|------------------------|
+| 1 | Draw a card | Player takes 1 card from Draw Pile | Light paper riffle/flip, short | 100% | 0% (silent) |
+| 2 | Play a Compost Hero (new layer) | Hero placed on an empty layer slot in own pile | Warm organic "plop"/squish | 100% | 40–50% |
+| 3 | Play a Compost Hero (stacking) | Hero placed on a layer that already has one | Layered double-thud, distinct from #2 | 100% | 40–50% |
+| 4 | Immediate Action Card played | Action resolves, then discards | Quick zap/burst, punchy | 100% | 40–50% |
+| 5 | Ongoing Action Card placed | Card placed in Ongoing Action slot | Rising "settle-in" sound | 100% | 90–100% (everyone needs this) |
+| 6 | Ongoing Action Card replaced/cleared | New Ongoing card replaces old one | Short "clear/reset" sound | 100% | 90–100% |
+| 7 | Ongoing effect active (ambient) | While an Ongoing card is in play | Subtle shift in background ambience | Continuous, low-level | Continuous, low-level, same for all |
+| 8 | Layer completed (first hero on that layer) | Player gets first hero for one of the 5 layers | Layer-specific chime (5 unique tones) | 100% | 100% |
+| 9 | Win — "I am a Compost Hero!" | Player completes all 5 layers | Full fanfare combining the 5 layer tones | 100% | 100% |
+| 10 | Forced play / self-harm effect | Card forces player to damage own pile | Lower-pitched "uh-oh" | 100% | 60–70% (visible/audible to others) |
+| 11 | Discard (hand limit) | Player discards down to 5 cards | Soft "flick," minimal | 100% | 0% (silent) |
+| 12 | Deck refill | Draw Pile empty, Discard Pile reshuffled | Bigger shuffle sound | 100% | 20–30% (optional, low priority) |
+| 13 | Turn passes to you | Game hands control to this player | Friendly notification cue | N/A — this always plays for the *new* active player | Not applicable |
+
+---
+
+## 3. Layer Tone System
+
+Assign each of the 5 layers its own recognizable tone/instrument voice, used consistently across:
+- Layer-complete chime (event #8)
+- Contributing note in the win fanfare (event #9)
+
+| Layer | Suggested Tone Direction |
+|-------|---------------------------|
+| Moisture | Light, flowing (e.g., water droplet / bell) |
+| Carbon | Deep, woody (e.g., low wood block / marimba) |
+| Decomposer | Organic, textured (e.g., soft rustle + tone) |
+| Nitrogen | Bright, punchy (e.g., short brass/pluck) |
+| Airflow | Airy, breathy (e.g., wind chime / flute) |
+
+This reinforces the sorting logic through sound alone, not just card color/icon.
+
+---
+
+## 4. Notification Pop-ups + Sound
+
+Keep existing pop-up notifications for other players' actions. Pair each pop-up with its ducked sound event (per volume table above) rather than adding new sounds — the pop-up text + quiet audio cue work together so waiting players stay oriented without full-volume noise stacking up across 3–4 players.
+
+---
+
+## 5. Build Notes
+
+1. **Volume multiplier logic**, not duplicate assets — one sound file per event, scaled by `isActivePlayer` boolean.
+2. **Ongoing ambience (event #7)** should be a single flexible track with 2–3 subtle variations, not a second competing ambient layer on top of a base ambient bed.
+3. **Full-volume-for-everyone events** (#5, #6, #8, #9) are the exceptions — these carry game-state information relevant to all players and should cut through any ducked mix.
+4. **Silent-for-others events** (#1, #11) are high-frequency, low-relevance actions — muting them for waiting players prevents audio clutter across a 4-player session.
+5. **Mute toggle** (from earlier discussion) should mute all sound categories except pop-up-paired full-volume events if you want game-state awareness to persist even when audio is off — worth deciding whether ambient/hero sounds are the only thing muted, or everything.
+6. Keep individual sound assets short and compressed (shared camp devices, variable wifi).
+
+---
+
+*Compiled from discussion — sounds for hero placement, action cards, layer completion, win condition, forced plays, and multiplayer turn-state audio for Compost Heroes online.*
