@@ -50,8 +50,18 @@ const DUCK: Record<SoundEvent, number> = {
   turn_to_me: 1.0,
 };
 
-// Events that play even when the user has effects muted (game-state critical)
-const ALWAYS_AUDIBLE = new Set<SoundEvent>(["layer_complete", "win"]);
+/**
+ * Events that carry game-state information and must always be audible,
+ * even when the player has toggled the mute button ("effects off" mode).
+ * Per Build Notes §5: layer_complete, win, ongoing_place, ongoing_clear
+ * are full-volume-for-everyone signals, not ambient/effect audio.
+ */
+const UNMUTABLE: ReadonlySet<SoundEvent> = new Set<SoundEvent>([
+  "layer_complete",
+  "win",
+  "ongoing_place",
+  "ongoing_clear",
+]);
 
 // ─── Hook ────────────────────────────────────────────────────────────────────
 
@@ -254,8 +264,9 @@ export function useSoundEngine() {
 
   const play = useCallback(
     (event: SoundEvent, isActivePlayer: boolean, extra?: { layerIdx?: number }) => {
-      const isAlwaysAudible = ALWAYS_AUDIBLE.has(event);
-      if (muted && !isAlwaysAudible) return;
+      // Unmutable events bypass the mute toggle — they carry game-state info
+      // that every player needs to hear regardless of their preference.
+      if (muted && !UNMUTABLE.has(event)) return;
 
       const ctx = getCtx();
       if (!ctx) return;

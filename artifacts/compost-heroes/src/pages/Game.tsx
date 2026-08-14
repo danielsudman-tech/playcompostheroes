@@ -480,7 +480,7 @@ export default function Game() {
           </button>
           <button
             onClick={toggleSoundMute}
-            title={soundMuted ? "Unmute sounds" : "Mute sounds"}
+            title={soundMuted ? "Unmute effects (win & layer chimes always play)" : "Mute effects (win & layer chimes still play)"}
             className="flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-bold backdrop-blur-md border shadow-sm transition-colors duration-200 bg-background/90 border-border text-muted-foreground hover:text-foreground"
           >
             {soundMuted ? <VolumeX className="w-3.5 h-3.5" /> : <Volume2 className="w-3.5 h-3.5" />}
