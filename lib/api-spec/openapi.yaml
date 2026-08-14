@@ -217,6 +217,9 @@ components:
         mode:
           type: string
           enum: [facilitator, standalone, online, facilitated]
+        userToken:
+          type: string
+          description: Registered-account token. Required when mode is online or facilitated.
       required:
         - mode
 

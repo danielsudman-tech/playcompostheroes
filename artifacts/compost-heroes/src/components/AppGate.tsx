@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback, createContext, useContext, type ReactNode } from "react";
+import { useLocation as useWouterLocation } from "wouter";
 import { Loader2, Lock, Eye, EyeOff, HelpCircle, X } from "lucide-react";
 import compostHeroesLogo from "@assets/Compost_Heroes_Logo_no_background_1773537933517.png";
 
@@ -67,14 +68,19 @@ function PasswordInput({
   );
 }
 
-// Facilitated-mode game routes are open to guests — players just enter a
-// name at the table, no account needed.
-function isUngatedPath(): boolean {
-  try {
-    return /\/game\/[^/]+\/(table|host)\/?$/.test(window.location.pathname);
-  } catch {
-    return false;
-  }
+// Registration rules:
+// - The lobby ("/") is open to everyone — guests can set up Pass & Play.
+// - Facilitated game routes (table/host) are open — players just enter a
+//   name at the table, no account needed.
+// - Pass & Play and facilitated games at /game/:id are open; online games
+//   require sign-in (checked per-game via the API below).
+function isUngatedPath(p: string): boolean {
+  return p === "/" || /^\/game\/[^/]+\/(table|host)\/?$/.test(p);
+}
+
+function pathGameId(p: string): string | null {
+  const m = p.match(/^\/game\/([^/]+)\/?$/);
+  return m ? m[1] : null;
 }
 
 export function AppGate({ children }: { children: ReactNode }) {
@@ -88,6 +94,41 @@ export function AppGate({ children }: { children: ReactNode }) {
   const [name, setName] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
   const [showForgot, setShowForgot] = useState(false);
+
+  // ?signin=1 forces the gate UI even on ungated paths (used by the lobby's
+  // "Sign in to play online" button).
+  const [forceGate, setForceGate] = useState(() => {
+    try {
+      return new URLSearchParams(window.location.search).has("signin");
+    } catch {
+      return false;
+    }
+  });
+
+  // For /game/:id — only online games require an account. Recomputed on
+  // every client-side navigation via wouter's location hook.
+  const [location] = useWouterLocation();
+  const gameId = pathGameId(location);
+  const [gameNeedsGate, setGameNeedsGate] = useState<boolean | null>(gameId ? null : false);
+  useEffect(() => {
+    if (!gameId) {
+      setGameNeedsGate(false);
+      return;
+    }
+    setGameNeedsGate(null);
+    let cancelled = false;
+    fetch(`/api/games/${encodeURIComponent(gameId)}`)
+      .then((r) => (r.ok ? r.json() : null))
+      .then((d: { mode?: string } | null) => {
+        if (!cancelled) setGameNeedsGate((d?.mode ?? "online") === "online");
+      })
+      .catch(() => {
+        if (!cancelled) setGameNeedsGate(true);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [gameId]);
 
   const validateToken = useCallback(async (token: string): Promise<RegisteredUser | null> => {
     try {
@@ -130,6 +171,18 @@ export function AppGate({ children }: { children: ReactNode }) {
     })();
     return () => { cancelled = true; };
   }, [validateToken]);
+
+  // Once signed in via a forced gate, clean the ?signin param from the URL.
+  useEffect(() => {
+    if (status !== "registered" || !forceGate) return;
+    try {
+      const params = new URLSearchParams(window.location.search);
+      params.delete("signin");
+      const qs = params.toString();
+      window.history.replaceState({}, "", window.location.pathname + (qs ? `?${qs}` : "") + window.location.hash);
+    } catch {}
+    setForceGate(false);
+  }, [status, forceGate]);
 
   const logout = useCallback(() => {
     localStorage.removeItem(STORAGE_KEY);
@@ -217,21 +270,26 @@ export function AppGate({ children }: { children: ReactNode }) {
     }
   };
 
-  if (isUngatedPath()) {
+  if (status === "registered") {
     return <UserContext.Provider value={{ user, logout }}>{children}</UserContext.Provider>;
   }
 
-  if (status === "loading" || status === "submitting") {
+  if (!forceGate) {
+    if (isUngatedPath(location)) {
+      return <UserContext.Provider value={{ user, logout }}>{children}</UserContext.Provider>;
+    }
+    if (gameId && gameNeedsGate === false) {
+      return <UserContext.Provider value={{ user, logout }}>{children}</UserContext.Provider>;
+    }
+  }
+
+  if (status === "loading" || status === "submitting" || (!forceGate && gameId && gameNeedsGate === null)) {
     return (
       <div className="min-h-screen bg-background flex flex-col items-center justify-center gap-4">
         <img src={compostHeroesLogo} alt="Compost Heroes" className="w-48 opacity-80" draggable={false} />
         <Loader2 className="w-8 h-8 text-primary animate-spin" />
       </div>
     );
-  }
-
-  if (status === "registered") {
-    return <UserContext.Provider value={{ user, logout }}>{children}</UserContext.Provider>;
   }
 
   return (

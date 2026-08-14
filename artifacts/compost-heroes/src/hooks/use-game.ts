@@ -32,6 +32,16 @@ export interface ClaimResult {
   playerName: string;
 }
 
+// Registered-account token (set by AppGate). Online games require it
+// server-side for creating/joining; other modes ignore it.
+function getUserToken(): string | undefined {
+  try {
+    return localStorage.getItem("compost_user_token") ?? undefined;
+  } catch {
+    return undefined;
+  }
+}
+
 export function useClaimSlot(gameId: string | null, enabled: boolean) {
   const [claim, setClaim] = useState<ClaimResult | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -49,7 +59,7 @@ export function useClaimSlot(gameId: string | null, enabled: boolean) {
     fetch(`/api/games/${gameId}/claim`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ token: existingToken ?? undefined, password }),
+      body: JSON.stringify({ token: existingToken ?? undefined, password, userToken: getUserToken() }),
     })
       .then(async (r) => {
         const data = await r.json();
@@ -222,7 +232,7 @@ export function useCreateNewGame() {
       const r = await fetch("/api/games", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(data),
+        body: JSON.stringify({ ...data, userToken: getUserToken() }),
       });
       if (!r.ok) {
         const err = await r.json();
@@ -350,7 +360,7 @@ export function useJoinRoom(gameId: string | null) {
       const r = await fetch(`/api/games/${gameId}/join`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(data),
+        body: JSON.stringify({ ...data, userToken: getUserToken() }),
       });
       if (!r.ok) {
         const err = await r.json();

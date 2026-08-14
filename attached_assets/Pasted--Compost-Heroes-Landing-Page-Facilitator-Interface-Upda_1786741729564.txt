@@ -1,0 +1,69 @@
+# Compost Heroes — Landing Page & Facilitator Interface Update Notes
+
+Based on our discussion — covers registration changes, landing page updates, and facilitator dashboard scope.
+
+---
+
+## 1. Registration Rules by Mode
+
+| Mode | Registration | Entry Flow |
+|------|---------------|------------|
+| **Pass & Play** | None | Click "Start Game" → straight into setup (add players by name, no accounts) |
+| **Online** | Required | Must register/sign in before creating or joining a session (remains free for now) |
+| **Facilitated** | None for participants | Participant clicks facilitator's link → prompted for a **join code** → enter name → in. No account created. |
+
+- Facilitator (Danny) still needs an account to create/manage Facilitated rooms — this is the one place registration stays, but only for the host, not participants.
+- Open item: decide whether a first-time facilitator can create a session without pre-registering, or whether facilitator accounts are always required upfront. (Not urgent since Danny is currently the only facilitator.)
+
+---
+
+## 2. Landing Page Updates
+
+**Game mode cards — add clear, glanceable indicators for each mode:**
+- **Pass & Play** — label as "Same device, no sign-up" (reinforce zero-friction)
+- **Online** — label as "Share a link, sign-up required"
+- **Facilitated** — label as "Join with a code" and indicate **desktop only** (icon or small text tag, since it's currently unusable well on mobile)
+
+**Mode selector behavior:**
+- Selecting **Pass & Play** → no registration prompt, goes straight into the existing player-name setup shown in the current screenshot.
+- Selecting **Online** → prompts sign-in/registration before proceeding to session creation/joining.
+- Selecting **Facilitated** → routes to a distinct landing state (see below) rather than staying in the same "Players" card layout used for Pass & Play/Online.
+
+**"Facilitated" click-through — new state needed:**
+Right now Facilitated shares the same card layout as the other two modes. Since Facilitated isn't something a visitor "starts" themselves (it's joining a session Danny is running), it needs its own simple screen:
+- Headline: something like "Have a code from your facilitator?"
+- Single input: **Enter Code**
+- Button: **Join Session**
+- No player list, no "Add Player," no Start Game button — none of that applies here.
+- Consider whether Facilitated even belongs as a third card in the main mode picker, or whether it's better as a smaller "Have a code? Join here" link near the bottom of the page, separate from the two self-serve modes. (Worth deciding based on how often participants land on the homepage vs. clicking a direct link you send them.)
+
+**"Buy the physical deck" button:**
+- Currently visually competing with "Start Game" as a second green CTA.
+- Recommend restyling it as a secondary/outline button (not solid green) so "Start Game" remains the clear primary action, or moving it further down/out of the main card entirely (e.g., footer link).
+
+---
+
+## 3. Facilitator Interface (`/admin`) — Scope for Build-Out
+
+**Room management**
+- Create room: set participant cap, generate join code/link, optional session name/label
+- Live dashboard: list of joined participants (name, connection status), grouped by room if running multiple simultaneous rooms
+- Game state monitoring: read-only view of each active game's board (whose turn, layer progress) without interrupting play
+
+**Messaging**
+- Broadcast message to everyone in a room (e.g., time checks, encouragement)
+- Participant chat/question flagging — decide shared thread vs. private 1:1 (open question, not yet decided)
+- New messages/questions should surface as a notification/badge on the dashboard
+
+**Session lifecycle**
+- Start / pause / end session controls
+- Post-session summary: participants, winner, duration — useful for Danny's records and potentially shareable with a corporate client after the event
+
+**Build approach**
+- Build for single-facilitator use for now (no multi-admin permissions needed yet)
+- Still model a `facilitator_id` on each room/session from the start, so multi-facilitator support is possible later without restructuring data
+- Open strategic question (not a build task): is the long-term vision Danny-only facilitation, or could other camps/educators eventually run their own Facilitated sessions? Worth deciding before investing heavily in `/admin`, since a personal tool vs. a licensable facilitator product implies different onboarding/permissions/pricing needs.
+
+---
+
+*Open items still to resolve: what counts as "a game" for future Online metering/subscription; shared vs. 1:1 facilitator chat; whether Facilitated needs pre-registration for first-time facilitators; whether Facilitated stays in the main mode picker or becomes a separate "Join with code" entry point.*

@@ -9,7 +9,8 @@ import compostHeroesLogo from "@assets/Compost_Heroes_Logo_no_background_1773537
 import greenCampsLogo from "@assets/Green_Camps_Logo_no_background_1774982775801.png";
 import {
   Users, Trash2, PlusCircle, Settings2, PlayCircle, Wifi, Lock,
-  RefreshCcw, LogIn, ChevronRight, Loader2, Bot, User, ShoppingCart, LogOut
+  RefreshCcw, LogIn, ChevronRight, Loader2, Bot, User, ShoppingCart, LogOut,
+  Monitor, KeyRound
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { useCurrentUser, useLogout } from "@/components/AppGate";
@@ -124,6 +125,35 @@ export default function Lobby() {
   const [hostName, setHostName] = useState("");
   const [maxPlayers, setMaxPlayers] = useState(4);
   const [gamePassword, setGamePassword] = useState("");
+
+  // Facilitated: participants join with a code; hosts flip to the setup form.
+  const [joinCode, setJoinCode] = useState("");
+  const [joiningCode, setJoiningCode] = useState(false);
+  const [showFacilitatorSetup, setShowFacilitatorSetup] = useState(false);
+
+  const requestSignIn = () => {
+    window.location.search = "signin=1";
+  };
+
+  const handleJoinWithCode = async () => {
+    const code = joinCode.trim().toLowerCase();
+    if (!code) {
+      toast({ title: "Enter your code", description: "Ask your facilitator for the session code.", variant: "destructive" });
+      return;
+    }
+    setJoiningCode(true);
+    try {
+      const r = await fetch(`/api/games/${encodeURIComponent(code)}`);
+      if (!r.ok) throw new Error("not found");
+      const game = await r.json() as { mode?: string };
+      if (game.mode !== "facilitated") throw new Error("not facilitated");
+      setLocation(`/game/${code}/table`);
+    } catch {
+      toast({ title: "Session not found", description: "Double-check the code with your facilitator.", variant: "destructive" });
+    } finally {
+      setJoiningCode(false);
+    }
+  };
 
   const handleAddPlayer = () => {
     if (players.length < 4) {
@@ -294,7 +324,7 @@ export default function Lobby() {
                       className={`p-3 rounded-xl border-2 transition-all flex flex-col items-center text-center gap-1 ${mode === "standalone" ? "border-primary bg-primary/10 text-primary" : "border-border hover:border-primary/50 text-muted-foreground"}`}
                     >
                       <span className="font-bold text-sm">Pass & Play</span>
-                      <span className="text-[10px] opacity-80">Same device</span>
+                      <span className="text-[10px] opacity-80">Same device, no sign-up</span>
                     </button>
                     <button
                       onClick={() => setMode("online")}
@@ -302,7 +332,7 @@ export default function Lobby() {
                     >
                       <Wifi className="w-4 h-4 shrink-0" />
                       <span className="font-bold text-sm">Online</span>
-                      <span className="text-[10px] opacity-80">Share a link</span>
+                      <span className="text-[10px] opacity-80">Share a link, sign-up required</span>
                     </button>
                     <button
                       onClick={() => setMode("facilitated")}
@@ -310,18 +340,83 @@ export default function Lobby() {
                     >
                       <Users className="w-4 h-4 shrink-0" />
                       <span className="font-bold text-sm">Facilitated</span>
-                      <span className="text-[10px] opacity-80">Guided session</span>
+                      <span className="text-[10px] opacity-80">Join with a code</span>
+                      <span className="flex items-center gap-0.5 text-[9px] font-bold uppercase tracking-wide bg-muted text-muted-foreground rounded-full px-1.5 py-0.5">
+                        <Monitor className="w-2.5 h-2.5" /> Desktop
+                      </span>
                     </button>
                   </div>
-                  {mode === "facilitated" && (
-                    <p className="text-xs text-muted-foreground bg-amber-50 dark:bg-amber-950/20 border border-amber-200/60 rounded-lg p-2 leading-snug">
-                      Everyone joins by link. Card effects are announced to all players and every choice becomes a guided step-by-step panel — great for Zoom sessions.
-                    </p>
-                  )}
                 </div>
 
-                {/* Online: host name + max players + password */}
-                {(mode === "online" || mode === "facilitated") && (
+                {/* Facilitated: join with a code (participants) */}
+                {mode === "facilitated" && !showFacilitatorSetup && (
+                  <div className="space-y-4">
+                    <div className="text-center space-y-1">
+                      <h3 className="font-bold text-lg text-foreground">Have a code from your facilitator?</h3>
+                      <p className="text-xs text-muted-foreground">Enter it below to join the session — no account needed.</p>
+                    </div>
+                    <div className="relative">
+                      <KeyRound className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground/60 pointer-events-none" />
+                      <Input
+                        placeholder="Session code"
+                        value={joinCode}
+                        onChange={(e) => setJoinCode(e.target.value)}
+                        onKeyDown={(e) => { if (e.key === "Enter") handleJoinWithCode(); }}
+                        className="h-12 pl-9 bg-background/50 border-2 focus-visible:ring-primary/20 text-base font-medium tracking-wider uppercase placeholder:normal-case placeholder:tracking-normal"
+                        autoFocus
+                      />
+                    </div>
+                    <Button
+                      size="lg"
+                      className="w-full h-14 text-xl font-display tracking-wide rounded-xl shadow-lg shadow-primary/25 hover:shadow-xl hover:shadow-primary/30 hover:-translate-y-1 transition-all"
+                      onClick={handleJoinWithCode}
+                      disabled={joiningCode}
+                    >
+                      {joiningCode ? "Finding your session…" : (
+                        <span className="flex items-center gap-2"><LogIn className="w-6 h-6" /> Join Session</span>
+                      )}
+                    </Button>
+                    <button
+                      onClick={() => setShowFacilitatorSetup(true)}
+                      className="w-full text-center text-xs text-muted-foreground hover:text-foreground transition-colors font-medium underline underline-offset-2"
+                    >
+                      Hosting a session? Create a facilitated room
+                    </button>
+                  </div>
+                )}
+
+                {/* Facilitated host setup requires an account */}
+                {mode === "facilitated" && showFacilitatorSetup && !currentUser && (
+                  <div className="space-y-4 text-center">
+                    <p className="text-sm text-muted-foreground bg-amber-50 dark:bg-amber-950/20 border border-amber-200/60 rounded-lg p-3 leading-snug">
+                      Hosting a facilitated session requires a free account. Participants only need the code you share with them.
+                    </p>
+                    <Button size="lg" className="w-full h-12 rounded-xl font-bold" onClick={requestSignIn}>
+                      Sign in to host
+                    </Button>
+                    <button
+                      onClick={() => setShowFacilitatorSetup(false)}
+                      className="text-xs text-muted-foreground hover:text-foreground transition-colors font-medium underline underline-offset-2"
+                    >
+                      Back to join with a code
+                    </button>
+                  </div>
+                )}
+
+                {/* Online requires an account */}
+                {mode === "online" && !currentUser && (
+                  <div className="space-y-4 text-center">
+                    <p className="text-sm text-muted-foreground bg-green-50 dark:bg-green-950/20 border border-green-200/60 rounded-lg p-3 leading-snug">
+                      Online games need a free account so friends can find your room and rejoin if they disconnect.
+                    </p>
+                    <Button size="lg" className="w-full h-12 rounded-xl font-bold" onClick={requestSignIn}>
+                      Sign in to play online
+                    </Button>
+                  </div>
+                )}
+
+                {/* Online / facilitated host: name + max players + password */}
+                {((mode === "online" && !!currentUser) || (mode === "facilitated" && showFacilitatorSetup && !!currentUser)) && (
                   <div className="space-y-4">
                     <label className="text-sm font-bold text-muted-foreground uppercase tracking-wider flex items-center gap-2">
                       <Wifi className="w-4 h-4" /> Your Room
@@ -448,19 +543,29 @@ export default function Lobby() {
                   </div>
                 )}
 
-                <Button
-                  size="lg"
-                  className="w-full h-14 text-xl font-display tracking-wide rounded-xl shadow-lg shadow-primary/25 hover:shadow-xl hover:shadow-primary/30 hover:-translate-y-1 transition-all"
-                  onClick={handleStartGame}
-                  disabled={createGame.isPending}
-                >
-                  {createGame.isPending ? (mode === "online" ? "Creating room…" : "Setting up pile…") : (
-                    <span className="flex items-center gap-2">
-                      {mode === "online" ? <Wifi className="w-6 h-6" /> : <PlayCircle className="w-6 h-6" />}
-                      {mode === "online" ? "Create Room" : "Start Game"}
-                    </span>
-                  )}
-                </Button>
+                {(mode === "standalone" || ((mode === "online" || (mode === "facilitated" && showFacilitatorSetup)) && !!currentUser)) && (
+                  <Button
+                    size="lg"
+                    className="w-full h-14 text-xl font-display tracking-wide rounded-xl shadow-lg shadow-primary/25 hover:shadow-xl hover:shadow-primary/30 hover:-translate-y-1 transition-all"
+                    onClick={handleStartGame}
+                    disabled={createGame.isPending}
+                  >
+                    {createGame.isPending ? (mode === "standalone" ? "Setting up pile…" : "Creating room…") : (
+                      <span className="flex items-center gap-2">
+                        {mode === "standalone" ? <PlayCircle className="w-6 h-6" /> : <Wifi className="w-6 h-6" />}
+                        {mode === "standalone" ? "Start Game" : "Create Room"}
+                      </span>
+                    )}
+                  </Button>
+                )}
+                {mode === "facilitated" && showFacilitatorSetup && !!currentUser && (
+                  <button
+                    onClick={() => setShowFacilitatorSetup(false)}
+                    className="w-full text-center text-xs text-muted-foreground hover:text-foreground transition-colors font-medium underline underline-offset-2"
+                  >
+                    Back to join with a code
+                  </button>
+                )}
               </div>
             </motion.div>
           ) : (
@@ -484,7 +589,7 @@ export default function Lobby() {
             href="https://www.compostheroes.org/purchase"
             target="_blank"
             rel="noopener noreferrer"
-            className="inline-flex items-center gap-2 bg-primary text-primary-foreground hover:bg-primary/90 rounded-full px-4 py-2 text-sm font-semibold transition-colors shadow-sm"
+            className="inline-flex items-center gap-2 border-2 border-primary/40 text-primary hover:bg-primary/10 rounded-full px-4 py-2 text-sm font-semibold transition-colors"
           >
             <ShoppingCart className="w-4 h-4" />
             Buy the physical deck

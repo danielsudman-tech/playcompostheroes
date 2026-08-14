@@ -35,6 +35,18 @@ import {
   storeGame,
 } from "../lib/gameStore.js";
 import { buildEffectAnnouncement, findEffectCard } from "../lib/facilitatedEffects.js";
+import { getUserByToken } from "../lib/userStore.js";
+
+// Registration rules: online games (and facilitated hosting) require a
+// registered account. Facilitated participants and Pass & Play never do.
+async function requireRegisteredUser(userToken: unknown): Promise<boolean> {
+  if (typeof userToken !== "string" || !userToken.trim()) return false;
+  try {
+    return (await getUserByToken(userToken)) !== null;
+  } catch {
+    return false;
+  }
+}
 
 const router: IRouter = Router();
 
@@ -115,8 +127,13 @@ router.post("/games", async (req, res) => {
     return;
   }
 
-  // Online / facilitated waiting-room: just the host name + max players
+  // Online / facilitated waiting-room: just the host name + max players.
+  // Creating either requires a registered account.
   if (mode === "online" || mode === "facilitated") {
+    if (!(await requireRegisteredUser((req.body as { userToken?: string }).userToken))) {
+      res.status(401).json({ error: "Sign in required to create this kind of room" });
+      return;
+    }
     const name = (hostName ?? "").trim();
     if (!name) {
       res.status(400).json({ error: "hostName is required for online games" });
@@ -187,11 +204,18 @@ router.get("/games/:gameId", async (req, res) => {
 // POST /api/games/:gameId/claim — claim a player slot
 router.post("/games/:gameId/claim", async (req, res) => {
   const { gameId } = req.params as { gameId: string };
-  const { token: existingToken, password } = req.body as { token?: string; password?: string };
+  const { token: existingToken, password, userToken } = req.body as { token?: string; password?: string; userToken?: string };
 
   const state = await getGame(gameId);
   if (!state) {
     res.status(404).json({ error: "Game not found" });
+    return;
+  }
+
+  // New claims on online games require a registered account. Rejoining with
+  // an existing game token stays open (the token already proves membership).
+  if (state.mode === "online" && !existingToken && !(await requireRegisteredUser(userToken))) {
+    res.status(401).json({ error: "Sign in required to join an online game" });
     return;
   }
 
@@ -220,7 +244,7 @@ router.post("/games/:gameId/claim", async (req, res) => {
 // POST /api/games/:gameId/join — join a waiting-room game
 router.post("/games/:gameId/join", async (req, res) => {
   const { gameId } = req.params as { gameId: string };
-  const { name, password } = req.body as { name?: string; password?: string };
+  const { name, password, userToken } = req.body as { name?: string; password?: string; userToken?: string };
 
   const state = await getGame(gameId);
   if (!state) {
@@ -229,6 +253,13 @@ router.post("/games/:gameId/join", async (req, res) => {
   }
   if (state.phase !== "waiting") {
     res.status(409).json({ error: "Game already started" });
+    return;
+  }
+
+  // Online games require a registered account to join; facilitated
+  // participants only need the code + a name.
+  if (state.mode === "online" && !(await requireRegisteredUser(userToken))) {
+    res.status(401).json({ error: "Sign in required to join an online game" });
     return;
   }
 
