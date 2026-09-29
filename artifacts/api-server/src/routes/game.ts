@@ -37,14 +37,14 @@ import {
   storeGame,
 } from "../lib/gameStore.js";
 import { buildEffectAnnouncement, findEffectCard } from "../lib/facilitatedEffects.js";
-import { getUserByToken } from "../lib/userStore.js";
+import { getUserByToken, isApprovedFacilitator, type CompostUser } from "../lib/userStore.js";
 
 // Registration rules: online games (and facilitated hosting) require a
 // registered account. Facilitated participants and Pass & Play never do.
-async function getRegisteredUser(userToken: unknown): Promise<{ id: string; name: string } | null> {
+async function getRegisteredUser(userToken: unknown): Promise<CompostUser | null> {
   if (typeof userToken !== "string" || !userToken.trim()) return null;
   try {
-    return (await getUserByToken(userToken)) as { id: string; name: string } | null;
+    return await getUserByToken(userToken);
   } catch {
     return null;
   }
@@ -141,6 +141,13 @@ router.post("/games", async (req, res) => {
     res.status(400).json({ error: "mode must be facilitator, standalone, online, or facilitated" });
     return;
   }
+  // The legacy facilitator play mode is privileged too; Pass & Play remains open.
+  if (mode === "facilitator" && !isApprovedFacilitator(
+    await getRegisteredUser((req.body as { userToken?: string }).userToken)
+  )) {
+    res.status(403).json({ error: "Facilitator approval is required" });
+    return;
+  }
 
   // Online / facilitated waiting-room: just the host name + max players.
   // Creating either requires a registered account.
@@ -148,6 +155,10 @@ router.post("/games", async (req, res) => {
     const creator = await getRegisteredUser((req.body as { userToken?: string }).userToken);
     if (!creator) {
       res.status(401).json({ error: "Sign in required to create this kind of room" });
+      return;
+    }
+    if (mode === "facilitated" && !isApprovedFacilitator(creator)) {
+      res.status(403).json({ error: "Facilitator approval is required to host sessions" });
       return;
     }
     const name = (hostName ?? "").trim();
@@ -347,6 +358,13 @@ router.post("/games/:gameId/start", async (req, res) => {
     res.status(403).json({ error: "Only the host can start the game" });
     return;
   }
+  if (state.mode === "facilitated") {
+    const user = await getRegisteredUser(req.body?.userToken);
+    if (!isApprovedFacilitator(user) || user?.id !== state.facilitatorId) {
+      res.status(403).json({ error: "Facilitator approval is required" });
+      return;
+    }
+  }
 
   // Add bot players to fill empty slots before launching
   if (botSlots && botSlots.length > 0) {
@@ -450,6 +468,13 @@ router.post("/games/:gameId/nudge", async (req, res) => {
     res.status(403).json({ error: "Only the facilitator (host) can nudge players" });
     return;
   }
+  if (state.mode === "facilitated") {
+    const user = await getRegisteredUser(req.body?.userToken);
+    if (!isApprovedFacilitator(user) || user?.id !== state.facilitatorId) {
+      res.status(403).json({ error: "Facilitator approval is required" });
+      return;
+    }
+  }
 
   const target = Number(targetPlayerIndex);
   if (!Number.isInteger(target) || target < 0 || target >= state.players.length || target === senderIndex) {
@@ -464,13 +489,17 @@ router.post("/games/:gameId/nudge", async (req, res) => {
 
 // ─── Facilitator (host = player index 0) assist controls ────────────────────
 
-async function requireHost(gameId: string, token: string | undefined): Promise<{ state: GameState } | { status: number; error: string }> {
+async function requireHost(gameId: string, token: string | undefined, userToken: unknown): Promise<{ state: GameState } | { status: number; error: string }> {
   const state = await getGame(gameId);
   if (!state) return { status: 404, error: "Game not found" };
   if (state.mode !== "facilitated") return { status: 400, error: "Facilitator controls are only available in facilitated games" };
   if (!token) return { status: 403, error: "Host token required" };
   const idx = await getPlayerIndexForToken(gameId, token);
   if (idx !== 0) return { status: 403, error: "Only the facilitator (host) can do this" };
+  const user = await getRegisteredUser(userToken);
+  if (!isApprovedFacilitator(user) || user?.id !== state.facilitatorId) {
+    return { status: 403, error: "Facilitator approval is required" };
+  }
   return { state };
 }
 
@@ -479,7 +508,7 @@ router.post("/games/:gameId/pause", async (req, res) => {
   const { gameId } = req.params as { gameId: string };
   const { token, paused } = req.body as { token?: string; paused?: boolean };
 
-  const check = await requireHost(gameId, token);
+  const check = await requireHost(gameId, token, req.body?.userToken);
   if ("error" in check) { res.status(check.status).json({ error: check.error }); return; }
 
   const state: GameState = { ...check.state, paused: paused === true };
@@ -494,6 +523,10 @@ router.get("/facilitator/rooms", async (req, res) => {
   const user = await getRegisteredUser(req.query.userToken);
   if (!user) {
     res.status(401).json({ error: "Sign in required" });
+    return;
+  }
+  if (!isApprovedFacilitator(user)) {
+    res.status(403).json({ error: "Facilitator approval is required" });
     return;
   }
   try {
@@ -526,7 +559,7 @@ router.post("/games/:gameId/host-token", async (req, res) => {
 
   const state = await getGame(gameId);
   if (!state) { res.status(404).json({ error: "Game not found" }); return; }
-  if (state.mode !== "facilitated" || state.facilitatorId !== user.id) {
+  if (state.mode !== "facilitated" || state.facilitatorId !== user.id || !isApprovedFacilitator(user)) {
     res.status(403).json({ error: "You are not the facilitator of this session" });
     return;
   }
@@ -540,7 +573,7 @@ router.post("/games/:gameId/message", async (req, res) => {
   const { gameId } = req.params as { gameId: string };
   const { token, text } = req.body as { token?: string; text?: string };
 
-  const check = await requireHost(gameId, token);
+  const check = await requireHost(gameId, token, req.body?.userToken);
   if ("error" in check) { res.status(check.status).json({ error: check.error }); return; }
 
   if (check.state.phase === "game_over") { res.status(409).json({ error: "The session has ended" }); return; }
@@ -599,7 +632,7 @@ router.post("/games/:gameId/question/:questionId/resolve", async (req, res) => {
   const { gameId, questionId } = req.params as { gameId: string; questionId: string };
   const { token } = req.body as { token?: string };
 
-  const check = await requireHost(gameId, token);
+  const check = await requireHost(gameId, token, req.body?.userToken);
   if ("error" in check) { res.status(check.status).json({ error: check.error }); return; }
 
   const questions = (check.state.questions ?? []).map((q) =>
@@ -616,7 +649,7 @@ router.post("/games/:gameId/end", async (req, res) => {
   const { gameId } = req.params as { gameId: string };
   const { token } = req.body as { token?: string };
 
-  const check = await requireHost(gameId, token);
+  const check = await requireHost(gameId, token, req.body?.userToken);
   if ("error" in check) { res.status(check.status).json({ error: check.error }); return; }
   if (check.state.phase === "game_over") { res.status(409).json({ error: "Game is already over" }); return; }
 
@@ -675,7 +708,7 @@ router.post("/games/:gameId/facilitator-resolve", async (req, res) => {
   const { gameId } = req.params as { gameId: string };
   const { token } = req.body as { token?: string };
 
-  const check = await requireHost(gameId, token);
+  const check = await requireHost(gameId, token, req.body?.userToken);
   if ("error" in check) { res.status(check.status).json({ error: check.error }); return; }
 
   const state = check.state;
@@ -794,6 +827,14 @@ router.post("/games/:gameId/action", async (req, res) => {
         break;
       }
       case "reset_game": {
+        if (state.mode === "facilitated") {
+          const user = await getRegisteredUser(req.body?.userToken);
+          const seat = token ? await getPlayerIndexForToken(gameId, token) : null;
+          if (seat !== 0 || !isApprovedFacilitator(user) || user?.id !== state.facilitatorId) {
+            res.status(403).json({ error: "Facilitator approval is required to reset this session" });
+            return;
+          }
+        }
         const playerNames = state.players.map((p) => p.name);
         const botIndices = state.players
           .map((p, i) => ((p as any).isBot ? i : -1))
@@ -931,6 +972,13 @@ router.delete("/games/:gameId/players/:playerId", async (req, res) => {
   if (!isSelf && !isHost) {
     res.status(403).json({ error: "Only the host can kick other players" });
     return;
+  }
+  if (state.mode === "facilitated" && isHost) {
+    const user = await getRegisteredUser(req.body?.userToken);
+    if (!isApprovedFacilitator(user) || user?.id !== state.facilitatorId) {
+      res.status(403).json({ error: "Facilitator approval is required" });
+      return;
+    }
   }
 
   const result = removePlayerFromRoom(state, playerId);

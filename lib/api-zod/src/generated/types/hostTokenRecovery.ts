@@ -6,7 +6,6 @@
  * OpenAPI spec version: 0.1.0
  */
 
-export type AskQuestionBody = {
-  token: string;
-  text?: string;
-};
+export interface HostTokenRecovery {
+  userToken: string;
+}

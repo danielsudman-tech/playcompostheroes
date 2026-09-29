@@ -182,7 +182,7 @@ export function useLeaveRoom(gameId: string | null, token: string | null) {
       const r = await fetch(`/api/games/${gameId}/players/${playerId}`, {
         method: "DELETE",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ token }),
+        body: JSON.stringify({ token, userToken: getUserToken() }),
       });
       if (!r.ok) {
         const err = await r.json().catch(() => ({}));
@@ -266,7 +266,7 @@ export function useGameAction(gameId: string, token?: string | null, callbacks?:
       const r = await fetch(`/api/games/${gameId}/action`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(body),
+        body: JSON.stringify({ ...body, userToken: getUserToken() }),
       });
       if (!r.ok) {
         const err = await r.json();
@@ -299,7 +299,7 @@ export function useNudgePlayer(gameId: string | null, token: string | null) {
       const r = await fetch(`/api/games/${gameId}/nudge`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ token, targetPlayerIndex }),
+        body: JSON.stringify({ token, targetPlayerIndex, userToken: getUserToken() }),
       });
       if (!r.ok) {
         const err = await r.json().catch(() => ({}));
@@ -317,7 +317,7 @@ export function usePauseGame(gameId: string | null, token: string | null) {
       const r = await fetch(`/api/games/${gameId}/pause`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ token, paused }),
+        body: JSON.stringify({ token, paused, userToken: getUserToken() }),
       });
       if (!r.ok) {
         const err = await r.json().catch(() => ({}));
@@ -338,7 +338,7 @@ export function useSendHostMessage(gameId: string | null, token: string | null) 
       const r = await fetch(`/api/games/${gameId}/message`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ token, text }),
+        body: JSON.stringify({ token, text, userToken: getUserToken() }),
       });
       if (!r.ok) {
         const err = await r.json().catch(() => ({}));
@@ -376,7 +376,7 @@ export function useResolveQuestion(gameId: string | null, token: string | null) 
       const r = await fetch(`/api/games/${gameId}/question/${questionId}/resolve`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ token }),
+        body: JSON.stringify({ token, userToken: getUserToken() }),
       });
       if (!r.ok) {
         const err = await r.json().catch(() => ({}));
@@ -397,7 +397,7 @@ export function useEndSession(gameId: string | null, token: string | null) {
       const r = await fetch(`/api/games/${gameId}/end`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ token }),
+        body: JSON.stringify({ token, userToken: getUserToken() }),
       });
       if (!r.ok) {
         const err = await r.json().catch(() => ({}));
@@ -418,7 +418,7 @@ export function useFacilitatorResolve(gameId: string | null, token: string | nul
       const r = await fetch(`/api/games/${gameId}/facilitator-resolve`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ token }),
+        body: JSON.stringify({ token, userToken: getUserToken() }),
       });
       if (!r.ok) {
         const err = await r.json().catch(() => ({}));
@@ -472,7 +472,7 @@ export function useStartGame(gameId: string | null, token?: string | null) {
       const r = await fetch(`/api/games/${gameId}/start`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ token, botSlots }),
+        body: JSON.stringify({ token, botSlots, userToken: getUserToken() }),
       });
       if (!r.ok) {
         const err = await r.json();

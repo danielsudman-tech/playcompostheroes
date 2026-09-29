@@ -9,12 +9,11 @@ router.get("/auth/config", (_req, res) => {
 });
 
 router.post("/auth/register", async (req, res) => {
-  const { email, name, password, organization, role } = req.body as {
+  const { email, name, password, organization } = req.body as {
     email?: string;
     name?: string;
     password?: string;
     organization?: string;
-    role?: string;
   };
 
   if (!email?.trim() || !name?.trim()) {
@@ -31,8 +30,8 @@ router.post("/auth/register", async (req, res) => {
   }
 
   try {
-    const result = await registerUser(email, name, password, organization, role);
-    logEvent("register", { userId: result.user.id, metadata: { role: role ?? null, organization: organization ?? null } });
+    const result = await registerUser(email, name, password, organization);
+    logEvent("register", { userId: result.user.id, metadata: { organization: organization ?? null } });
     res.json({ token: result.token, user: result.user });
   } catch (err: unknown) {
     const e = err as { code?: string; message?: string };

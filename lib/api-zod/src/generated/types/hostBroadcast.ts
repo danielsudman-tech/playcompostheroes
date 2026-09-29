@@ -6,6 +6,8 @@
  * OpenAPI spec version: 0.1.0
  */
 
-export type ResolveQuestionBody = {
+export interface HostBroadcast {
   token: string;
-};
+  userToken: string;
+  text: string;
+}

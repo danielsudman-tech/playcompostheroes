@@ -864,7 +864,9 @@ function AnalyticsTab({ adminKey }: { adminKey: string }) {
 
 function UsersTab({ adminKey }: { adminKey: string }) {
   const { toast } = useToast();
+  const queryClient = useQueryClient();
   const [search, setSearch] = useState("");
+  const [updatingRoleId, setUpdatingRoleId] = useState<string | null>(null);
   const [resettingId, setResettingId] = useState<string | null>(null);
   const [resetPw, setResetPw] = useState("");
   const [resetBusy, setResetBusy] = useState(false);
@@ -883,6 +885,26 @@ function UsersTab({ adminKey }: { adminKey: string }) {
     const q = search.toLowerCase();
     return !q || u.name.toLowerCase().includes(q) || u.email.toLowerCase().includes(q) || (u.organization ?? "").toLowerCase().includes(q);
   });
+
+  const updateFacilitator = async (u: AdminUser) => {
+    const approved = u.role !== "facilitator";
+    if (!approved && !window.confirm(`Remove facilitator access from ${u.name}? They will lose the ability to host or manage sessions immediately.`)) return;
+    setUpdatingRoleId(u.id);
+    try {
+      const r = await fetch(`/api/admin/users/${encodeURIComponent(u.id)}/facilitator`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json", "x-admin-key": adminKey },
+        body: JSON.stringify({ approved }),
+      });
+      if (!r.ok) throw new Error((await r.json()).error ?? "Could not update role");
+      await queryClient.invalidateQueries({ queryKey: ["admin-users"] });
+      toast({ title: approved ? `${u.name} can now host sessions` : `${u.name}'s facilitator access removed` });
+    } catch (err) {
+      toast({ title: "Role update failed", description: (err as Error).message, variant: "destructive" });
+    } finally {
+      setUpdatingRoleId(null);
+    }
+  };
 
   const exportCsv = () => {
     if (!users) return;
@@ -989,6 +1011,14 @@ function UsersTab({ adminKey }: { adminKey: string }) {
                         </td>
                         <td className="px-4 py-3 text-muted-foreground text-xs whitespace-nowrap">{new Date(u.createdAt).toLocaleDateString()}</td>
                         <td className="px-3 py-3">
+                          <button
+                            onClick={() => updateFacilitator(u)}
+                            disabled={updatingRoleId === u.id}
+                            className="mr-2 text-[11px] font-bold px-2 py-1 rounded-lg border border-primary/30 text-primary hover:bg-primary/10 disabled:opacity-50"
+                            title={u.role === "facilitator" ? "Revoke facilitator access" : "Approve as facilitator"}
+                          >
+                            {updatingRoleId === u.id ? "Saving…" : u.role === "facilitator" ? "Revoke host" : "Approve host"}
+                          </button>
                           <button
                             onClick={() => {
                               if (resettingId === u.id) { setResettingId(null); setResetPw(""); }

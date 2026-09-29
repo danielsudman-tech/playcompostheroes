@@ -6,7 +6,7 @@
  * OpenAPI spec version: 0.1.0
  */
 
-export type SendHostMessageBody = {
+export interface ParticipantQuestion {
   token: string;
-  text: string;
-};
+  text?: string;
+}

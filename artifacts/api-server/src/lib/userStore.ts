@@ -10,6 +10,10 @@ export interface CompostUser {
   createdAt: string;
 }
 
+export function isApprovedFacilitator(user: CompostUser | null): boolean {
+  return user?.role === "facilitator";
+}
+
 function generateToken(): string {
   return (
     Math.random().toString(36).substring(2) +
@@ -32,7 +36,6 @@ export async function registerUser(
   name: string,
   password: string,
   organization?: string,
-  role?: string
 ): Promise<{ token: string; user: CompostUser }> {
   const normalizedEmail = email.toLowerCase().trim();
 
@@ -55,14 +58,13 @@ export async function registerUser(
     role: string | null;
     created_at: string;
   }>(
-    `INSERT INTO compost_users (id, email, name, organization, role, password_hash)
-     VALUES (gen_random_uuid()::text, $1, $2, $3, $4, $5)
+    `INSERT INTO compost_users (id, email, name, organization, password_hash)
+     VALUES (gen_random_uuid()::text, $1, $2, $3, $4)
      RETURNING id, email, name, organization, role, created_at`,
     [
       normalizedEmail,
       name.trim(),
       organization?.trim() || null,
-      role?.trim() || null,
       passwordHash,
     ]
   );
@@ -96,7 +98,9 @@ export async function loginUser(
     created_at: string;
     password_hash: string | null;
   }>(
-    `SELECT id, email, name, organization, role, created_at, password_hash
+    `SELECT id, email, name, organization,
+            CASE WHEN role = 'facilitator' AND role_approved_at IS NOT NULL THEN 'facilitator' ELSE NULL END AS role,
+            created_at, password_hash
      FROM compost_users WHERE email = $1`,
     [normalizedEmail]
   );
@@ -151,7 +155,9 @@ export async function getUserByToken(token: string): Promise<CompostUser | null>
     role: string | null;
     created_at: string;
   }>(
-    `SELECT u.id, u.email, u.name, u.organization, u.role, u.created_at
+    `SELECT u.id, u.email, u.name, u.organization,
+            CASE WHEN u.role = 'facilitator' AND u.role_approved_at IS NOT NULL THEN 'facilitator' ELSE NULL END AS role,
+            u.created_at
      FROM compost_users u
      JOIN compost_user_sessions s ON s.user_id = u.id
      WHERE s.token = $1`,

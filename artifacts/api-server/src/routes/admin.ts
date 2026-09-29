@@ -22,8 +22,7 @@ const router = Router();
 function requireAdmin(req: Request, res: Response, next: NextFunction) {
   const adminPassword = process.env.APP_PASSWORD;
   if (!adminPassword) {
-    // No password configured — open access (dev fallback)
-    next();
+    res.status(503).json({ error: "Admin access is not configured" });
     return;
   }
   const supplied =
@@ -360,7 +359,9 @@ router.get("/admin/users", async (_req, res) => {
       created_at: string;
       session_count: string;
     }>(
-      `SELECT u.id, u.email, u.name, u.organization, u.role, u.created_at,
+       `SELECT u.id, u.email, u.name, u.organization,
+               CASE WHEN u.role = 'facilitator' AND u.role_approved_at IS NOT NULL
+                    THEN 'facilitator' ELSE NULL END AS role, u.created_at,
               COUNT(s.token) AS session_count
        FROM compost_users u
        LEFT JOIN compost_user_sessions s ON s.user_id = u.id
@@ -381,6 +382,30 @@ router.get("/admin/users", async (_req, res) => {
   } catch (err) {
     console.error("[admin users]", err);
     res.status(500).json({ error: "Failed to fetch users" });
+  }
+});
+
+// Admin-only facilitator approval. Existing self-supplied role strings lack
+// role_approved_at and never grant access until explicitly approved here.
+router.patch("/admin/users/:userId/facilitator", async (req: Request, res: Response) => {
+  const userId = String(req.params.userId);
+  const approved = (req.body as { approved?: unknown })?.approved;
+  if (typeof approved !== "boolean") {
+    res.status(400).json({ error: "approved must be a boolean" });
+    return;
+  }
+  try {
+    const result = await pool.query<{ role: string | null }>(
+      `UPDATE compost_users
+       SET role = $2, role_approved_at = CASE WHEN $3::boolean THEN NOW() ELSE NULL END
+       WHERE id = $1 RETURNING role`,
+      [userId, approved ? "facilitator" : null, approved]
+    );
+    if (!result.rowCount) { res.status(404).json({ error: "User not found" }); return; }
+    res.json({ role: result.rows[0].role });
+  } catch (err) {
+    console.error("[admin facilitator approval]", err);
+    res.status(500).json({ error: "Could not update facilitator access" });
   }
 });
 

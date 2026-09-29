@@ -115,7 +115,7 @@ export default function FacilitatorHome() {
       return r.json();
     },
     refetchInterval: 10000,
-    enabled: !!currentUser,
+    enabled: currentUser?.role === "facilitator",
   });
 
   const handleCreate = () => {
@@ -162,6 +162,16 @@ export default function FacilitatorHome() {
 
   const activeRooms = (rooms ?? []).filter((r) => r.mode === "facilitated" && r.phase !== "game_over");
   const pastRooms = (rooms ?? []).filter((r) => r.mode === "facilitated" && r.phase === "game_over").slice(0, 5);
+
+  if (currentUser?.role !== "facilitator") {
+    return (
+      <div className="min-h-screen bg-background flex flex-col items-center justify-center gap-4 p-6 text-center">
+        <h1 className="text-xl font-bold">Facilitator approval required</h1>
+        <p className="text-sm text-muted-foreground">An administrator must approve your account before you can host sessions.</p>
+        <Button onClick={() => setLocation("/")}>Back to lobby</Button>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-background relative overflow-hidden flex flex-col items-center p-4 py-8">

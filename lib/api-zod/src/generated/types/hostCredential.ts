@@ -6,6 +6,7 @@
  * OpenAPI spec version: 0.1.0
  */
 
-export type RecoverHostTokenBody = {
+export interface HostCredential {
+  token: string;
   userToken: string;
-};
+}

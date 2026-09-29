@@ -375,12 +375,18 @@ export default function Lobby() {
                         <span className="flex items-center gap-2"><LogIn className="w-6 h-6" /> Join Session</span>
                       )}
                     </Button>
-                    <button
-                      onClick={() => setLocation("/facilitator")}
-                      className="w-full text-center text-xs text-muted-foreground hover:text-foreground transition-colors font-medium underline underline-offset-2"
-                    >
-                      Hosting a session? Open the facilitator dashboard
-                    </button>
+                    {currentUser?.role === "facilitator" ? (
+                      <button
+                        onClick={() => setLocation("/facilitator")}
+                        className="w-full text-center text-xs text-muted-foreground hover:text-foreground transition-colors font-medium underline underline-offset-2"
+                      >
+                        Hosting a session? Open the facilitator dashboard
+                      </button>
+                    ) : (
+                      <p className="text-center text-xs text-muted-foreground">
+                        Want to host? Ask an administrator to approve your account as a facilitator.
+                      </p>
+                    )}
                   </div>
                 )}
 

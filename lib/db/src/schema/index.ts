@@ -7,6 +7,7 @@ export const compostUsers = pgTable("compost_users", {
   name: text("name").notNull(),
   organization: text("organization"),
   role: text("role"),
+  roleApprovedAt: timestamp("role_approved_at", { withTimezone: true }),
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow(),
 });
 

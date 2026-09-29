@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback } from "react";
 import { useGameSounds } from "@/hooks/use-game-sounds";
+import { useCurrentUser } from "@/components/AppGate";
 import { useParams, useLocation } from "wouter";
 import { motion, AnimatePresence } from "framer-motion";
 import confetti from "canvas-confetti";
@@ -99,6 +100,7 @@ export default function FacilitatedGame() {
   const { gameId } = useParams();
   const [, setLocation] = useLocation();
   const { toast } = useToast();
+  const currentUser = useCurrentUser();
 
   const urlSeatToken = (() => {
     try {
@@ -418,7 +420,7 @@ export default function FacilitatedGame() {
         </div>
         
         <div className="flex items-center gap-2 shrink-0">
-          {claim?.playerIndex === 0 && (
+          {claim?.playerIndex === 0 && currentUser?.role === "facilitator" && currentUser.id === gameState.facilitatorId && (
             <button
               onClick={() => setLocation(`/game/${gameId}/host`)}
               className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold border transition-colors bg-amber-500/10 border-amber-500/30 text-amber-700 dark:text-amber-400 hover:bg-amber-500/20"

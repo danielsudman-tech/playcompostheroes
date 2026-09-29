@@ -22,6 +22,7 @@ import {
 } from "@/components/facilitated/OpponentSummary";
 import { Button } from "@/components/ui/button";
 import { useToast } from "@/hooks/use-toast";
+import { useCurrentUser } from "@/components/AppGate";
 import { cn } from "@/lib/utils";
 import {
   Loader2,
@@ -57,6 +58,7 @@ export default function FacilitatorDashboard() {
   const { gameId } = useParams();
   const [, setLocation] = useLocation();
   const { toast } = useToast();
+  const currentUser = useCurrentUser();
 
   // Allow ?token= seeding like the table route (host share/bookmark links)
   const urlToken = (() => {
@@ -150,6 +152,15 @@ export default function FacilitatorDashboard() {
   }
 
   if (gameState.mode !== "facilitated" || isHost === false) return null; // guards redirect
+  if (currentUser?.role !== "facilitator" || currentUser.id !== gameState.facilitatorId) {
+    return (
+      <div className="min-h-screen bg-background flex flex-col items-center justify-center gap-4 p-6 text-center">
+        <h1 className="text-xl font-bold">Facilitator approval required</h1>
+        <p className="text-sm text-muted-foreground">Sign in with the approved account that created this session.</p>
+        <Button onClick={() => setLocation("/")}>Back to lobby</Button>
+      </div>
+    );
+  }
 
   const paused = (gameState as any).paused === true;
   const decision = gameState.pendingDecision;

@@ -5,6 +5,35 @@
  * Compost Heroes Game API
  * OpenAPI spec version: 0.1.0
  */
+export interface HostTokenRecovery {
+  userToken: string;
+}
+
+export interface HostCredential {
+  token: string;
+  userToken: string;
+}
+
+export interface HostBroadcast {
+  token: string;
+  userToken: string;
+  text: string;
+}
+
+export interface ParticipantQuestion {
+  token: string;
+  text?: string;
+}
+
+export interface FacilitatorApproval {
+  approved: boolean;
+}
+
+export interface FacilitatorRole {
+  /** @nullable */
+  role: string | null;
+}
+
 export interface HealthStatus {
   status: string;
 }
@@ -30,7 +59,7 @@ export interface CreateGameRequest {
    */
   playerNames?: string[];
   mode: CreateGameRequestMode;
-  /** Registered-account token. Required when mode is online or facilitated. */
+  /** Registered-account token. Required for online creation; an approved facilitator's token is required for facilitated hosting. */
   userToken?: string;
 }
 
@@ -213,6 +242,7 @@ export interface GameState {
   createdAt?: number | null;
   endedAt?: number | null;
   label?: string | null;
+  facilitatorId?: string | null;
   endedByHost?: boolean;
   hostMessage?: GameStateHostMessage;
   questions?: QuestionFlag[];
@@ -257,32 +287,10 @@ export type GetFacilitatorRoomsParams = {
   userToken: string;
 };
 
-export type RecoverHostTokenBody = {
-  userToken: string;
-};
-
 export type RecoverHostToken200 = {
   token: string;
 };
 
-export type SendHostMessageBody = {
-  token: string;
-  text: string;
-};
-
-export type AskQuestionBody = {
-  token: string;
-  text?: string;
-};
-
 export type AskQuestion200 = {
   ok: boolean;
-};
-
-export type ResolveQuestionBody = {
-  token: string;
-};
-
-export type EndSessionBody = {
-  token: string;
 };

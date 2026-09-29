@@ -56,8 +56,14 @@ export async function runStartupMigrations(): Promise<void> {
     await pool.query(
       `ALTER TABLE compost_games ADD COLUMN IF NOT EXISTS completed_at TIMESTAMPTZ`
     );
+    // Legacy role text was self-supplied at registration. Only roles with this
+    // admin-controlled marker grant facilitator privileges.
+    await pool.query(
+      `ALTER TABLE compost_users ADD COLUMN IF NOT EXISTS role_approved_at TIMESTAMPTZ`
+    );
     console.log("[analytics] startup migrations done");
   } catch (err) {
     console.error("[analytics] startup migrations failed", err);
+    throw err;
   }
 }

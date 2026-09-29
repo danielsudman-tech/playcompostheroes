@@ -18,21 +18,22 @@ import type {
 
 import type {
   AskQuestion200,
-  AskQuestionBody,
   CreateGameRequest,
-  EndSessionBody,
   ErrorResponse,
+  FacilitatorApproval,
   FacilitatorResolveRequest,
+  FacilitatorRole,
   FacilitatorRoomSummary,
   GameAction,
   GameState,
   GetFacilitatorRoomsParams,
   HealthStatus,
+  HostBroadcast,
+  HostCredential,
+  HostTokenRecovery,
+  ParticipantQuestion,
   PauseGameRequest,
   RecoverHostToken200,
-  RecoverHostTokenBody,
-  ResolveQuestionBody,
-  SendHostMessageBody,
 } from "./api.schemas";
 
 import { customFetch } from "../custom-fetch";
@@ -119,6 +120,93 @@ export function useHealthCheck<
 
   return { ...query, queryKey: queryOptions.queryKey };
 }
+
+/**
+ * @summary Admin grants or revokes facilitator hosting access
+ */
+export const getApproveFacilitatorUrl = (userId: string) => {
+  return `/api/admin/users/${userId}/facilitator`;
+};
+
+export const approveFacilitator = async (
+  userId: string,
+  facilitatorApproval: FacilitatorApproval,
+  options?: RequestInit,
+): Promise<FacilitatorRole> => {
+  return customFetch<FacilitatorRole>(getApproveFacilitatorUrl(userId), {
+    ...options,
+    method: "PATCH",
+    headers: { "Content-Type": "application/json", ...options?.headers },
+    body: JSON.stringify(facilitatorApproval),
+  });
+};
+
+export const getApproveFacilitatorMutationOptions = <
+  TError = ErrorType<ErrorResponse>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof approveFacilitator>>,
+    TError,
+    { userId: string; data: BodyType<FacilitatorApproval> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof approveFacilitator>>,
+  TError,
+  { userId: string; data: BodyType<FacilitatorApproval> },
+  TContext
+> => {
+  const mutationKey = ["approveFacilitator"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof approveFacilitator>>,
+    { userId: string; data: BodyType<FacilitatorApproval> }
+  > = (props) => {
+    const { userId, data } = props ?? {};
+
+    return approveFacilitator(userId, data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type ApproveFacilitatorMutationResult = NonNullable<
+  Awaited<ReturnType<typeof approveFacilitator>>
+>;
+export type ApproveFacilitatorMutationBody = BodyType<FacilitatorApproval>;
+export type ApproveFacilitatorMutationError = ErrorType<ErrorResponse>;
+
+/**
+ * @summary Admin grants or revokes facilitator hosting access
+ */
+export const useApproveFacilitator = <
+  TError = ErrorType<ErrorResponse>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof approveFacilitator>>,
+    TError,
+    { userId: string; data: BodyType<FacilitatorApproval> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof approveFacilitator>>,
+  TError,
+  { userId: string; data: BodyType<FacilitatorApproval> },
+  TContext
+> => {
+  return useMutation(getApproveFacilitatorMutationOptions(options));
+};
 
 /**
  * @summary Create a new game session
@@ -395,14 +483,14 @@ export const getRecoverHostTokenUrl = (gameId: string) => {
 
 export const recoverHostToken = async (
   gameId: string,
-  recoverHostTokenBody: RecoverHostTokenBody,
+  hostTokenRecovery: HostTokenRecovery,
   options?: RequestInit,
 ): Promise<RecoverHostToken200> => {
   return customFetch<RecoverHostToken200>(getRecoverHostTokenUrl(gameId), {
     ...options,
     method: "POST",
     headers: { "Content-Type": "application/json", ...options?.headers },
-    body: JSON.stringify(recoverHostTokenBody),
+    body: JSON.stringify(hostTokenRecovery),
   });
 };
 
@@ -413,14 +501,14 @@ export const getRecoverHostTokenMutationOptions = <
   mutation?: UseMutationOptions<
     Awaited<ReturnType<typeof recoverHostToken>>,
     TError,
-    { gameId: string; data: BodyType<RecoverHostTokenBody> },
+    { gameId: string; data: BodyType<HostTokenRecovery> },
     TContext
   >;
   request?: SecondParameter<typeof customFetch>;
 }): UseMutationOptions<
   Awaited<ReturnType<typeof recoverHostToken>>,
   TError,
-  { gameId: string; data: BodyType<RecoverHostTokenBody> },
+  { gameId: string; data: BodyType<HostTokenRecovery> },
   TContext
 > => {
   const mutationKey = ["recoverHostToken"];
@@ -434,7 +522,7 @@ export const getRecoverHostTokenMutationOptions = <
 
   const mutationFn: MutationFunction<
     Awaited<ReturnType<typeof recoverHostToken>>,
-    { gameId: string; data: BodyType<RecoverHostTokenBody> }
+    { gameId: string; data: BodyType<HostTokenRecovery> }
   > = (props) => {
     const { gameId, data } = props ?? {};
 
@@ -447,7 +535,7 @@ export const getRecoverHostTokenMutationOptions = <
 export type RecoverHostTokenMutationResult = NonNullable<
   Awaited<ReturnType<typeof recoverHostToken>>
 >;
-export type RecoverHostTokenMutationBody = BodyType<RecoverHostTokenBody>;
+export type RecoverHostTokenMutationBody = BodyType<HostTokenRecovery>;
 export type RecoverHostTokenMutationError = ErrorType<ErrorResponse>;
 
 /**
@@ -460,14 +548,14 @@ export const useRecoverHostToken = <
   mutation?: UseMutationOptions<
     Awaited<ReturnType<typeof recoverHostToken>>,
     TError,
-    { gameId: string; data: BodyType<RecoverHostTokenBody> },
+    { gameId: string; data: BodyType<HostTokenRecovery> },
     TContext
   >;
   request?: SecondParameter<typeof customFetch>;
 }): UseMutationResult<
   Awaited<ReturnType<typeof recoverHostToken>>,
   TError,
-  { gameId: string; data: BodyType<RecoverHostTokenBody> },
+  { gameId: string; data: BodyType<HostTokenRecovery> },
   TContext
 > => {
   return useMutation(getRecoverHostTokenMutationOptions(options));
@@ -482,14 +570,14 @@ export const getSendHostMessageUrl = (gameId: string) => {
 
 export const sendHostMessage = async (
   gameId: string,
-  sendHostMessageBody: SendHostMessageBody,
+  hostBroadcast: HostBroadcast,
   options?: RequestInit,
 ): Promise<GameState> => {
   return customFetch<GameState>(getSendHostMessageUrl(gameId), {
     ...options,
     method: "POST",
     headers: { "Content-Type": "application/json", ...options?.headers },
-    body: JSON.stringify(sendHostMessageBody),
+    body: JSON.stringify(hostBroadcast),
   });
 };
 
@@ -500,14 +588,14 @@ export const getSendHostMessageMutationOptions = <
   mutation?: UseMutationOptions<
     Awaited<ReturnType<typeof sendHostMessage>>,
     TError,
-    { gameId: string; data: BodyType<SendHostMessageBody> },
+    { gameId: string; data: BodyType<HostBroadcast> },
     TContext
   >;
   request?: SecondParameter<typeof customFetch>;
 }): UseMutationOptions<
   Awaited<ReturnType<typeof sendHostMessage>>,
   TError,
-  { gameId: string; data: BodyType<SendHostMessageBody> },
+  { gameId: string; data: BodyType<HostBroadcast> },
   TContext
 > => {
   const mutationKey = ["sendHostMessage"];
@@ -521,7 +609,7 @@ export const getSendHostMessageMutationOptions = <
 
   const mutationFn: MutationFunction<
     Awaited<ReturnType<typeof sendHostMessage>>,
-    { gameId: string; data: BodyType<SendHostMessageBody> }
+    { gameId: string; data: BodyType<HostBroadcast> }
   > = (props) => {
     const { gameId, data } = props ?? {};
 
@@ -534,7 +622,7 @@ export const getSendHostMessageMutationOptions = <
 export type SendHostMessageMutationResult = NonNullable<
   Awaited<ReturnType<typeof sendHostMessage>>
 >;
-export type SendHostMessageMutationBody = BodyType<SendHostMessageBody>;
+export type SendHostMessageMutationBody = BodyType<HostBroadcast>;
 export type SendHostMessageMutationError = ErrorType<ErrorResponse>;
 
 /**
@@ -547,14 +635,14 @@ export const useSendHostMessage = <
   mutation?: UseMutationOptions<
     Awaited<ReturnType<typeof sendHostMessage>>,
     TError,
-    { gameId: string; data: BodyType<SendHostMessageBody> },
+    { gameId: string; data: BodyType<HostBroadcast> },
     TContext
   >;
   request?: SecondParameter<typeof customFetch>;
 }): UseMutationResult<
   Awaited<ReturnType<typeof sendHostMessage>>,
   TError,
-  { gameId: string; data: BodyType<SendHostMessageBody> },
+  { gameId: string; data: BodyType<HostBroadcast> },
   TContext
 > => {
   return useMutation(getSendHostMessageMutationOptions(options));
@@ -569,14 +657,14 @@ export const getAskQuestionUrl = (gameId: string) => {
 
 export const askQuestion = async (
   gameId: string,
-  askQuestionBody: AskQuestionBody,
+  participantQuestion: ParticipantQuestion,
   options?: RequestInit,
 ): Promise<AskQuestion200> => {
   return customFetch<AskQuestion200>(getAskQuestionUrl(gameId), {
     ...options,
     method: "POST",
     headers: { "Content-Type": "application/json", ...options?.headers },
-    body: JSON.stringify(askQuestionBody),
+    body: JSON.stringify(participantQuestion),
   });
 };
 
@@ -587,14 +675,14 @@ export const getAskQuestionMutationOptions = <
   mutation?: UseMutationOptions<
     Awaited<ReturnType<typeof askQuestion>>,
     TError,
-    { gameId: string; data: BodyType<AskQuestionBody> },
+    { gameId: string; data: BodyType<ParticipantQuestion> },
     TContext
   >;
   request?: SecondParameter<typeof customFetch>;
 }): UseMutationOptions<
   Awaited<ReturnType<typeof askQuestion>>,
   TError,
-  { gameId: string; data: BodyType<AskQuestionBody> },
+  { gameId: string; data: BodyType<ParticipantQuestion> },
   TContext
 > => {
   const mutationKey = ["askQuestion"];
@@ -608,7 +696,7 @@ export const getAskQuestionMutationOptions = <
 
   const mutationFn: MutationFunction<
     Awaited<ReturnType<typeof askQuestion>>,
-    { gameId: string; data: BodyType<AskQuestionBody> }
+    { gameId: string; data: BodyType<ParticipantQuestion> }
   > = (props) => {
     const { gameId, data } = props ?? {};
 
@@ -621,7 +709,7 @@ export const getAskQuestionMutationOptions = <
 export type AskQuestionMutationResult = NonNullable<
   Awaited<ReturnType<typeof askQuestion>>
 >;
-export type AskQuestionMutationBody = BodyType<AskQuestionBody>;
+export type AskQuestionMutationBody = BodyType<ParticipantQuestion>;
 export type AskQuestionMutationError = ErrorType<ErrorResponse>;
 
 /**
@@ -634,14 +722,14 @@ export const useAskQuestion = <
   mutation?: UseMutationOptions<
     Awaited<ReturnType<typeof askQuestion>>,
     TError,
-    { gameId: string; data: BodyType<AskQuestionBody> },
+    { gameId: string; data: BodyType<ParticipantQuestion> },
     TContext
   >;
   request?: SecondParameter<typeof customFetch>;
 }): UseMutationResult<
   Awaited<ReturnType<typeof askQuestion>>,
   TError,
-  { gameId: string; data: BodyType<AskQuestionBody> },
+  { gameId: string; data: BodyType<ParticipantQuestion> },
   TContext
 > => {
   return useMutation(getAskQuestionMutationOptions(options));
@@ -657,14 +745,14 @@ export const getResolveQuestionUrl = (gameId: string, questionId: string) => {
 export const resolveQuestion = async (
   gameId: string,
   questionId: string,
-  resolveQuestionBody: ResolveQuestionBody,
+  hostCredential: HostCredential,
   options?: RequestInit,
 ): Promise<GameState> => {
   return customFetch<GameState>(getResolveQuestionUrl(gameId, questionId), {
     ...options,
     method: "POST",
     headers: { "Content-Type": "application/json", ...options?.headers },
-    body: JSON.stringify(resolveQuestionBody),
+    body: JSON.stringify(hostCredential),
   });
 };
 
@@ -675,14 +763,14 @@ export const getResolveQuestionMutationOptions = <
   mutation?: UseMutationOptions<
     Awaited<ReturnType<typeof resolveQuestion>>,
     TError,
-    { gameId: string; questionId: string; data: BodyType<ResolveQuestionBody> },
+    { gameId: string; questionId: string; data: BodyType<HostCredential> },
     TContext
   >;
   request?: SecondParameter<typeof customFetch>;
 }): UseMutationOptions<
   Awaited<ReturnType<typeof resolveQuestion>>,
   TError,
-  { gameId: string; questionId: string; data: BodyType<ResolveQuestionBody> },
+  { gameId: string; questionId: string; data: BodyType<HostCredential> },
   TContext
 > => {
   const mutationKey = ["resolveQuestion"];
@@ -696,7 +784,7 @@ export const getResolveQuestionMutationOptions = <
 
   const mutationFn: MutationFunction<
     Awaited<ReturnType<typeof resolveQuestion>>,
-    { gameId: string; questionId: string; data: BodyType<ResolveQuestionBody> }
+    { gameId: string; questionId: string; data: BodyType<HostCredential> }
   > = (props) => {
     const { gameId, questionId, data } = props ?? {};
 
@@ -709,7 +797,7 @@ export const getResolveQuestionMutationOptions = <
 export type ResolveQuestionMutationResult = NonNullable<
   Awaited<ReturnType<typeof resolveQuestion>>
 >;
-export type ResolveQuestionMutationBody = BodyType<ResolveQuestionBody>;
+export type ResolveQuestionMutationBody = BodyType<HostCredential>;
 export type ResolveQuestionMutationError = ErrorType<ErrorResponse>;
 
 /**
@@ -722,14 +810,14 @@ export const useResolveQuestion = <
   mutation?: UseMutationOptions<
     Awaited<ReturnType<typeof resolveQuestion>>,
     TError,
-    { gameId: string; questionId: string; data: BodyType<ResolveQuestionBody> },
+    { gameId: string; questionId: string; data: BodyType<HostCredential> },
     TContext
   >;
   request?: SecondParameter<typeof customFetch>;
 }): UseMutationResult<
   Awaited<ReturnType<typeof resolveQuestion>>,
   TError,
-  { gameId: string; questionId: string; data: BodyType<ResolveQuestionBody> },
+  { gameId: string; questionId: string; data: BodyType<HostCredential> },
   TContext
 > => {
   return useMutation(getResolveQuestionMutationOptions(options));
@@ -744,14 +832,14 @@ export const getEndSessionUrl = (gameId: string) => {
 
 export const endSession = async (
   gameId: string,
-  endSessionBody: EndSessionBody,
+  hostCredential: HostCredential,
   options?: RequestInit,
 ): Promise<GameState> => {
   return customFetch<GameState>(getEndSessionUrl(gameId), {
     ...options,
     method: "POST",
     headers: { "Content-Type": "application/json", ...options?.headers },
-    body: JSON.stringify(endSessionBody),
+    body: JSON.stringify(hostCredential),
   });
 };
 
@@ -762,14 +850,14 @@ export const getEndSessionMutationOptions = <
   mutation?: UseMutationOptions<
     Awaited<ReturnType<typeof endSession>>,
     TError,
-    { gameId: string; data: BodyType<EndSessionBody> },
+    { gameId: string; data: BodyType<HostCredential> },
     TContext
   >;
   request?: SecondParameter<typeof customFetch>;
 }): UseMutationOptions<
   Awaited<ReturnType<typeof endSession>>,
   TError,
-  { gameId: string; data: BodyType<EndSessionBody> },
+  { gameId: string; data: BodyType<HostCredential> },
   TContext
 > => {
   const mutationKey = ["endSession"];
@@ -783,7 +871,7 @@ export const getEndSessionMutationOptions = <
 
   const mutationFn: MutationFunction<
     Awaited<ReturnType<typeof endSession>>,
-    { gameId: string; data: BodyType<EndSessionBody> }
+    { gameId: string; data: BodyType<HostCredential> }
   > = (props) => {
     const { gameId, data } = props ?? {};
 
@@ -796,7 +884,7 @@ export const getEndSessionMutationOptions = <
 export type EndSessionMutationResult = NonNullable<
   Awaited<ReturnType<typeof endSession>>
 >;
-export type EndSessionMutationBody = BodyType<EndSessionBody>;
+export type EndSessionMutationBody = BodyType<HostCredential>;
 export type EndSessionMutationError = ErrorType<ErrorResponse>;
 
 /**
@@ -809,14 +897,14 @@ export const useEndSession = <
   mutation?: UseMutationOptions<
     Awaited<ReturnType<typeof endSession>>,
     TError,
-    { gameId: string; data: BodyType<EndSessionBody> },
+    { gameId: string; data: BodyType<HostCredential> },
     TContext
   >;
   request?: SecondParameter<typeof customFetch>;
 }): UseMutationResult<
   Awaited<ReturnType<typeof endSession>>,
   TError,
-  { gameId: string; data: BodyType<EndSessionBody> },
+  { gameId: string; data: BodyType<HostCredential> },
   TContext
 > => {
   return useMutation(getEndSessionMutationOptions(options));

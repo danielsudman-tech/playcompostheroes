@@ -40,6 +40,7 @@ export interface GameState {
   createdAt?: number | null;
   endedAt?: number | null;
   label?: string | null;
+  facilitatorId?: string | null;
   endedByHost?: boolean;
   hostMessage?: GameStateHostMessage;
   questions?: QuestionFlag[];

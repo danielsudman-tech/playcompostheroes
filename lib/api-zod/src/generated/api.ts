@@ -16,6 +16,25 @@ export const HealthCheckResponse = zod.object({
 });
 
 /**
+ * @summary Admin grants or revokes facilitator hosting access
+ */
+export const ApproveFacilitatorParams = zod.object({
+  userId: zod.coerce.string(),
+});
+
+export const ApproveFacilitatorHeader = zod.object({
+  "x-admin-key": zod.string(),
+});
+
+export const ApproveFacilitatorBody = zod.object({
+  approved: zod.boolean(),
+});
+
+export const ApproveFacilitatorResponse = zod.object({
+  role: zod.string().nullable(),
+});
+
+/**
  * @summary Create a new game session
  */
 export const createGameBodyPlayerNamesMin = 2;
@@ -32,7 +51,7 @@ export const CreateGameBody = zod.object({
     .string()
     .optional()
     .describe(
-      "Registered-account token. Required when mode is online or facilitated.",
+      "Registered-account token. Required for online creation; an approved facilitator's token is required for facilitated hosting.",
     ),
 });
 
@@ -191,6 +210,7 @@ export const GetGameResponse = zod.object({
   createdAt: zod.number().nullish(),
   endedAt: zod.number().nullish(),
   label: zod.string().nullish(),
+  facilitatorId: zod.string().nullish(),
   endedByHost: zod.boolean().optional(),
   hostMessage: zod
     .object({
@@ -261,6 +281,7 @@ export const SendHostMessageParams = zod.object({
 
 export const SendHostMessageBody = zod.object({
   token: zod.string(),
+  userToken: zod.string(),
   text: zod.string(),
 });
 
@@ -412,6 +433,7 @@ export const SendHostMessageResponse = zod.object({
   createdAt: zod.number().nullish(),
   endedAt: zod.number().nullish(),
   label: zod.string().nullish(),
+  facilitatorId: zod.string().nullish(),
   endedByHost: zod.boolean().optional(),
   hostMessage: zod
     .object({
@@ -460,6 +482,7 @@ export const ResolveQuestionParams = zod.object({
 
 export const ResolveQuestionBody = zod.object({
   token: zod.string(),
+  userToken: zod.string(),
 });
 
 export const ResolveQuestionResponse = zod.object({
@@ -610,6 +633,7 @@ export const ResolveQuestionResponse = zod.object({
   createdAt: zod.number().nullish(),
   endedAt: zod.number().nullish(),
   label: zod.string().nullish(),
+  facilitatorId: zod.string().nullish(),
   endedByHost: zod.boolean().optional(),
   hostMessage: zod
     .object({
@@ -641,6 +665,7 @@ export const EndSessionParams = zod.object({
 
 export const EndSessionBody = zod.object({
   token: zod.string(),
+  userToken: zod.string(),
 });
 
 export const EndSessionResponse = zod.object({
@@ -791,6 +816,7 @@ export const EndSessionResponse = zod.object({
   createdAt: zod.number().nullish(),
   endedAt: zod.number().nullish(),
   label: zod.string().nullish(),
+  facilitatorId: zod.string().nullish(),
   endedByHost: zod.boolean().optional(),
   hostMessage: zod
     .object({
@@ -973,6 +999,7 @@ export const PauseGameResponse = zod.object({
   createdAt: zod.number().nullish(),
   endedAt: zod.number().nullish(),
   label: zod.string().nullish(),
+  facilitatorId: zod.string().nullish(),
   endedByHost: zod.boolean().optional(),
   hostMessage: zod
     .object({
@@ -1154,6 +1181,7 @@ export const FacilitatorResolveResponse = zod.object({
   createdAt: zod.number().nullish(),
   endedAt: zod.number().nullish(),
   label: zod.string().nullish(),
+  facilitatorId: zod.string().nullish(),
   endedByHost: zod.boolean().optional(),
   hostMessage: zod
     .object({
@@ -1350,6 +1378,7 @@ export const PerformActionResponse = zod.object({
   createdAt: zod.number().nullish(),
   endedAt: zod.number().nullish(),
   label: zod.string().nullish(),
+  facilitatorId: zod.string().nullish(),
   endedByHost: zod.boolean().optional(),
   hostMessage: zod
     .object({
