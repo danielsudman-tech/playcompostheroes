@@ -872,6 +872,7 @@ function UsersTab({ adminKey }: { adminKey: string }) {
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const [resettingId, setResettingId] = useState<string | null>(null);
   const [resetPw, setResetPw] = useState("");
+  const [resetConfirm, setResetConfirm] = useState("");
   const [resetBusy, setResetBusy] = useState(false);
 
   const { data: users, isLoading, error } = useQuery<AdminUser[]>({
@@ -961,9 +962,13 @@ function UsersTab({ adminKey }: { adminKey: string }) {
       toast({ title: "Password must be at least 6 characters", variant: "destructive" });
       return;
     }
+    if (resetPw !== resetConfirm) {
+      toast({ title: "Passwords do not match", variant: "destructive" });
+      return;
+    }
     setResetBusy(true);
     try {
-      const res = await fetch(`/api/admin/users/${userId}/reset-password`, {
+      const res = await fetch(`/api/admin/users/${encodeURIComponent(userId)}/reset-password`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json", "x-admin-key": adminKey },
         body: JSON.stringify({ newPassword: resetPw }),
@@ -975,6 +980,8 @@ function UsersTab({ adminKey }: { adminKey: string }) {
       toast({ title: `Password reset for ${userName}`, description: "Their sessions have been invalidated." });
       setResettingId(null);
       setResetPw("");
+      setResetConfirm("");
+      await queryClient.invalidateQueries({ queryKey: ["admin-users"] });
     } catch (err: any) {
       toast({ title: "Reset failed", description: err?.message ?? "Unknown error", variant: "destructive" });
     } finally {
@@ -985,7 +992,7 @@ function UsersTab({ adminKey }: { adminKey: string }) {
   return (
     <>
       <div className="flex items-center justify-between gap-3 mb-4">
-        <div className="flex-1">
+        <div className="flex-1 min-w-0">
           <input
             type="search"
             placeholder="Search by name, email, or organization…"
@@ -1009,8 +1016,9 @@ function UsersTab({ adminKey }: { adminKey: string }) {
       {users && (
         <>
           <p className="text-xs text-muted-foreground mb-3">{users.length} registered user{users.length !== 1 ? "s" : ""}{search && ` · ${filtered.length} shown`}</p>
-          <div className="rounded-xl border border-border overflow-hidden">
-            <table className="w-full text-sm">
+          <p className="text-xs text-muted-foreground mb-2 lg:hidden">Swipe the table sideways to see all columns and actions.</p>
+          <div className="rounded-xl border border-border overflow-x-auto overscroll-x-contain">
+            <table className="w-full min-w-[900px] text-sm">
               <thead>
                 <tr className="bg-muted/50 border-b border-border">
                   <th className="text-left text-xs font-bold text-muted-foreground uppercase tracking-wider px-4 py-2.5">Name</th>
@@ -1018,7 +1026,7 @@ function UsersTab({ adminKey }: { adminKey: string }) {
                   <th className="text-left text-xs font-bold text-muted-foreground uppercase tracking-wider px-4 py-2.5 hidden md:table-cell">Organization</th>
                   <th className="text-left text-xs font-bold text-muted-foreground uppercase tracking-wider px-4 py-2.5">Role</th>
                   <th className="text-left text-xs font-bold text-muted-foreground uppercase tracking-wider px-4 py-2.5">Joined</th>
-                  <th className="px-4 py-2.5"></th>
+                  <th className="text-left text-xs font-bold text-muted-foreground uppercase tracking-wider px-3 py-2.5">Actions</th>
                 </tr>
               </thead>
               <tbody>
@@ -1028,9 +1036,9 @@ function UsersTab({ adminKey }: { adminKey: string }) {
                   filtered.map((u, i) => (
                     <React.Fragment key={u.id}>
                       <tr className={cn("border-b border-border", resettingId === u.id ? "bg-amber-50/60" : i % 2 === 0 ? "bg-background" : "bg-muted/20")}>
-                        <td className="px-4 py-3 font-semibold text-foreground whitespace-nowrap">{u.name}</td>
-                        <td className="px-4 py-3 text-muted-foreground text-xs">{u.email}</td>
-                        <td className="px-4 py-3 text-muted-foreground text-xs hidden md:table-cell">{u.organization ?? <span className="opacity-40">—</span>}</td>
+                        <td className="px-4 py-3 font-semibold text-foreground"><span className="block max-w-[150px] truncate" title={u.name}>{u.name}</span></td>
+                        <td className="px-4 py-3 text-muted-foreground text-xs"><span className="block max-w-[220px] truncate" title={u.email}>{u.email}</span></td>
+                        <td className="px-4 py-3 text-muted-foreground text-xs hidden md:table-cell"><span className="block max-w-[140px] truncate" title={u.organization ?? undefined}>{u.organization ?? <span className="opacity-40">—</span>}</span></td>
                         <td className="px-4 py-3">
                           <select
                             aria-label={`Role for ${u.name}`}
@@ -1048,18 +1056,22 @@ function UsersTab({ adminKey }: { adminKey: string }) {
                           <div className="flex items-center gap-2">
                             <button
                               onClick={() => {
-                                if (resettingId === u.id) { setResettingId(null); setResetPw(""); }
-                                else { setResettingId(u.id); setResetPw(""); }
+                                setResettingId(resettingId === u.id ? null : u.id);
+                                setResetPw("");
+                                setResetConfirm("");
+                                setConfirmDeleteId(null);
+                                setDeleteEmail("");
                               }}
-                              title="Reset password"
-                              className={cn("flex items-center gap-1 text-[11px] font-bold px-2 py-1 rounded-lg transition-colors border",
+                              disabled={resetBusy || deletingId !== null}
+                              aria-expanded={resettingId === u.id}
+                              className={cn("flex items-center gap-1 whitespace-nowrap text-xs font-bold px-2 py-1.5 rounded-lg transition-colors border disabled:opacity-50",
                                 resettingId === u.id
                                   ? "bg-amber-100 border-amber-300 text-amber-800 hover:bg-amber-200"
                                   : "border-border text-muted-foreground hover:text-foreground hover:bg-muted/50"
                               )}
                             >
-                              <KeyRound className="w-3 h-3" />
-                              <span className="hidden sm:inline">Reset</span>
+                              <KeyRound className="w-3.5 h-3.5" />
+                              Reset password
                             </button>
                             <button
                               onClick={() => {
@@ -1067,14 +1079,15 @@ function UsersTab({ adminKey }: { adminKey: string }) {
                                 setDeleteEmail("");
                                 setResettingId(null);
                                 setResetPw("");
+                                setResetConfirm("");
                               }}
-                              disabled={deletingId === u.id}
+                              disabled={deletingId !== null || resetBusy}
                               title={`Delete ${u.name}'s account`}
                               aria-label={`Delete ${u.name}'s account`}
-                              className="flex items-center gap-1 text-[11px] font-bold px-2 py-1 rounded-lg border border-destructive/40 text-destructive hover:bg-destructive/10 disabled:opacity-50"
+                              className="flex items-center gap-1 text-xs font-bold px-2 py-1.5 rounded-lg border border-destructive/40 text-destructive hover:bg-destructive/10 disabled:opacity-50"
                             >
-                              <Trash2 className="w-3 h-3" />
-                              <span className="hidden sm:inline">Delete</span>
+                              <Trash2 className="w-3.5 h-3.5" />
+                              Delete
                             </button>
                           </div>
                         </td>
@@ -1119,34 +1132,55 @@ function UsersTab({ adminKey }: { adminKey: string }) {
                       )}
                       {resettingId === u.id && (
                         <tr className="bg-amber-50/60 border-b border-amber-200">
-                          <td colSpan={6} className="px-4 py-3">
-                            <div className="flex items-center gap-2">
-                              <KeyRound className="w-4 h-4 text-amber-600 shrink-0" />
-                              <span className="text-xs font-semibold text-amber-900 shrink-0">New password for {u.name}:</span>
-                              <input
-                                type="text"
-                                value={resetPw}
-                                onChange={(e) => setResetPw(e.target.value)}
-                                placeholder="Min. 6 characters"
-                                className="flex-1 h-8 px-3 rounded-lg border border-amber-300 bg-white text-xs focus:outline-none focus:ring-2 focus:ring-amber-300 min-w-0"
-                                autoFocus
-                                onKeyDown={(e) => { if (e.key === "Enter") handleResetPassword(u.id, u.name); if (e.key === "Escape") { setResettingId(null); setResetPw(""); } }}
-                              />
-                              <button
-                                onClick={() => handleResetPassword(u.id, u.name)}
-                                disabled={resetBusy || resetPw.length < 6}
-                                className="flex items-center gap-1 text-xs font-bold bg-amber-600 text-white px-3 py-1.5 rounded-lg hover:bg-amber-700 transition-colors disabled:opacity-40 shrink-0"
-                              >
-                                {resetBusy ? <Loader2 className="w-3 h-3 animate-spin" /> : <CheckCircle className="w-3 h-3" />}
-                                Set
-                              </button>
-                              <button
-                                onClick={() => { setResettingId(null); setResetPw(""); }}
-                                className="text-amber-600 hover:text-amber-800 text-xs shrink-0"
-                              >
-                                Cancel
-                              </button>
-                            </div>
+                          <td colSpan={6} className="px-4 py-4">
+                            <form onSubmit={(e) => { e.preventDefault(); handleResetPassword(u.id, u.name); }} className="space-y-2">
+                              <p className="text-sm font-semibold text-amber-900">Reset password for {u.name}</p>
+                              <p className="text-xs text-amber-800">They will be signed out everywhere and must use the new password to sign in.</p>
+                              <div className="flex flex-wrap items-end gap-2">
+                                <label className="flex-1 min-w-[180px] text-xs font-semibold text-amber-900">
+                                  New password
+                                  <input
+                                    type="password"
+                                    autoComplete="new-password"
+                                    value={resetPw}
+                                    onChange={(e) => setResetPw(e.target.value)}
+                                    placeholder="At least 6 characters"
+                                    disabled={resetBusy}
+                                    minLength={6}
+                                    autoFocus
+                                    className="mt-1 w-full h-9 px-3 rounded-lg border border-amber-300 bg-white text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-amber-300"
+                                  />
+                                </label>
+                                <label className="flex-1 min-w-[180px] text-xs font-semibold text-amber-900">
+                                  Confirm password
+                                  <input
+                                    type="password"
+                                    autoComplete="new-password"
+                                    value={resetConfirm}
+                                    onChange={(e) => setResetConfirm(e.target.value)}
+                                    disabled={resetBusy}
+                                    minLength={6}
+                                    className="mt-1 w-full h-9 px-3 rounded-lg border border-amber-300 bg-white text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-amber-300"
+                                  />
+                                </label>
+                                <button
+                                  type="submit"
+                                  disabled={resetBusy || resetPw.length < 6 || resetPw !== resetConfirm}
+                                  className="h-9 flex items-center gap-1 text-xs font-bold bg-amber-600 text-white px-3 rounded-lg hover:bg-amber-700 disabled:opacity-40 shrink-0"
+                                >
+                                  {resetBusy ? <Loader2 className="w-3 h-3 animate-spin" /> : <CheckCircle className="w-3 h-3" />}
+                                  Reset password
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => { setResettingId(null); setResetPw(""); setResetConfirm(""); }}
+                                  disabled={resetBusy}
+                                  className="h-9 px-2 text-amber-700 hover:text-amber-900 text-xs font-bold disabled:opacity-40 shrink-0"
+                                >
+                                  Cancel
+                                </button>
+                              </div>
+                            </form>
                           </td>
                         </tr>
                       )}
@@ -1200,7 +1234,7 @@ export default function Admin() {
   return (
     <div className="min-h-screen bg-background text-foreground">
       <div className="sticky top-0 z-10 bg-card/95 backdrop-blur border-b border-border px-6 py-4">
-        <div className="max-w-3xl mx-auto flex items-center gap-4">
+        <div className="max-w-5xl mx-auto flex items-center gap-4">
           <button onClick={() => setLocation("/")} className="text-muted-foreground hover:text-foreground transition-colors">
             <ArrowLeft className="w-5 h-5" />
           </button>
@@ -1215,7 +1249,7 @@ export default function Admin() {
           </button>
         </div>
 
-        <div className="max-w-3xl mx-auto mt-3 flex gap-1 flex-wrap">
+        <div className="max-w-5xl mx-auto mt-3 flex gap-1 flex-wrap">
           <button
             onClick={() => setTab("users")}
             className={cn("flex items-center gap-1.5 text-sm font-bold px-4 py-2 rounded-xl transition-colors", tab === "users" ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:text-foreground hover:bg-muted/50")}
@@ -1249,7 +1283,7 @@ export default function Admin() {
         </div>
       </div>
 
-      <div className="max-w-3xl mx-auto px-6 py-6">
+      <div className="max-w-5xl mx-auto px-4 sm:px-6 py-6 min-w-0">
         {tab === "users" && <UsersTab adminKey={adminKey} />}
         {tab === "cards" && <CardsTab adminKey={adminKey} />}
         {tab === "analytics" && <AnalyticsTab adminKey={adminKey} />}
