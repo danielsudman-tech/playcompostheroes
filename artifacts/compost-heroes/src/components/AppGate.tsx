@@ -86,7 +86,11 @@ function pathGameId(p: string): string | null {
 export function AppGate({ children }: { children: ReactNode }) {
   const [status, setStatus] = useState<Status>("loading");
   const [user, setUser] = useState<RegisteredUser | null>(null);
-  const [mode, setMode] = useState<Mode>("start");
+  const [mode, setMode] = useState<Mode>(() =>
+    new URLSearchParams(window.location.search).has("signin") || /\/facilitator\/?$/.test(window.location.pathname)
+      ? "signin"
+      : "start"
+  );
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
   const [email, setEmail] = useState("");
@@ -170,6 +174,19 @@ export function AppGate({ children }: { children: ReactNode }) {
       if (!cancelled) setStatus("idle");
     })();
     return () => { cancelled = true; };
+  }, [validateToken]);
+
+  // An administrator may approve a facilitator in another tab while this
+  // lobby remains open. Refresh their role when they return to this tab.
+  useEffect(() => {
+    const refreshUser = async () => {
+      const token = localStorage.getItem(STORAGE_KEY);
+      if (!token) return;
+      const updated = await validateToken(token);
+      if (updated && localStorage.getItem(STORAGE_KEY) === token) setUser(updated);
+    };
+    window.addEventListener("focus", refreshUser);
+    return () => window.removeEventListener("focus", refreshUser);
   }, [validateToken]);
 
   // Once signed in via a forced gate, clean the ?signin param from the URL.
@@ -322,8 +339,10 @@ export function AppGate({ children }: { children: ReactNode }) {
         <div className="bg-card/80 backdrop-blur-xl rounded-3xl shadow-xl border border-border overflow-hidden">
 
           <div className="px-6 pt-5 pb-2">
-            <h2 className="text-lg font-bold text-foreground text-center">Start Playing</h2>
-            <p className="text-xs text-muted-foreground text-center mt-1">Start Playing in 10 seconds. No spam.</p>
+            <h2 className="text-lg font-bold text-foreground text-center">{mode === "signin" ? "Sign in" : "Create an account"}</h2>
+            <p className="text-xs text-muted-foreground text-center mt-1">
+              {mode === "signin" ? "Use your account to play online or host approved sessions." : "Create your account to play online. No spam."}
+            </p>
           </div>
 
           <form onSubmit={handleStart} className="p-6 pt-4 space-y-3">
@@ -406,7 +425,7 @@ export function AppGate({ children }: { children: ReactNode }) {
               disabled={!email.trim() || !password || (mode === "start" && (!name.trim() || !confirmPassword))}
               className="w-full h-12 rounded-xl bg-primary text-primary-foreground font-bold text-base hover:bg-primary/90 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
             >
-              ▶ Start Playing
+              {mode === "signin" ? "Sign in" : "Create account"}
             </button>
 
             <p className="text-center text-xs text-muted-foreground">

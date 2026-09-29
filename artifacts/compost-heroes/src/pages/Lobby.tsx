@@ -10,7 +10,7 @@ import greenCampsLogo from "@assets/Green_Camps_Logo_no_background_1774982775801
 import {
   Users, Trash2, PlusCircle, Settings2, PlayCircle, Wifi, Lock,
   RefreshCcw, LogIn, ChevronRight, Loader2, Bot, User, ShoppingCart, LogOut,
-  Monitor, KeyRound
+  Monitor, KeyRound, Crown
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { useCurrentUser, useLogout } from "@/components/AppGate";
@@ -245,22 +245,43 @@ export default function Lobby() {
         transition={{ duration: 0.7, type: "spring" }}
         className="relative z-10 w-full max-w-md"
       >
-        {/* User bar */}
-        {currentUser && (
-          <div className="flex items-center justify-between mb-4 px-1">
-            <span className="flex items-center gap-1.5 text-sm text-muted-foreground">
-              <User className="w-3.5 h-3.5" />
-              <span className="font-medium text-foreground">{currentUser.name}</span>
-            </span>
-            <button
-              onClick={logout}
-              className="flex items-center gap-1.5 text-xs text-muted-foreground hover:text-destructive transition-colors font-medium"
-            >
-              <LogOut className="w-3.5 h-3.5" />
-              Sign out
-            </button>
-          </div>
-        )}
+        {/* Account and host navigation */}
+        <div className="flex items-center justify-between gap-2 mb-4 px-1">
+          {currentUser ? (
+            <>
+              <span className="flex items-center gap-1.5 min-w-0 text-sm text-muted-foreground">
+                <User className="w-3.5 h-3.5 shrink-0" />
+                <span className="font-medium text-foreground truncate">{currentUser.name}</span>
+              </span>
+              <div className="flex items-center gap-3 shrink-0">
+                {currentUser.role === "facilitator" && (
+                  <button
+                    onClick={() => setLocation("/facilitator")}
+                    className="flex items-center gap-1 text-xs font-bold text-primary hover:underline underline-offset-2"
+                  >
+                    <Crown className="w-3.5 h-3.5" /> Host Panel
+                  </button>
+                )}
+                <button
+                  onClick={logout}
+                  className="flex items-center gap-1 text-xs text-muted-foreground hover:text-destructive transition-colors font-medium"
+                >
+                  <LogOut className="w-3.5 h-3.5" /> Sign out
+                </button>
+              </div>
+            </>
+          ) : (
+            <>
+              <span className="text-xs text-muted-foreground">Playing as a guest</span>
+              <button
+                onClick={requestSignIn}
+                className="flex items-center gap-1.5 text-sm font-bold text-primary hover:underline underline-offset-2"
+              >
+                <LogIn className="w-4 h-4" /> Sign in / Create account
+              </button>
+            </>
+          )}
+        </div>
 
         {/* Title */}
         <div className="text-center mb-6">
@@ -375,14 +396,7 @@ export default function Lobby() {
                         <span className="flex items-center gap-2"><LogIn className="w-6 h-6" /> Join Session</span>
                       )}
                     </Button>
-                    {currentUser?.role === "facilitator" ? (
-                      <button
-                        onClick={() => setLocation("/facilitator")}
-                        className="w-full text-center text-xs text-muted-foreground hover:text-foreground transition-colors font-medium underline underline-offset-2"
-                      >
-                        Hosting a session? Open the facilitator dashboard
-                      </button>
-                    ) : (
+                    {currentUser?.role !== "facilitator" && (
                       <p className="text-center text-xs text-muted-foreground">
                         Want to host? Ask an administrator to approve your account as a facilitator.
                       </p>
