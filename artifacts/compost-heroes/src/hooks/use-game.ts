@@ -42,6 +42,14 @@ function getUserToken(): string | undefined {
   }
 }
 
+function followMovedRoom(sourceGameId: string, data: { redirectGameId?: string; targetToken?: string }): boolean {
+  if (!data.redirectGameId || !data.targetToken) return false;
+  storeToken(data.redirectGameId, data.targetToken);
+  try { localStorage.removeItem(tokenKey(sourceGameId)); } catch {}
+  window.location.assign(`/game/${encodeURIComponent(data.redirectGameId)}/table`);
+  return true;
+}
+
 export function useClaimSlot(gameId: string | null, enabled: boolean) {
   const [claim, setClaim] = useState<ClaimResult | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -62,7 +70,8 @@ export function useClaimSlot(gameId: string | null, enabled: boolean) {
       body: JSON.stringify({ token: existingToken ?? undefined, password, userToken: getUserToken() }),
     })
       .then(async (r) => {
-        const data = await r.json();
+        const data = await r.json().catch(() => ({}));
+        if (r.status === 409 && gameId && followMovedRoom(gameId, data)) return;
         if (r.status === 403 && data.requiresPassword) {
           setRequiresPassword(true);
           if (data.error !== "This game is password protected") {
@@ -121,11 +130,15 @@ export function useGameSse(
   token: string | null,
   isOnline: boolean,
   onKicked?: () => void,
-  onNudge?: (from: string) => void
+  onNudge?: (from: string) => void,
+  onRoomTransfer?: (data: { gameId: string; targetToken: string }) => void
 ) {
   const queryClient = useQueryClient();
   const onNudgeRef = useRef(onNudge);
   onNudgeRef.current = onNudge;
+  const onRoomTransferRef = useRef(onRoomTransfer);
+  onRoomTransferRef.current = onRoomTransfer;
+  const recoveryInProgress = useRef(false);
   const [sseConnected, setSseConnected] = useState(false);
 
   useEffect(() => {
@@ -158,8 +171,38 @@ export function useGameSse(
       } catch {}
     });
 
+    source.addEventListener("room_transfer", (e) => {
+      try {
+        const data = JSON.parse((e as MessageEvent).data) as { gameId?: string; targetToken?: string };
+        if (!data.gameId || !data.targetToken) return;
+        storeToken(data.gameId, data.targetToken);
+        try { localStorage.removeItem(tokenKey(gameId)); } catch {}
+        queryClient.invalidateQueries({ queryKey: getGetGameQueryKey(data.gameId) });
+        source.close();
+        onRoomTransferRef.current?.({ gameId: data.gameId, targetToken: data.targetToken });
+      } catch {}
+    });
+
     source.onerror = () => {
       setSseConnected(false);
+      if (onRoomTransferRef.current && token && !recoveryInProgress.current) {
+        recoveryInProgress.current = true;
+        void fetch(`/api/games/${gameId}/claim`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ token, userToken: getUserToken() }),
+        })
+          .then(async (r) => {
+            const data = await r.json().catch(() => ({}));
+            return r.status === 409 && followMovedRoom(gameId, data);
+          })
+          .catch(() => false)
+          .then((wasMoved) => {
+            if (!wasMoved) queryClient.invalidateQueries({ queryKey: getGetGameQueryKey(gameId) });
+          })
+          .finally(() => { recoveryInProgress.current = false; });
+        return;
+      }
       // Force a poll immediately so the player doesn't see stale state
       // while EventSource auto-reconnects in the background.
       queryClient.invalidateQueries({ queryKey: getGetGameQueryKey(gameId) });
@@ -188,7 +231,7 @@ export function useLeaveRoom(gameId: string | null, token: string | null) {
         const err = await r.json().catch(() => ({}));
         throw new Error((err as any).error ?? "Failed to leave room");
       }
-      return r.json();
+      return r.json().catch(() => ({ success: true }));
     },
   });
 }
@@ -291,7 +334,7 @@ export function useGameAction(gameId: string, token?: string | null, callbacks?:
   });
 }
 
-// ── Facilitator assist controls (host token = player index 0) ────────────────
+// ── Facilitator assist controls (host token = -1 for spectator hosts, 0 for legacy) ──
 
 export function useNudgePlayer(gameId: string | null, token: string | null) {
   return useMutation({
@@ -408,6 +451,74 @@ export function useEndSession(gameId: string | null, token: string | null) {
     onSuccess: (data) => {
       if (gameId) queryClient.setQueryData(getGetGameQueryKey(gameId), data);
     },
+  });
+}
+
+export function useReorderWaitingPlayers(gameId: string | null, token: string | null) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async (playerIds: string[]) => {
+      const r = await fetch(`/api/games/${gameId}/waiting/reorder`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ token, userToken: getUserToken(), playerIds }),
+      });
+      if (!r.ok) {
+        const err = await r.json().catch(() => ({}));
+        throw new Error((err as any).error ?? "Failed to reorder players");
+      }
+      return r.json() as Promise<GameState>;
+    },
+    onSuccess: (data) => {
+      if (gameId) queryClient.setQueryData(getGetGameQueryKey(gameId), data);
+    },
+  });
+}
+
+export function useTransferWaitingPlayer(gameId: string | null, token: string | null) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async (data: { playerId: string; targetGameId: string }) => {
+      const r = await fetch(`/api/games/${gameId}/waiting/transfer`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ token, userToken: getUserToken(), ...data }),
+      });
+      if (!r.ok) {
+        const err = await r.json().catch(() => ({}));
+        throw new Error((err as any).error ?? "Failed to transfer player");
+      }
+      return r.json() as Promise<{ success: true }>;
+    },
+    onSuccess: () => {
+      if (gameId) queryClient.invalidateQueries({ queryKey: getGetGameQueryKey(gameId) });
+      queryClient.invalidateQueries({ queryKey: ["facilitator-rooms"] });
+    },
+  });
+}
+
+export interface FacilitatorRoomInfo {
+  gameId: string;
+  playerCount?: number;
+  maxPlayers?: number;
+  label?: string;
+}
+
+export function useFacilitatorRooms(enabled = true) {
+  return useQuery({
+    queryKey: ["facilitator-rooms"],
+    queryFn: async (): Promise<FacilitatorRoomInfo[]> => {
+      const userToken = getUserToken();
+      const r = await fetch(`/api/facilitator/rooms?userToken=${encodeURIComponent(userToken ?? "")}`);
+      if (!r.ok) {
+        const err = await r.json().catch(() => ({}));
+        throw new Error((err as any).error ?? "Failed to load facilitator rooms");
+      }
+      const result = await r.json();
+      return Array.isArray(result) ? result : (result.rooms ?? []);
+    },
+    enabled,
+    refetchInterval: 10000,
   });
 }
 

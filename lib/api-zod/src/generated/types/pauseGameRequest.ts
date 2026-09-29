@@ -8,5 +8,6 @@
 
 export interface PauseGameRequest {
   token: string;
+  userToken: string;
   paused: boolean;
 }

@@ -1,5 +1,5 @@
 import { useEffect } from "react";
-import { useParams, useLocation, Link } from "wouter";
+import { useParams, useLocation } from "wouter";
 import { motion } from "framer-motion";
 import compostHeroesLogo from "@assets/Compost_Heroes_Logo_no_background_1773537933517.png";
 import {
@@ -12,6 +12,10 @@ import {
   useSendHostMessage,
   useResolveQuestion,
   useEndSession,
+  useStartGame,
+  useReorderWaitingPlayers,
+  useTransferWaitingPlayer,
+  useFacilitatorRooms,
   getStoredToken,
   storeToken,
 } from "@/hooks/use-game";
@@ -36,6 +40,9 @@ import {
   Sparkles,
   Hourglass,
   ArrowLeft,
+  ArrowUp,
+  ArrowDown,
+  MoveRight,
   Crown,
   Megaphone,
   Send,
@@ -52,7 +59,7 @@ import { useState } from "react";
  * Facilitator dashboard for corporate sessions: all players' piles and win
  * progress at a glance, current turn/step, pending decision status, activity
  * feed, and assist controls (nudge / pause / step-in resolve).
- * Gated by the host token (player index 0).
+ * Gated by the host token (seat -1 in spectator-host rooms, seat 0 in legacy rooms).
  */
 export default function FacilitatorDashboard() {
   const { gameId } = useParams();
@@ -71,7 +78,10 @@ export default function FacilitatorDashboard() {
   if (gameId && urlToken) {
     storeToken(gameId, urlToken);
     try {
-      window.history.replaceState({}, "", window.location.pathname + window.location.hash);
+      const params = new URLSearchParams(window.location.search);
+      params.delete("token");
+      const query = params.toString();
+      window.history.replaceState({}, "", window.location.pathname + (query ? `?${query}` : "") + window.location.hash);
     } catch {}
   }
 
@@ -82,7 +92,8 @@ export default function FacilitatorDashboard() {
   // Re-validate the stored token → playerIndex (host gate)
   const { claim, loading: claimLoading } = useClaimSlot(gameId || null, isFacilitated && !!storedToken);
   const token = claim?.token ?? storedToken;
-  const isHost = claim ? claim.playerIndex === 0 : null;
+  const hostIsSpectator = (gameState as any)?.hostIsSpectator === true;
+  const isHost = claim ? claim.playerIndex === (hostIsSpectator ? -1 : 0) : null;
 
   const { sseConnected } = useGameSse(gameId || null, token, isFacilitated && !!token);
 
@@ -92,6 +103,10 @@ export default function FacilitatorDashboard() {
   const messageMutation = useSendHostMessage(gameId || null, token);
   const resolveQuestionMutation = useResolveQuestion(gameId || null, token);
   const endMutation = useEndSession(gameId || null, token);
+  const startMutation = useStartGame(gameId || null, token);
+  const reorderMutation = useReorderWaitingPlayers(gameId || null, token);
+  const transferMutation = useTransferWaitingPlayer(gameId || null, token);
+  const { data: facilitatorRooms = [] } = useFacilitatorRooms(isHost === true && isFacilitated);
 
   const [broadcastText, setBroadcastText] = useState("");
   const [confirmEnd, setConfirmEnd] = useState(false);
@@ -128,7 +143,7 @@ export default function FacilitatorDashboard() {
   useEffect(() => {
     if (isHost === false) {
       toast({ title: "Facilitator only", description: "Only the session host can open this dashboard.", variant: "destructive" });
-      setLocation(`/game/${gameId}/table`);
+      setLocation("/");
     }
   }, [isHost, gameId, setLocation, toast]);
 
@@ -184,6 +199,31 @@ export default function FacilitatorDashboard() {
     });
   };
 
+  const movePlayer = (index: number, direction: -1 | 1) => {
+    const next = [...gameState.players];
+    const target = index + direction;
+    const firstMovableIndex = hostIsSpectator ? 0 : 1;
+    if (index < firstMovableIndex || target < firstMovableIndex || target >= next.length) return;
+    [next[index], next[target]] = [next[target], next[index]];
+    // The legacy host occupies immutable seat 0; the reorder contract receives guests only.
+    const guestIds = next.slice(firstMovableIndex).map((player) => player.id);
+    reorderMutation.mutate(guestIds, {
+      onError: (e) => toast({ title: "Couldn't reorder players", description: (e as Error).message, variant: "destructive" }),
+    });
+  };
+
+  const startWaitingGame = () => {
+    startMutation.mutate(undefined, {
+      onError: (e) => toast({ title: "Can't start yet", description: (e as Error).message, variant: "destructive" }),
+    });
+  };
+
+  const availableTransferRooms = facilitatorRooms.filter((room) => {
+    const roomId = room.gameId ?? (room as any).id;
+    return roomId !== gameId && (!(room as any).phase || (room as any).phase === "waiting") &&
+      (!(room as any).mode || (room as any).mode === "facilitated");
+  });
+
   return (
     <div className="min-h-screen bg-background game-table-pattern flex flex-col text-foreground">
       {/* Header */}
@@ -215,13 +255,15 @@ export default function FacilitatorDashboard() {
           {paused ? <Pause className="w-3.5 h-3.5 shrink-0" /> : decision ? <Hourglass className="w-3.5 h-3.5 shrink-0" /> : <Sparkles className="w-3.5 h-3.5 shrink-0" />}
           <span className="truncate">{statusText}</span>
         </div>
-        <Link
-          href={`/game/${gameId}/table`}
-          className="flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-bold border bg-background/80 border-border text-muted-foreground hover:text-foreground shrink-0"
-          data-testid="back-to-table"
+        <Button
+          size="sm"
+          variant="ghost"
+          className="h-8 px-2.5 rounded-full text-xs font-bold shrink-0"
+          onClick={() => setLocation("/")}
+          data-testid="button-back-lobby"
         >
-          <ArrowLeft className="w-3.5 h-3.5" /> <span className="hidden sm:inline">My table</span>
-        </Link>
+          <ArrowLeft className="w-3.5 h-3.5 mr-1" /> <span className="hidden sm:inline">Lobby</span>
+        </Button>
         <div
           className={cn(
             "flex items-center gap-1 px-2 py-1 rounded-full text-[10px] font-bold border shrink-0",
@@ -336,6 +378,108 @@ export default function FacilitatorDashboard() {
             </Button>
           </div>
 
+          {/* Waiting-room host controls */}
+          {isWaitingRoom && (
+            <section className="bg-card/90 backdrop-blur-md border-2 border-primary/20 rounded-2xl p-3 sm:p-4 space-y-3" data-testid="facilitator-waiting-management">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <div>
+                  <h2 className="font-display font-bold text-base">Waiting room</h2>
+                  <p className="text-xs text-muted-foreground">
+                    {gameState.players.length} of 4 participants seated · game starts with 2–4
+                  </p>
+                </div>
+                <Button
+                  className="font-bold rounded-xl"
+                  disabled={gameState.players.length < 2 || gameState.players.length > 4 || startMutation.isPending}
+                  onClick={startWaitingGame}
+                  data-testid="button-start-facilitated-game"
+                >
+                  {startMutation.isPending ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : <Play className="w-4 h-4 mr-2" />}
+                  Start game ({gameState.players.length}/4)
+                </Button>
+              </div>
+              {gameState.players.length === 0 ? (
+                <div className="rounded-xl border border-dashed border-border p-5 text-center text-sm text-muted-foreground">
+                  No participants yet. Share the session code or table link to invite players.
+                </div>
+              ) : (
+                <div className="space-y-2">
+                  {gameState.players.map((player, index) => (
+                    <div key={player.id} className="flex flex-wrap items-center gap-2 rounded-xl border border-border bg-background/60 p-2.5" data-testid={`waiting-participant-${player.id}`}>
+                      <span className="flex-1 min-w-[8rem] font-semibold text-sm">{index + 1}. {player.name}</span>
+                      {!hostIsSpectator && index === 0 && (
+                        <span className="rounded-full bg-amber-500/10 px-2 py-1 text-[10px] font-bold uppercase tracking-wide text-amber-700 dark:text-amber-400">
+                          Host · fixed seat
+                        </span>
+                      )}
+                      {isFacilitated && (hostIsSpectator || index > 0) && (
+                        <>
+                          <div className="flex items-center">
+                            <Button
+                              size="icon"
+                              variant="outline"
+                              className="h-8 w-8 rounded-lg"
+                              title="Move participant up"
+                              aria-label={`Move ${player.name} up`}
+                              disabled={index === (hostIsSpectator ? 0 : 1) || reorderMutation.isPending}
+                              onClick={() => movePlayer(index, -1)}
+                              data-testid={`button-reorder-up-${player.id}`}
+                            ><ArrowUp className="w-4 h-4" /></Button>
+                            <Button
+                              size="icon"
+                              variant="outline"
+                              className="h-8 w-8 rounded-lg ml-1"
+                              title="Move participant down"
+                              aria-label={`Move ${player.name} down`}
+                              disabled={index === gameState.players.length - 1 || reorderMutation.isPending}
+                              onClick={() => movePlayer(index, 1)}
+                              data-testid={`button-reorder-down-${player.id}`}
+                            ><ArrowDown className="w-4 h-4" /></Button>
+                          </div>
+                          {availableTransferRooms.length > 0 && (
+                            <div className="flex items-center gap-1.5 w-full sm:w-auto sm:ml-auto">
+                              <select
+                                id={`transfer-room-${player.id}`}
+                                className="min-w-0 flex-1 sm:w-40 h-8 px-2 rounded-lg border border-border bg-background text-xs"
+                                defaultValue=""
+                                aria-label={`Transfer ${player.name} to another waiting room`}
+                                data-testid={`select-transfer-room-${player.id}`}
+                              >
+                                <option value="" disabled>Destination room…</option>
+                                {availableTransferRooms.map((room) => {
+                                  const roomId = room.gameId ?? (room as any).id;
+                                  return <option key={roomId} value={roomId}>{room.label || `Room ${roomId}`}</option>;
+                                })}
+                              </select>
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                className="h-8 rounded-lg shrink-0"
+                                disabled={transferMutation.isPending}
+                                onClick={() => {
+                                  const select = document.getElementById(`transfer-room-${player.id}`) as HTMLSelectElement | null;
+                                  if (!select?.value) {
+                                    toast({ title: "Choose a destination room first", variant: "destructive" });
+                                    return;
+                                  }
+                                  transferMutation.mutate({ playerId: player.id, targetGameId: select.value }, {
+                                    onSuccess: () => toast({ title: `${player.name} transferred`, description: "They'll be moved to the selected room." }),
+                                    onError: (e) => toast({ title: "Transfer failed", description: (e as Error).message, variant: "destructive" }),
+                                  });
+                                }}
+                                data-testid={`button-transfer-${player.id}`}
+                              ><MoveRight className="w-3.5 h-3.5 mr-1" /> Transfer</Button>
+                            </div>
+                          )}
+                        </>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              )}
+            </section>
+          )}
+
           {/* Participant questions */}
           {(gameState.questions ?? []).filter((q) => !q.resolved).length > 0 && (
             <div className="bg-orange-50 dark:bg-orange-950/20 border border-orange-200/70 dark:border-orange-800/40 rounded-2xl px-3 py-2 space-y-1.5">
@@ -419,7 +563,7 @@ export default function FacilitatorDashboard() {
                     <div className="min-w-0 flex-1">
                       <div className="font-display font-bold text-sm leading-tight truncate flex items-center gap-1.5">
                         {player.name}
-                        {idx === 0 && <Crown className="w-3 h-3 text-amber-500 shrink-0" />}
+                        {idx === 0 && !hostIsSpectator && <Crown className="w-3 h-3 text-amber-500 shrink-0" />}
                         {(player as any).isBot && <span className="text-[9px] font-bold uppercase bg-muted rounded-full px-1.5">Bot</span>}
                       </div>
                       <div className="text-[10px] text-muted-foreground">
@@ -476,7 +620,7 @@ export default function FacilitatorDashboard() {
                   )}
 
                   {/* Nudge */}
-                  {idx !== 0 && !(player as any).isBot && !isWaitingRoom && gameState.phase !== "game_over" && (
+                  {(hostIsSpectator || idx !== 0) && !(player as any).isBot && !isWaitingRoom && gameState.phase !== "game_over" && (
                     <Button
                       size="sm"
                       variant="secondary"

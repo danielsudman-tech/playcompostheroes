@@ -24,17 +24,22 @@ import {
   checkGamePassword,
   claimSlot,
   createGameId,
+  createSpectatorHostToken,
   gameHasPassword,
   getGame,
   getGamesByFacilitator,
+  getGameIdForToken,
   getTokenForPlayerIndex,
   getPlayerIndexForToken,
   removePlayerTokenByIndex,
   removeSseClient,
+  reorderWaitingPlayers,
   sendKickedEvent,
   sendNudgeEvent,
+  sendRoomTransferEvent,
   setGamePassword,
   storeGame,
+  transferWaitingPlayer,
 } from "../lib/gameStore.js";
 import { buildEffectAnnouncement, findEffectCard } from "../lib/facilitatedEffects.js";
 import { getUserByToken, isApprovedFacilitator, type CompostUser } from "../lib/userStore.js";
@@ -86,10 +91,12 @@ export function serializeState(state: GameState, viewerIndex?: number) {
     }
   }
 
-  // Questions are facilitator-directed: the host (index 0) sees them all;
+  // Questions are facilitator-directed: the host sees them all;
   // every other viewer only sees their own (to render the "Asked" state).
   let questions = state.questions;
-  if (isOnline && questions && viewerIndex !== 0) {
+  const isFacilitatorViewer = state.mode === "facilitated" &&
+    viewerIndex === (state.hostIsSpectator === true ? -1 : 0);
+  if (isOnline && questions && !isFacilitatorViewer) {
     const viewerId = viewerIndex !== undefined ? state.players[viewerIndex]?.id : undefined;
     questions = questions.filter((q) => q.playerId === viewerId);
   }
@@ -168,7 +175,7 @@ router.post("/games", async (req, res) => {
     }
     const max = Math.min(4, Math.max(2, Number(maxPlayers) || 4));
     const gameId = createGameId();
-    const state = createWaitingRoom(gameId, name, max, mode);
+    const state = createWaitingRoom(gameId, name, max, mode, mode === "facilitated");
     state.createdAt = Date.now();
     state.facilitatorId = creator.id;
     const label = ((req.body as { label?: string }).label ?? "").trim();
@@ -180,12 +187,15 @@ router.post("/games", async (req, res) => {
       await setGamePassword(gameId, password.trim());
     }
 
-    const claimed = await claimSlot(gameId);
-    const serialized = serializeState(state, claimed?.playerIndex);
+    const creatorToken = mode === "facilitated"
+      ? await createSpectatorHostToken(gameId)
+      : (await claimSlot(gameId))?.token ?? null;
+    const creatorIndex = mode === "facilitated" ? -1 : 0;
+    const serialized = serializeState(state, creatorToken ? creatorIndex : undefined);
     res.status(201).json({
       ...serialized,
       hasPassword: await gameHasPassword(gameId),
-      creatorToken: claimed?.token ?? null,
+      creatorToken,
     });
     return;
   }
@@ -261,6 +271,18 @@ router.post("/games/:gameId/claim", async (req, res) => {
     }
   }
 
+  if (existingToken) {
+    const tokenGameId = await getGameIdForToken(existingToken);
+    if (!tokenGameId) {
+      res.status(403).json({ error: "Invalid game token" });
+      return;
+    }
+    if (tokenGameId !== gameId) {
+      res.status(409).json({ redirectGameId: tokenGameId, targetToken: existingToken });
+      return;
+    }
+  }
+
   const claimed = await claimSlot(gameId, existingToken);
   if (!claimed) {
     res.status(409).json({ error: "Game is full — all player slots are taken" });
@@ -268,6 +290,10 @@ router.post("/games/:gameId/claim", async (req, res) => {
   }
 
   const { token, playerIndex } = claimed;
+  if (playerIndex === -1) {
+    res.json({ token, playerIndex, playerId: null, playerName: "Host" });
+    return;
+  }
   const player = state.players[playerIndex];
   res.json({ token, playerIndex, playerId: player.id, playerName: player.name });
 });
@@ -354,16 +380,19 @@ router.post("/games/:gameId/start", async (req, res) => {
   const viewerIndex = token
     ? (await getPlayerIndexForToken(gameId, token) ?? undefined)
     : undefined;
-  if (viewerIndex !== 0) {
-    res.status(403).json({ error: "Only the host can start the game" });
-    return;
-  }
   if (state.mode === "facilitated") {
+    if (viewerIndex !== (state.hostIsSpectator === true ? -1 : 0)) {
+      res.status(403).json({ error: "Only the host can start the game" });
+      return;
+    }
     const user = await getRegisteredUser(req.body?.userToken);
     if (!isApprovedFacilitator(user) || user?.id !== state.facilitatorId) {
       res.status(403).json({ error: "Facilitator approval is required" });
       return;
     }
+  } else if (viewerIndex !== 0) {
+    res.status(403).json({ error: "Only the host can start the game" });
+    return;
   }
 
   // Add bot players to fill empty slots before launching
@@ -463,8 +492,9 @@ router.post("/games/:gameId/nudge", async (req, res) => {
   const senderIndex = await getPlayerIndexForToken(gameId, token);
   if (senderIndex === undefined || senderIndex === null) { res.status(403).json({ error: "Invalid token" }); return; }
 
-  // Facilitated sessions: only the facilitator (host, player index 0) may nudge.
-  if (state.mode === "facilitated" && senderIndex !== 0) {
+  // Facilitated sessions: the reserved spectator (or legacy seat zero) may nudge.
+  const hostIndex = state.hostIsSpectator === true ? -1 : 0;
+  if (state.mode === "facilitated" && senderIndex !== hostIndex) {
     res.status(403).json({ error: "Only the facilitator (host) can nudge players" });
     return;
   }
@@ -489,18 +519,19 @@ router.post("/games/:gameId/nudge", async (req, res) => {
 
 // ─── Facilitator (host = player index 0) assist controls ────────────────────
 
-async function requireHost(gameId: string, token: string | undefined, userToken: unknown): Promise<{ state: GameState } | { status: number; error: string }> {
+async function requireHost(gameId: string, token: string | undefined, userToken: unknown): Promise<{ state: GameState; hostIndex: number } | { status: number; error: string }> {
   const state = await getGame(gameId);
   if (!state) return { status: 404, error: "Game not found" };
   if (state.mode !== "facilitated") return { status: 400, error: "Facilitator controls are only available in facilitated games" };
   if (!token) return { status: 403, error: "Host token required" };
   const idx = await getPlayerIndexForToken(gameId, token);
-  if (idx !== 0) return { status: 403, error: "Only the facilitator (host) can do this" };
+  const hostIndex = state.hostIsSpectator === true ? -1 : 0;
+  if (idx !== hostIndex) return { status: 403, error: "Only the facilitator (host) can do this" };
   const user = await getRegisteredUser(userToken);
   if (!isApprovedFacilitator(user) || user?.id !== state.facilitatorId) {
     return { status: 403, error: "Facilitator approval is required" };
   }
-  return { state };
+  return { state, hostIndex };
 }
 
 // POST /api/games/:gameId/pause — facilitator pauses/resumes the game
@@ -515,7 +546,7 @@ router.post("/games/:gameId/pause", async (req, res) => {
   state.log = [...state.log.slice(-49), paused === true ? "⏸️ The facilitator paused the game." : "▶️ The facilitator resumed the game."];
   await storeGame(state);
   broadcast(gameId, state);
-  res.json(serializeState(state, 0));
+  res.json(serializeState(state, check.hostIndex));
 });
 
 // GET /api/facilitator/rooms — sessions created by the signed-in facilitator
@@ -536,8 +567,10 @@ router.get("/facilitator/rooms", async (req, res) => {
       mode: g.mode,
       label: g.label ?? null,
       phase: g.phase,
-      playerCount: g.players.length,
-      maxPlayers: g.maxPlayers ?? 4,
+      playerCount: g.hostIsSpectator === true ? g.players.length : Math.max(0, g.players.length - 1),
+      maxPlayers: g.hostIsSpectator === true
+        ? (g.maxPlayers ?? 4)
+        : Math.max(0, (g.maxPlayers ?? 4) - 1),
       createdAt: g.createdAt ?? null,
       endedAt: g.endedAt ?? null,
       winner: g.winner,
@@ -563,7 +596,7 @@ router.post("/games/:gameId/host-token", async (req, res) => {
     res.status(403).json({ error: "You are not the facilitator of this session" });
     return;
   }
-  const token = await getTokenForPlayerIndex(gameId, 0);
+  const token = await getTokenForPlayerIndex(gameId, state.hostIsSpectator === true ? -1 : 0);
   if (!token) { res.status(404).json({ error: "Host seat token not found" }); return; }
   res.json({ token });
 });
@@ -588,7 +621,7 @@ router.post("/games/:gameId/message", async (req, res) => {
   state.log = [...state.log.slice(-49), `📢 Facilitator: ${trimmed.slice(0, 300)}`];
   await storeGame(state);
   broadcast(gameId, state);
-  res.json(serializeState(state, 0));
+  res.json(serializeState(state, check.hostIndex));
 });
 
 // POST /api/games/:gameId/question — participant flags a question for the facilitator
@@ -602,7 +635,8 @@ router.post("/games/:gameId/question", async (req, res) => {
   if (state.phase === "game_over") { res.status(409).json({ error: "The session has ended" }); return; }
   if (!token) { res.status(403).json({ error: "Player token required" }); return; }
   const idx = await getPlayerIndexForToken(gameId, token);
-  if (idx === null || idx === undefined || !state.players[idx]) {
+  if (idx === null || idx === undefined || !state.players[idx] ||
+      idx === (state.hostIsSpectator === true ? -1 : 0)) {
     res.status(403).json({ error: "Invalid player token" });
     return;
   }
@@ -641,7 +675,7 @@ router.post("/games/:gameId/question/:questionId/resolve", async (req, res) => {
   const state: GameState = { ...check.state, questions };
   await storeGame(state);
   broadcast(gameId, state);
-  res.json(serializeState(state, 0));
+  res.json(serializeState(state, check.hostIndex));
 });
 
 // POST /api/games/:gameId/end — facilitator ends the session for everyone
@@ -665,7 +699,7 @@ router.post("/games/:gameId/end", async (req, res) => {
   logEvent("game_ended_by_host", { gameId, metadata: { turnNumber: state.turnNumber, players: state.players.length } });
   await storeGame(state);
   broadcast(gameId, state);
-  res.json(serializeState(state, 0));
+  res.json(serializeState(state, check.hostIndex));
 });
 
 /**
@@ -726,7 +760,7 @@ router.post("/games/:gameId/facilitator-resolve", async (req, res) => {
   await storeGame(newState);
   broadcast(gameId, newState);
   logEvent("facilitator_resolve", { gameId, metadata: { decisionType: decision.type, ownerName: owner?.name } });
-  res.json(serializeState(newState, 0));
+  res.json(serializeState(newState, check.hostIndex));
 });
 
 // POST /api/games/:gameId/action — perform a game action
@@ -778,8 +812,15 @@ router.post("/games/:gameId/action", async (req, res) => {
       res.status(403).json({ error: "A valid player token is required for this game" });
       return;
     }
+    const facilitatorReset = state.mode === "facilitated" && type === "reset_game";
+    if (state.mode === "facilitated" &&
+        tokenIndex === (state.hostIsSpectator === true ? -1 : 0) &&
+        !facilitatorReset) {
+      res.status(403).json({ error: "The facilitator host cannot perform player gameplay actions" });
+      return;
+    }
     const tokenPlayerId = state.players[tokenIndex]?.id;
-    if (!tokenPlayerId || tokenPlayerId !== playerId) {
+    if (!facilitatorReset && (!tokenPlayerId || tokenPlayerId !== playerId)) {
       res.status(403).json({ error: "Token does not match the acting player" });
       return;
     }
@@ -830,7 +871,8 @@ router.post("/games/:gameId/action", async (req, res) => {
         if (state.mode === "facilitated") {
           const user = await getRegisteredUser(req.body?.userToken);
           const seat = token ? await getPlayerIndexForToken(gameId, token) : null;
-          if (seat !== 0 || !isApprovedFacilitator(user) || user?.id !== state.facilitatorId) {
+          const expectedHostIndex = state.hostIsSpectator === true ? -1 : 0;
+          if (seat !== expectedHostIndex || !isApprovedFacilitator(user) || user?.id !== state.facilitatorId) {
             res.status(403).json({ error: "Facilitator approval is required to reset this session" });
             return;
           }
@@ -847,16 +889,23 @@ router.post("/games/:gameId/action", async (req, res) => {
         });
         // Reuse the same gameId so the URL and React Query cache stay valid
         let newState = createGameState(gameId, playerNames, state.mode, botIndices, botSkillLevels);
+        // Player credentials and client state are bound to these IDs. A reset
+        // starts fresh gameplay but must keep each identity in the same seat.
+        newState.players = newState.players.map((player, index) => ({
+          ...player,
+          id: state.players[index].id,
+        }));
         // Preserve facilitator/session metadata across resets so the room
         // stays on its creator's dashboard.
         newState.facilitatorId = state.facilitatorId;
         newState.createdAt = state.createdAt;
         newState.label = state.label;
         newState.maxPlayers = state.maxPlayers;
+        if (state.hostIsSpectator === true) newState.hostIsSpectator = true;
         newState = runBotTurnsIfNeeded(newState);
         await storeGame(newState);
         broadcast(newState.gameId, newState);
-        res.json(serializeState(newState));
+        res.json(serializeState(newState, state.hostIsSpectator === true ? -1 : 0));
         return;
       }
       default:
@@ -936,6 +985,58 @@ router.post("/games/:gameId/action", async (req, res) => {
   res.json(serializeState(stateAfterBots, viewerIndex));
 });
 
+// POST /api/games/:gameId/waiting/reorder — facilitator rearranges waiting seats
+router.post("/games/:gameId/waiting/reorder", async (req, res) => {
+  const { gameId } = req.params as { gameId: string };
+  const { token, playerIds } = req.body as {
+    token?: string;
+    userToken?: string;
+    playerIds?: string[];
+  };
+  const check = await requireHost(gameId, token, req.body?.userToken);
+  if ("error" in check) { res.status(check.status).json({ error: check.error }); return; }
+  if (!Array.isArray(playerIds) || playerIds.some((id) => typeof id !== "string") ||
+      new Set(playerIds).size !== playerIds.length) {
+    res.status(400).json({ error: "playerIds must be a unique array of player IDs" });
+    return;
+  }
+  const state = await reorderWaitingPlayers(gameId, playerIds);
+  if (!state) {
+    res.status(409).json({ error: "Room changed or playerIds do not exactly match its waiting participants" });
+    return;
+  }
+  broadcast(gameId, state);
+  res.json(serializeState(state, check.hostIndex));
+});
+
+// POST /api/games/:gameId/waiting/transfer — move a waiting participant to a
+// different waiting room owned by this same approved facilitator.
+router.post("/games/:gameId/waiting/transfer", async (req, res) => {
+  const { gameId } = req.params as { gameId: string };
+  const { token, playerId, targetGameId } = req.body as {
+    token?: string;
+    userToken?: string;
+    playerId?: string;
+    targetGameId?: string;
+  };
+  const check = await requireHost(gameId, token, req.body?.userToken);
+  if ("error" in check) { res.status(check.status).json({ error: check.error }); return; }
+  if (!playerId || !targetGameId) {
+    res.status(400).json({ error: "playerId and targetGameId are required" });
+    return;
+  }
+  const result = await transferWaitingPlayer(gameId, targetGameId, playerId);
+  if (!result) {
+    res.status(409).json({ error: "Player could not be transferred; verify both rooms are waiting sessions with available space" });
+    return;
+  }
+  // Deliver the reconnect instruction before dropping the old event stream.
+  sendRoomTransferEvent(gameId, result.token, targetGameId, result.token);
+  broadcast(gameId, result.source);
+  broadcast(targetGameId, result.target);
+  res.json({ success: true });
+});
+
 // DELETE /api/games/:gameId/players/:playerId — leave or kick
 router.delete("/games/:gameId/players/:playerId", async (req, res) => {
   const { gameId, playerId } = req.params as { gameId: string; playerId: string };
@@ -967,7 +1068,15 @@ router.delete("/games/:gameId/players/:playerId", async (req, res) => {
   }
 
   const isSelf = requester?.id === playerId;
-  const isHost = requesterIndex === 0;
+  const hostIndex = state.mode === "facilitated"
+    ? (state.hostIsSpectator === true ? -1 : 0)
+    : 0;
+  const isHost = requesterIndex === hostIndex;
+
+  if (state.mode === "facilitated" && isHost && isSelf) {
+    res.status(403).json({ error: "The facilitator cannot leave through the player endpoint" });
+    return;
+  }
 
   if (!isSelf && !isHost) {
     res.status(403).json({ error: "Only the host can kick other players" });

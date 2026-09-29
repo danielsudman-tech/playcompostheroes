@@ -5,63 +5,27 @@
  * Compost Heroes Game API
  * OpenAPI spec version: 0.1.0
  */
-export interface HostTokenRecovery {
-  userToken: string;
-}
+export type GameStateMode = (typeof GameStateMode)[keyof typeof GameStateMode];
 
-export interface HostCredential {
-  token: string;
-  userToken: string;
-}
-
-export interface HostBroadcast {
-  token: string;
-  userToken: string;
-  text: string;
-}
-
-export interface ParticipantQuestion {
-  token: string;
-  text?: string;
-}
-
-export interface FacilitatorApproval {
-  approved: boolean;
-}
-
-export interface FacilitatorRole {
-  /** @nullable */
-  role: string | null;
-}
-
-export interface HealthStatus {
-  status: string;
-}
-
-export interface ErrorResponse {
-  error: string;
-}
-
-export type CreateGameRequestMode =
-  (typeof CreateGameRequestMode)[keyof typeof CreateGameRequestMode];
-
-export const CreateGameRequestMode = {
+export const GameStateMode = {
   facilitator: "facilitator",
   standalone: "standalone",
   online: "online",
   facilitated: "facilitated",
 } as const;
 
-export interface CreateGameRequest {
-  /**
-   * @minItems 2
-   * @maxItems 4
-   */
-  playerNames?: string[];
-  mode: CreateGameRequestMode;
-  /** Registered-account token. Required for online creation; an approved facilitator's token is required for facilitator and facilitated modes. */
-  userToken?: string;
-}
+export type GameStatePhase =
+  (typeof GameStatePhase)[keyof typeof GameStatePhase];
+
+export const GameStatePhase = {
+  waiting: "waiting",
+  setup: "setup",
+  draw: "draw",
+  play: "play",
+  effect_resolution: "effect_resolution",
+  end_turn: "end_turn",
+  game_over: "game_over",
+} as const;
 
 export type CardType = (typeof CardType)[keyof typeof CardType];
 
@@ -166,20 +130,6 @@ export interface EffectAnnouncement {
   events: EffectEvent[];
 }
 
-export interface FacilitatorRoomSummary {
-  gameId: string;
-  mode: string;
-  label?: string | null;
-  phase: string;
-  playerCount: number;
-  maxPlayers: number;
-  createdAt?: number | null;
-  endedAt?: number | null;
-  winner?: string | null;
-  paused: boolean;
-  openQuestions: number;
-}
-
 export interface QuestionFlag {
   id: string;
   playerId: string;
@@ -188,28 +138,6 @@ export interface QuestionFlag {
   ts: number;
   resolved: boolean;
 }
-
-export type GameStateMode = (typeof GameStateMode)[keyof typeof GameStateMode];
-
-export const GameStateMode = {
-  facilitator: "facilitator",
-  standalone: "standalone",
-  online: "online",
-  facilitated: "facilitated",
-} as const;
-
-export type GameStatePhase =
-  (typeof GameStatePhase)[keyof typeof GameStatePhase];
-
-export const GameStatePhase = {
-  waiting: "waiting",
-  setup: "setup",
-  draw: "draw",
-  play: "play",
-  effect_resolution: "effect_resolution",
-  end_turn: "end_turn",
-  game_over: "game_over",
-} as const;
 
 export type GameStateHostMessage = {
   id: string;
@@ -243,18 +171,143 @@ export interface GameState {
   endedAt?: number | null;
   label?: string | null;
   facilitatorId?: string | null;
+  /** True for new facilitated rooms where the host is a spectator outside player seats; absent on legacy rooms. */
+  hostIsSpectator?: boolean;
   endedByHost?: boolean;
   hostMessage?: GameStateHostMessage;
   questions?: QuestionFlag[];
 }
 
+export type CreatedGameResponse = GameState & {
+  /**
+   * Facilitated host token (player index -1); online creator token uses player index 0.
+   * @nullable
+   */
+  creatorToken?: string | null;
+};
+
+export interface WaitingRoomReorderInput {
+  /** Host token (player index -1 for new rooms, 0 for legacy rooms). */
+  token: string;
+  userToken: string;
+  playerIds: string[];
+}
+
+export interface GameSeatClaimInput {
+  /** Existing seat token. A token moved to another room receives a redirect response instead of claiming a new seat. */
+  token?: string;
+  password?: string;
+  userToken?: string;
+}
+
+export interface GameSeatClaimResult {
+  token: string;
+  /** Host recovery may return the reserved index -1. */
+  playerIndex: number;
+  /** @nullable */
+  playerId: string | null;
+  playerName: string;
+}
+
+export interface GameSeatClaimConflict {
+  error?: string;
+  redirectGameId?: string;
+  targetToken?: string;
+}
+
+export interface WaitingRoomTransferInput {
+  /** Host token (player index -1 for new rooms, 0 for legacy rooms). */
+  token: string;
+  userToken: string;
+  playerId: string;
+  targetGameId: string;
+}
+
+export interface WaitingRoomTransferResult {
+  success: boolean;
+}
+
+export interface HostTokenRecovery {
+  userToken: string;
+}
+
+export interface HostCredential {
+  token: string;
+  userToken: string;
+}
+
+export interface HostBroadcast {
+  token: string;
+  userToken: string;
+  text: string;
+}
+
+export interface ParticipantQuestion {
+  token: string;
+  text?: string;
+}
+
+export interface FacilitatorApproval {
+  approved: boolean;
+}
+
+export interface FacilitatorRole {
+  /** @nullable */
+  role: string | null;
+}
+
+export interface HealthStatus {
+  status: string;
+}
+
+export interface ErrorResponse {
+  error: string;
+}
+
+export type CreateGameRequestMode =
+  (typeof CreateGameRequestMode)[keyof typeof CreateGameRequestMode];
+
+export const CreateGameRequestMode = {
+  facilitator: "facilitator",
+  standalone: "standalone",
+  online: "online",
+  facilitated: "facilitated",
+} as const;
+
+export interface CreateGameRequest {
+  /**
+   * @minItems 2
+   * @maxItems 4
+   */
+  playerNames?: string[];
+  mode: CreateGameRequestMode;
+  /** Registered-account token. Required for online creation; an approved facilitator's token is required for facilitator and facilitated modes. */
+  userToken?: string;
+}
+
+export interface FacilitatorRoomSummary {
+  gameId: string;
+  mode: string;
+  label?: string | null;
+  phase: string;
+  playerCount: number;
+  maxPlayers: number;
+  createdAt?: number | null;
+  endedAt?: number | null;
+  winner?: string | null;
+  paused: boolean;
+  openQuestions: number;
+}
+
 export interface PauseGameRequest {
   token: string;
+  userToken: string;
   paused: boolean;
 }
 
 export interface FacilitatorResolveRequest {
   token: string;
+  userToken: string;
 }
 
 export type GameActionType =
@@ -276,12 +329,21 @@ export interface GameAction {
   type: GameActionType;
   playerId: string;
   token?: string | null;
+  /** Required for facilitated reset actions. */
+  userToken?: string;
   targetFunction?: string | null;
   cardId?: string | null;
   targetPlayerId?: string | null;
   targetCardId?: string | null;
   decisionData?: GameActionDecisionData;
 }
+
+export type GetGameParams = {
+  /**
+   * Player token or reserved spectator-host token (player index -1 for new facilitated rooms, index 0 for legacy rooms).
+   */
+  token?: string;
+};
 
 export type GetFacilitatorRoomsParams = {
   userToken: string;

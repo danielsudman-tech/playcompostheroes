@@ -106,6 +106,8 @@ export interface GameState {
   label?: string;
   /** Registered user id of the room creator (online/facilitated). */
   facilitatorId?: string;
+  /** New facilitated sessions keep the facilitator outside the player seats. */
+  hostIsSpectator?: boolean;
   /** Facilitated mode: latest broadcast message from the facilitator, shown to all tables. */
   hostMessage?: { id: string; text: string; ts: number } | null;
   /** Facilitated mode: participant question flags for the facilitator. */
@@ -2513,7 +2515,8 @@ export function createWaitingRoom(
   gameId: string,
   hostName: string,
   maxPlayers: number,
-  mode: "online" | "facilitated"
+  mode: "online" | "facilitated",
+  hostIsSpectator = false
 ): GameState {
   const host: PlayerState = {
     id: "player_0",
@@ -2530,7 +2533,7 @@ export function createWaitingRoom(
     mode,
     phase: "waiting",
     currentPlayerIndex: 0,
-    players: [host],
+    players: mode === "facilitated" && hostIsSpectator ? [] : [host],
     deck: [],
     discardPile: [],
     activeModifiers: [],
@@ -2544,6 +2547,7 @@ export function createWaitingRoom(
     ongoingActionCard: null,
     ongoingBenefitUsedThisTurn: false,
     maxPlayers,
+    ...(mode === "facilitated" && hostIsSpectator ? { hostIsSpectator: true } : {}),
   };
 }
 
@@ -2601,7 +2605,9 @@ export function addPlayerToRoom(
 
   const playerIndex = state.players.length;
   const newPlayer: PlayerState = {
-    id: `player_${playerIndex}`,
+    id: state.mode === "facilitated" && state.hostIsSpectator === true
+      ? `player_${Math.random().toString(36).slice(2, 14)}`
+      : `player_${playerIndex}`,
     name: playerName,
     hand: [],
     compostPile: [],

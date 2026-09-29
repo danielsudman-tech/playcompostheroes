@@ -41,6 +41,8 @@ export interface GameState {
   endedAt?: number | null;
   label?: string | null;
   facilitatorId?: string | null;
+  /** True for new facilitated rooms where the host is a spectator outside player seats; absent on legacy rooms. */
+  hostIsSpectator?: boolean;
   endedByHost?: boolean;
   hostMessage?: GameStateHostMessage;
   questions?: QuestionFlag[];

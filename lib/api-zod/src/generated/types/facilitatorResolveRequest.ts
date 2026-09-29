@@ -8,4 +8,5 @@
 
 export interface FacilitatorResolveRequest {
   token: string;
+  userToken: string;
 }

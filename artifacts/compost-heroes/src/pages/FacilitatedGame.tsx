@@ -12,6 +12,7 @@ import {
   useClaimSlot,
   useGameSse,
   useAskQuestion,
+  useLeaveRoom,
   getStoredToken,
   storeToken,
 } from "@/hooks/use-game";
@@ -50,6 +51,7 @@ import {
   Megaphone,
   Hand,
   Send,
+  LogOut,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -112,7 +114,10 @@ export default function FacilitatedGame() {
   if (gameId && urlSeatToken) {
     storeToken(gameId, urlSeatToken);
     try {
-      window.history.replaceState({}, "", window.location.pathname + window.location.hash);
+      const params = new URLSearchParams(window.location.search);
+      params.delete("token");
+      const query = params.toString();
+      window.history.replaceState({}, "", window.location.pathname + (query ? `?${query}` : "") + window.location.hash);
     } catch {}
   }
 
@@ -122,6 +127,7 @@ export default function FacilitatedGame() {
 
   const { claim, loading: claimLoading } = useClaimSlot(gameId || null, isFacilitated && !!storedToken);
   const localToken = claim?.token ?? storedToken;
+  const hostIsSpectator = (gameState as any)?.hostIsSpectator === true;
 
   const handleKicked = useCallback(() => {
     if (gameId) {
@@ -131,13 +137,23 @@ export default function FacilitatedGame() {
     setLocation("/");
   }, [gameId, toast, setLocation]);
 
-  const { sseConnected } = useGameSse(gameId || null, localToken, isFacilitated && !!localToken, handleKicked, (from) => {
-    toast({ title: "It's your turn! 🌱", description: `${from} is waiting for you to play.`, duration: 6000 });
-  });
+  const handleRoomTransfer = useCallback(({ gameId: targetGameId }: { gameId: string; targetToken: string }) => {
+    window.location.assign(`/game/${encodeURIComponent(targetGameId)}/table`);
+  }, []);
+
+  const { sseConnected } = useGameSse(
+    gameId || null,
+    localToken,
+    isFacilitated && !!localToken,
+    handleKicked,
+    (from) => toast({ title: "It's your turn! 🌱", description: `${from} is waiting for you to play.`, duration: 6000 }),
+    handleRoomTransfer
+  );
 
   const actionMutation = useGameAction(gameId || "", localToken, {
     onError: (msg) => toast({ title: "Action failed", description: msg, variant: "destructive" }),
   });
+  const leaveRoom = useLeaveRoom(gameId || null, localToken);
 
   const localPlayerId = claim?.playerId ?? null;
 
@@ -186,6 +202,12 @@ export default function FacilitatedGame() {
   }, [gameState?.mode, gameState?.phase, storedToken, gameId, setLocation, gameState]);
 
   useEffect(() => {
+    if (hostIsSpectator && claim?.playerIndex === -1) {
+      setLocation(`/game/${gameId}/host`);
+    }
+  }, [hostIsSpectator, claim?.playerIndex, gameId, setLocation]);
+
+  useEffect(() => {
     if (gameState?.phase === "game_over" && gameState.winner) {
       const end = Date.now() + 2500;
       const frame = () => {
@@ -197,7 +219,7 @@ export default function FacilitatedGame() {
     }
   }, [gameState?.phase, gameState?.winner]);
 
-  if (isLoading || (isFacilitated && claimLoading && !localToken)) {
+  if (isLoading || (isFacilitated && claimLoading)) {
     return (
       <div className="min-h-screen bg-background flex flex-col items-center justify-center">
         <Loader2 className="w-10 h-10 text-primary animate-spin mb-3" />
@@ -219,6 +241,27 @@ export default function FacilitatedGame() {
   if (gameState.mode !== "facilitated") {
     return null;
   }
+
+  if (hostIsSpectator && claim?.playerIndex === -1) return null;
+
+  const waitingHostMessage = gameState.hostMessage && (
+    <div className="w-full max-w-md mb-4 rounded-2xl border border-primary/30 bg-primary/10 px-4 py-3 text-sm font-semibold text-foreground" data-testid="waiting-host-message">
+      <span className="text-primary font-bold">Facilitator:</span> {gameState.hostMessage.text}
+    </div>
+  );
+
+  const handleLeaveTable = () => {
+    if (!localPlayerId) return;
+    leaveRoom.mutate(localPlayerId, {
+      onSuccess: () => {
+        if (gameId) {
+          try { localStorage.removeItem(`compost_token_${gameId}`); } catch {}
+        }
+        setLocation("/");
+      },
+      onError: (err) => toast({ title: "Couldn't leave table", description: err.message, variant: "destructive" }),
+    });
+  };
 
   if (gameState.phase === "waiting") {
     const handleJoin = async (e: React.FormEvent) => {
@@ -252,6 +295,7 @@ export default function FacilitatedGame() {
     return (
       <div className="min-h-screen bg-background game-table-pattern flex flex-col items-center justify-center p-6">
         <img src={compostHeroesLogo} alt="Compost Heroes" className="w-40 mb-6 drop-shadow-md" draggable={false} />
+        {waitingHostMessage}
         {localToken ? (
           <div className="bg-card border-2 border-border rounded-3xl p-8 max-w-md w-full text-center shadow-xl">
             <Loader2 className="w-8 h-8 text-primary animate-spin mx-auto mb-4" />
@@ -267,6 +311,18 @@ export default function FacilitatedGame() {
                 ))}
               </div>
             </div>
+            {localPlayerId && claim && claim.playerIndex >= 0 && (
+              <Button
+                variant="outline"
+                className="w-full mt-4 font-bold"
+                onClick={handleLeaveTable}
+                disabled={leaveRoom.isPending}
+                data-testid="button-leave-table"
+              >
+                {leaveRoom.isPending ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : <LogOut className="w-4 h-4 mr-2" />}
+                Leave table
+              </Button>
+            )}
           </div>
         ) : (
           <form onSubmit={handleJoin} className="bg-card border-2 border-border rounded-3xl p-8 max-w-md w-full text-center shadow-xl">

@@ -74,6 +74,15 @@ export const GetGameParams = zod.object({
   gameId: zod.coerce.string(),
 });
 
+export const GetGameQueryParams = zod.object({
+  token: zod.coerce
+    .string()
+    .optional()
+    .describe(
+      "Player token or reserved spectator-host token (player index -1 for new facilitated rooms, index 0 for legacy rooms).",
+    ),
+});
+
 export const GetGameResponse = zod.object({
   gameId: zod.string(),
   mode: zod.enum(["facilitator", "standalone", "online", "facilitated"]),
@@ -223,6 +232,12 @@ export const GetGameResponse = zod.object({
   endedAt: zod.number().nullish(),
   label: zod.string().nullish(),
   facilitatorId: zod.string().nullish(),
+  hostIsSpectator: zod
+    .boolean()
+    .optional()
+    .describe(
+      "True for new facilitated rooms where the host is a spectator outside player seats; absent on legacy rooms.",
+    ),
   endedByHost: zod.boolean().optional(),
   hostMessage: zod
     .object({
@@ -243,6 +258,34 @@ export const GetGameResponse = zod.object({
       }),
     )
     .optional(),
+});
+
+/**
+ * An existing token only resumes the seat it already owns. Invalid tokens never claim another seat. If an existing token was transferred to another room, returns HTTP 409 with redirectGameId and targetToken.
+ * @summary Claim or recover a game seat
+ */
+export const ClaimGameSeatParams = zod.object({
+  gameId: zod.coerce.string(),
+});
+
+export const ClaimGameSeatBody = zod.object({
+  token: zod
+    .string()
+    .optional()
+    .describe(
+      "Existing seat token. A token moved to another room receives a redirect response instead of claiming a new seat.",
+    ),
+  password: zod.string().optional(),
+  userToken: zod.string().optional(),
+});
+
+export const ClaimGameSeatResponse = zod.object({
+  token: zod.string(),
+  playerIndex: zod
+    .number()
+    .describe("Host recovery may return the reserved index -1."),
+  playerId: zod.string().nullable(),
+  playerName: zod.string(),
 });
 
 /**
@@ -270,7 +313,8 @@ export const GetFacilitatorRoomsResponse = zod.array(
 );
 
 /**
- * @summary Recover the host seat token for a session's creator
+ * Returns the reserved player-index -1 host token for new spectator-host rooms, or player-index 0 for legacy rooms.
+ * @summary Recover the facilitator token for a session's creator
  */
 export const RecoverHostTokenParams = zod.object({
   gameId: zod.coerce.string(),
@@ -446,6 +490,12 @@ export const SendHostMessageResponse = zod.object({
   endedAt: zod.number().nullish(),
   label: zod.string().nullish(),
   facilitatorId: zod.string().nullish(),
+  hostIsSpectator: zod
+    .boolean()
+    .optional()
+    .describe(
+      "True for new facilitated rooms where the host is a spectator outside player seats; absent on legacy rooms.",
+    ),
   endedByHost: zod.boolean().optional(),
   hostMessage: zod
     .object({
@@ -646,6 +696,12 @@ export const ResolveQuestionResponse = zod.object({
   endedAt: zod.number().nullish(),
   label: zod.string().nullish(),
   facilitatorId: zod.string().nullish(),
+  hostIsSpectator: zod
+    .boolean()
+    .optional()
+    .describe(
+      "True for new facilitated rooms where the host is a spectator outside player seats; absent on legacy rooms.",
+    ),
   endedByHost: zod.boolean().optional(),
   hostMessage: zod
     .object({
@@ -829,6 +885,12 @@ export const EndSessionResponse = zod.object({
   endedAt: zod.number().nullish(),
   label: zod.string().nullish(),
   facilitatorId: zod.string().nullish(),
+  hostIsSpectator: zod
+    .boolean()
+    .optional()
+    .describe(
+      "True for new facilitated rooms where the host is a spectator outside player seats; absent on legacy rooms.",
+    ),
   endedByHost: zod.boolean().optional(),
   hostMessage: zod
     .object({
@@ -860,6 +922,7 @@ export const PauseGameParams = zod.object({
 
 export const PauseGameBody = zod.object({
   token: zod.string(),
+  userToken: zod.string(),
   paused: zod.boolean(),
 });
 
@@ -1012,6 +1075,12 @@ export const PauseGameResponse = zod.object({
   endedAt: zod.number().nullish(),
   label: zod.string().nullish(),
   facilitatorId: zod.string().nullish(),
+  hostIsSpectator: zod
+    .boolean()
+    .optional()
+    .describe(
+      "True for new facilitated rooms where the host is a spectator outside player seats; absent on legacy rooms.",
+    ),
   endedByHost: zod.boolean().optional(),
   hostMessage: zod
     .object({
@@ -1043,6 +1112,7 @@ export const FacilitatorResolveParams = zod.object({
 
 export const FacilitatorResolveBody = zod.object({
   token: zod.string(),
+  userToken: zod.string(),
 });
 
 export const FacilitatorResolveResponse = zod.object({
@@ -1194,6 +1264,12 @@ export const FacilitatorResolveResponse = zod.object({
   endedAt: zod.number().nullish(),
   label: zod.string().nullish(),
   facilitatorId: zod.string().nullish(),
+  hostIsSpectator: zod
+    .boolean()
+    .optional()
+    .describe(
+      "True for new facilitated rooms where the host is a spectator outside player seats; absent on legacy rooms.",
+    ),
   endedByHost: zod.boolean().optional(),
   hostMessage: zod
     .object({
@@ -1235,6 +1311,10 @@ export const PerformActionBody = zod.object({
   ]),
   playerId: zod.string(),
   token: zod.string().nullish(),
+  userToken: zod
+    .string()
+    .optional()
+    .describe("Required for facilitated reset actions."),
   targetFunction: zod.string().nullish(),
   cardId: zod.string().nullish(),
   targetPlayerId: zod.string().nullish(),
@@ -1391,6 +1471,12 @@ export const PerformActionResponse = zod.object({
   endedAt: zod.number().nullish(),
   label: zod.string().nullish(),
   facilitatorId: zod.string().nullish(),
+  hostIsSpectator: zod
+    .boolean()
+    .optional()
+    .describe(
+      "True for new facilitated rooms where the host is a spectator outside player seats; absent on legacy rooms.",
+    ),
   endedByHost: zod.boolean().optional(),
   hostMessage: zod
     .object({
@@ -1411,4 +1497,222 @@ export const PerformActionResponse = zod.object({
       }),
     )
     .optional(),
+});
+
+/**
+ * Requires the approved facilitator account and its host token. playerIds must contain each participant ID exactly once; a legacy host seat is fixed and excluded. Returns the serialized room state. Seat tokens are remapped atomically with player order.
+ * @summary Reorder participant seats in a facilitated waiting room
+ */
+export const ReorderWaitingPlayersParams = zod.object({
+  gameId: zod.coerce.string(),
+});
+
+export const ReorderWaitingPlayersBody = zod.object({
+  token: zod
+    .string()
+    .describe(
+      "Host token (player index -1 for new rooms, 0 for legacy rooms).",
+    ),
+  userToken: zod.string(),
+  playerIds: zod.array(zod.string()),
+});
+
+export const ReorderWaitingPlayersResponse = zod.object({
+  gameId: zod.string(),
+  mode: zod.enum(["facilitator", "standalone", "online", "facilitated"]),
+  phase: zod.enum([
+    "waiting",
+    "setup",
+    "draw",
+    "play",
+    "effect_resolution",
+    "end_turn",
+    "game_over",
+  ]),
+  currentPlayerIndex: zod.number(),
+  players: zod.array(
+    zod.object({
+      id: zod.string(),
+      name: zod.string(),
+      hand: zod.array(
+        zod.object({
+          id: zod.string(),
+          name: zod.string(),
+          type: zod.enum(["hero", "action"]),
+          layer: zod.string().nullable(),
+          effectType: zod.enum(["instant", "ongoing"]),
+          cardText: zod.string(),
+          factText: zod.string(),
+          function: zod.string(),
+          imageKey: zod.string().nullable(),
+          baseId: zod.string().optional(),
+          alternateFunctions: zod.array(zod.string()).optional(),
+          chosenFunction: zod.string().optional(),
+        }),
+      ),
+      compostPile: zod.array(
+        zod.object({
+          id: zod.string(),
+          name: zod.string(),
+          type: zod.enum(["hero", "action"]),
+          layer: zod.string().nullable(),
+          effectType: zod.enum(["instant", "ongoing"]),
+          cardText: zod.string(),
+          factText: zod.string(),
+          function: zod.string(),
+          imageKey: zod.string().nullable(),
+          baseId: zod.string().optional(),
+          alternateFunctions: zod.array(zod.string()).optional(),
+          chosenFunction: zod.string().optional(),
+        }),
+      ),
+      skipsNextTurn: zod.boolean(),
+      maxHandSize: zod.number(),
+      drawsExtraCard: zod.boolean(),
+      isBot: zod.boolean().optional(),
+      botSkillLevel: zod.enum(["easy", "medium", "hard"]).optional(),
+    }),
+  ),
+  deckCount: zod.number(),
+  discardPile: zod.array(
+    zod.object({
+      id: zod.string(),
+      name: zod.string(),
+      type: zod.enum(["hero", "action"]),
+      layer: zod.string().nullable(),
+      effectType: zod.enum(["instant", "ongoing"]),
+      cardText: zod.string(),
+      factText: zod.string(),
+      function: zod.string(),
+      imageKey: zod.string().nullable(),
+      baseId: zod.string().optional(),
+      alternateFunctions: zod.array(zod.string()).optional(),
+      chosenFunction: zod.string().optional(),
+    }),
+  ),
+  activeModifiers: zod.array(
+    zod.object({
+      cardId: zod.string(),
+      cardName: zod.string(),
+      effect: zod.string(),
+      appliedByPlayerId: zod.string(),
+    }),
+  ),
+  pendingDecision: zod
+    .object({
+      type: zod.string(),
+      playerId: zod.string(),
+      cardId: zod.string(),
+      options: zod.array(zod.record(zod.string(), zod.unknown())).optional(),
+      prompt: zod.string(),
+      meta: zod.record(zod.string(), zod.unknown()).optional(),
+    })
+    .nullable(),
+  lastEffect: zod
+    .object({
+      id: zod.string(),
+      cardId: zod.string(),
+      cardName: zod.string(),
+      cardText: zod.string(),
+      imageKey: zod.string().nullable(),
+      playedById: zod.string(),
+      playedByName: zod.string(),
+      outcome: zod.array(zod.string()),
+      events: zod.array(
+        zod.object({
+          kind: zod.enum([
+            "draw",
+            "discard",
+            "transfer",
+            "swap",
+            "skip",
+            "pile_shift",
+            "modifier",
+            "info",
+          ]),
+          playerIds: zod.array(zod.string()).optional(),
+          text: zod.string(),
+        }),
+      ),
+    })
+    .nullish(),
+  log: zod.array(zod.string()),
+  winner: zod.string().nullable(),
+  turnNumber: zod.number(),
+  extraTurn: zod.boolean().optional(),
+  heroPlayedThisTurn: zod.boolean().optional(),
+  actionPlayedThisTurn: zod.boolean().optional(),
+  ongoingActionCard: zod
+    .object({
+      id: zod.string(),
+      name: zod.string(),
+      type: zod.enum(["hero", "action"]),
+      layer: zod.string().nullable(),
+      effectType: zod.enum(["instant", "ongoing"]),
+      cardText: zod.string(),
+      factText: zod.string(),
+      function: zod.string(),
+      imageKey: zod.string().nullable(),
+      baseId: zod.string().optional(),
+      alternateFunctions: zod.array(zod.string()).optional(),
+      chosenFunction: zod.string().optional(),
+    })
+    .nullish(),
+  ongoingBenefitUsedThisTurn: zod.boolean().optional(),
+  maxPlayers: zod.number().optional(),
+  paused: zod.boolean().optional(),
+  hasPassword: zod.boolean().optional(),
+  createdAt: zod.number().nullish(),
+  endedAt: zod.number().nullish(),
+  label: zod.string().nullish(),
+  facilitatorId: zod.string().nullish(),
+  hostIsSpectator: zod
+    .boolean()
+    .optional()
+    .describe(
+      "True for new facilitated rooms where the host is a spectator outside player seats; absent on legacy rooms.",
+    ),
+  endedByHost: zod.boolean().optional(),
+  hostMessage: zod
+    .object({
+      id: zod.string(),
+      text: zod.string(),
+      ts: zod.number(),
+    })
+    .nullish(),
+  questions: zod
+    .array(
+      zod.object({
+        id: zod.string(),
+        playerId: zod.string(),
+        playerName: zod.string(),
+        text: zod.string(),
+        ts: zod.number(),
+        resolved: zod.boolean(),
+      }),
+    )
+    .optional(),
+});
+
+/**
+ * Requires the approved facilitator account and host token. Both rooms must be waiting sessions owned by the same facilitator and the target must have space. The moved participant receives an SSE room_transfer event with data {gameId,targetToken}; the old stream is then disconnected and its token is invalid in the source room. Both rooms are broadcast after the atomic transfer.
+ * @summary Transfer a participant between facilitated waiting rooms
+ */
+export const TransferWaitingPlayerParams = zod.object({
+  gameId: zod.coerce.string(),
+});
+
+export const TransferWaitingPlayerBody = zod.object({
+  token: zod
+    .string()
+    .describe(
+      "Host token (player index -1 for new rooms, 0 for legacy rooms).",
+    ),
+  userToken: zod.string(),
+  playerId: zod.string(),
+  targetGameId: zod.string(),
+});
+
+export const TransferWaitingPlayerResponse = zod.object({
+  success: zod.literal(true),
 });

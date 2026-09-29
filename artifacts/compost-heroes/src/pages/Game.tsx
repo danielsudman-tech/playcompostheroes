@@ -59,6 +59,7 @@ export default function Game() {
   // Facilitated mode reuses the whole online flow (tokens, SSE, hidden hands)
   // and layers guided announcements/decisions on top.
   const isFacilitated = gameState?.mode === "facilitated";
+  const hostIsSpectator = (gameState as any)?.hostIsSpectator === true;
   const isOnline = gameState?.mode === "online" || isFacilitated;
   const isWaiting = gameState?.phase === "waiting";
 
@@ -78,13 +79,16 @@ export default function Game() {
     toast({ title: "You were removed from the room", variant: "destructive" });
     setLocation("/");
   }, [gameId, toast, setLocation]);
+  const handleRoomTransfer = useCallback(({ gameId: targetGameId }: { gameId: string; targetToken: string }) => {
+    window.location.assign(`/game/${encodeURIComponent(targetGameId)}/table`);
+  }, []);
   const { sseConnected } = useGameSse(gameId || null, localToken, isOnline && !!localToken, handleKicked, (from) => {
     toast({
       title: "It's your turn! 🌱",
       description: `${from} is waiting for you to play.`,
       duration: 6000,
     });
-  });
+  }, isFacilitated ? handleRoomTransfer : undefined);
 
   // 5. Join-form state (for waiting-room newcomers)
   const joinRoom = useJoinRoom(gameId || null);
@@ -141,10 +145,14 @@ export default function Game() {
   // Facilitated rooms use the dedicated Zoom-friendly table layout once play begins.
   // Online mode is untouched — this only redirects facilitated-mode players with a token.
   useEffect(() => {
+    if (isFacilitated && hostIsSpectator && claim?.playerIndex === -1) {
+      setLocation(`/game/${gameId}/host`);
+      return;
+    }
     if (isFacilitated && gameState && gameState.phase !== "waiting" && localToken) {
       setLocation(`/game/${gameId}/table`);
     }
-  }, [isFacilitated, gameState?.phase, localToken, gameId, setLocation]);
+  }, [isFacilitated, hostIsSpectator, claim?.playerIndex, gameState?.phase, localToken, gameId, setLocation]);
 
   useEffect(() => {
     // Pass screen only makes sense in Pass & Play (same device)
@@ -216,7 +224,7 @@ export default function Game() {
     }
   }, [gameState?.phase, gameState?.winner]);
 
-  if (isLoading || (isOnline && claimLoading && !localToken)) {
+  if (isLoading || (isOnline && claimLoading && (!localToken || (isFacilitated && hostIsSpectator)))) {
     return (
       <div className="min-h-screen bg-background flex flex-col items-center justify-center">
         <Loader2 className="w-12 h-12 text-primary animate-spin mb-4" />
@@ -226,6 +234,8 @@ export default function Game() {
       </div>
     );
   }
+
+  if (isFacilitated && hostIsSpectator && claim?.playerIndex === -1) return null;
 
   // ── Waiting-room: join form (for newcomers without a token) ──────────────────
   if (isWaiting && isOnline && !localToken) {

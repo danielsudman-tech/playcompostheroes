@@ -19,14 +19,19 @@ import type {
 import type {
   AskQuestion200,
   CreateGameRequest,
+  CreatedGameResponse,
   ErrorResponse,
   FacilitatorApproval,
   FacilitatorResolveRequest,
   FacilitatorRole,
   FacilitatorRoomSummary,
   GameAction,
+  GameSeatClaimConflict,
+  GameSeatClaimInput,
+  GameSeatClaimResult,
   GameState,
   GetFacilitatorRoomsParams,
+  GetGameParams,
   HealthStatus,
   HostBroadcast,
   HostCredential,
@@ -34,6 +39,9 @@ import type {
   ParticipantQuestion,
   PauseGameRequest,
   RecoverHostToken200,
+  WaitingRoomReorderInput,
+  WaitingRoomTransferInput,
+  WaitingRoomTransferResult,
 } from "./api.schemas";
 
 import { customFetch } from "../custom-fetch";
@@ -303,8 +311,8 @@ export const getCreateGameUrl = () => {
 export const createGame = async (
   createGameRequest: CreateGameRequest,
   options?: RequestInit,
-): Promise<GameState> => {
-  return customFetch<GameState>(getCreateGameUrl(), {
+): Promise<CreatedGameResponse> => {
+  return customFetch<CreatedGameResponse>(getCreateGameUrl(), {
     ...options,
     method: "POST",
     headers: { "Content-Type": "application/json", ...options?.headers },
@@ -382,22 +390,35 @@ export const useCreateGame = <
 /**
  * @summary Get game state
  */
-export const getGetGameUrl = (gameId: string) => {
-  return `/api/games/${gameId}`;
+export const getGetGameUrl = (gameId: string, params?: GetGameParams) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? "null" : value.toString());
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0
+    ? `/api/games/${gameId}?${stringifiedParams}`
+    : `/api/games/${gameId}`;
 };
 
 export const getGame = async (
   gameId: string,
+  params?: GetGameParams,
   options?: RequestInit,
 ): Promise<GameState> => {
-  return customFetch<GameState>(getGetGameUrl(gameId), {
+  return customFetch<GameState>(getGetGameUrl(gameId, params), {
     ...options,
     method: "GET",
   });
 };
 
-export const getGetGameQueryKey = (gameId: string) => {
-  return [`/api/games/${gameId}`] as const;
+export const getGetGameQueryKey = (gameId: string, params?: GetGameParams) => {
+  return [`/api/games/${gameId}`, ...(params ? [params] : [])] as const;
 };
 
 export const getGetGameQueryOptions = <
@@ -405,6 +426,7 @@ export const getGetGameQueryOptions = <
   TError = ErrorType<ErrorResponse>,
 >(
   gameId: string,
+  params?: GetGameParams,
   options?: {
     query?: UseQueryOptions<Awaited<ReturnType<typeof getGame>>, TError, TData>;
     request?: SecondParameter<typeof customFetch>;
@@ -412,11 +434,11 @@ export const getGetGameQueryOptions = <
 ) => {
   const { query: queryOptions, request: requestOptions } = options ?? {};
 
-  const queryKey = queryOptions?.queryKey ?? getGetGameQueryKey(gameId);
+  const queryKey = queryOptions?.queryKey ?? getGetGameQueryKey(gameId, params);
 
   const queryFn: QueryFunction<Awaited<ReturnType<typeof getGame>>> = ({
     signal,
-  }) => getGame(gameId, { signal, ...requestOptions });
+  }) => getGame(gameId, params, { signal, ...requestOptions });
 
   return {
     queryKey,
@@ -442,12 +464,13 @@ export function useGetGame<
   TError = ErrorType<ErrorResponse>,
 >(
   gameId: string,
+  params?: GetGameParams,
   options?: {
     query?: UseQueryOptions<Awaited<ReturnType<typeof getGame>>, TError, TData>;
     request?: SecondParameter<typeof customFetch>;
   },
 ): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
-  const queryOptions = getGetGameQueryOptions(gameId, options);
+  const queryOptions = getGetGameQueryOptions(gameId, params, options);
 
   const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
     queryKey: QueryKey;
@@ -455,6 +478,96 @@ export function useGetGame<
 
   return { ...query, queryKey: queryOptions.queryKey };
 }
+
+/**
+ * An existing token only resumes the seat it already owns. Invalid tokens never claim another seat. If an existing token was transferred to another room, returns HTTP 409 with redirectGameId and targetToken.
+ * @summary Claim or recover a game seat
+ */
+export const getClaimGameSeatUrl = (gameId: string) => {
+  return `/api/games/${gameId}/claim`;
+};
+
+export const claimGameSeat = async (
+  gameId: string,
+  gameSeatClaimInput: GameSeatClaimInput,
+  options?: RequestInit,
+): Promise<GameSeatClaimResult> => {
+  return customFetch<GameSeatClaimResult>(getClaimGameSeatUrl(gameId), {
+    ...options,
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...options?.headers },
+    body: JSON.stringify(gameSeatClaimInput),
+  });
+};
+
+export const getClaimGameSeatMutationOptions = <
+  TError = ErrorType<ErrorResponse | GameSeatClaimConflict>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof claimGameSeat>>,
+    TError,
+    { gameId: string; data: BodyType<GameSeatClaimInput> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof claimGameSeat>>,
+  TError,
+  { gameId: string; data: BodyType<GameSeatClaimInput> },
+  TContext
+> => {
+  const mutationKey = ["claimGameSeat"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof claimGameSeat>>,
+    { gameId: string; data: BodyType<GameSeatClaimInput> }
+  > = (props) => {
+    const { gameId, data } = props ?? {};
+
+    return claimGameSeat(gameId, data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type ClaimGameSeatMutationResult = NonNullable<
+  Awaited<ReturnType<typeof claimGameSeat>>
+>;
+export type ClaimGameSeatMutationBody = BodyType<GameSeatClaimInput>;
+export type ClaimGameSeatMutationError = ErrorType<
+  ErrorResponse | GameSeatClaimConflict
+>;
+
+/**
+ * @summary Claim or recover a game seat
+ */
+export const useClaimGameSeat = <
+  TError = ErrorType<ErrorResponse | GameSeatClaimConflict>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof claimGameSeat>>,
+    TError,
+    { gameId: string; data: BodyType<GameSeatClaimInput> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof claimGameSeat>>,
+  TError,
+  { gameId: string; data: BodyType<GameSeatClaimInput> },
+  TContext
+> => {
+  return useMutation(getClaimGameSeatMutationOptions(options));
+};
 
 /**
  * @summary List sessions created by the signed-in facilitator
@@ -560,7 +673,8 @@ export function useGetFacilitatorRooms<
 }
 
 /**
- * @summary Recover the host seat token for a session's creator
+ * Returns the reserved player-index -1 host token for new spectator-host rooms, or player-index 0 for legacy rooms.
+ * @summary Recover the facilitator token for a session's creator
  */
 export const getRecoverHostTokenUrl = (gameId: string) => {
   return `/api/games/${gameId}/host-token`;
@@ -624,7 +738,7 @@ export type RecoverHostTokenMutationBody = BodyType<HostTokenRecovery>;
 export type RecoverHostTokenMutationError = ErrorType<ErrorResponse>;
 
 /**
- * @summary Recover the host seat token for a session's creator
+ * @summary Recover the facilitator token for a session's creator
  */
 export const useRecoverHostToken = <
   TError = ErrorType<ErrorResponse>,
@@ -1255,4 +1369,185 @@ export const usePerformAction = <
   TContext
 > => {
   return useMutation(getPerformActionMutationOptions(options));
+};
+
+/**
+ * Requires the approved facilitator account and its host token. playerIds must contain each participant ID exactly once; a legacy host seat is fixed and excluded. Returns the serialized room state. Seat tokens are remapped atomically with player order.
+ * @summary Reorder participant seats in a facilitated waiting room
+ */
+export const getReorderWaitingPlayersUrl = (gameId: string) => {
+  return `/api/games/${gameId}/waiting/reorder`;
+};
+
+export const reorderWaitingPlayers = async (
+  gameId: string,
+  waitingRoomReorderInput: WaitingRoomReorderInput,
+  options?: RequestInit,
+): Promise<GameState> => {
+  return customFetch<GameState>(getReorderWaitingPlayersUrl(gameId), {
+    ...options,
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...options?.headers },
+    body: JSON.stringify(waitingRoomReorderInput),
+  });
+};
+
+export const getReorderWaitingPlayersMutationOptions = <
+  TError = ErrorType<ErrorResponse>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof reorderWaitingPlayers>>,
+    TError,
+    { gameId: string; data: BodyType<WaitingRoomReorderInput> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof reorderWaitingPlayers>>,
+  TError,
+  { gameId: string; data: BodyType<WaitingRoomReorderInput> },
+  TContext
+> => {
+  const mutationKey = ["reorderWaitingPlayers"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof reorderWaitingPlayers>>,
+    { gameId: string; data: BodyType<WaitingRoomReorderInput> }
+  > = (props) => {
+    const { gameId, data } = props ?? {};
+
+    return reorderWaitingPlayers(gameId, data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type ReorderWaitingPlayersMutationResult = NonNullable<
+  Awaited<ReturnType<typeof reorderWaitingPlayers>>
+>;
+export type ReorderWaitingPlayersMutationBody =
+  BodyType<WaitingRoomReorderInput>;
+export type ReorderWaitingPlayersMutationError = ErrorType<ErrorResponse>;
+
+/**
+ * @summary Reorder participant seats in a facilitated waiting room
+ */
+export const useReorderWaitingPlayers = <
+  TError = ErrorType<ErrorResponse>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof reorderWaitingPlayers>>,
+    TError,
+    { gameId: string; data: BodyType<WaitingRoomReorderInput> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof reorderWaitingPlayers>>,
+  TError,
+  { gameId: string; data: BodyType<WaitingRoomReorderInput> },
+  TContext
+> => {
+  return useMutation(getReorderWaitingPlayersMutationOptions(options));
+};
+
+/**
+ * Requires the approved facilitator account and host token. Both rooms must be waiting sessions owned by the same facilitator and the target must have space. The moved participant receives an SSE room_transfer event with data {gameId,targetToken}; the old stream is then disconnected and its token is invalid in the source room. Both rooms are broadcast after the atomic transfer.
+ * @summary Transfer a participant between facilitated waiting rooms
+ */
+export const getTransferWaitingPlayerUrl = (gameId: string) => {
+  return `/api/games/${gameId}/waiting/transfer`;
+};
+
+export const transferWaitingPlayer = async (
+  gameId: string,
+  waitingRoomTransferInput: WaitingRoomTransferInput,
+  options?: RequestInit,
+): Promise<WaitingRoomTransferResult> => {
+  return customFetch<WaitingRoomTransferResult>(
+    getTransferWaitingPlayerUrl(gameId),
+    {
+      ...options,
+      method: "POST",
+      headers: { "Content-Type": "application/json", ...options?.headers },
+      body: JSON.stringify(waitingRoomTransferInput),
+    },
+  );
+};
+
+export const getTransferWaitingPlayerMutationOptions = <
+  TError = ErrorType<ErrorResponse>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof transferWaitingPlayer>>,
+    TError,
+    { gameId: string; data: BodyType<WaitingRoomTransferInput> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof transferWaitingPlayer>>,
+  TError,
+  { gameId: string; data: BodyType<WaitingRoomTransferInput> },
+  TContext
+> => {
+  const mutationKey = ["transferWaitingPlayer"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof transferWaitingPlayer>>,
+    { gameId: string; data: BodyType<WaitingRoomTransferInput> }
+  > = (props) => {
+    const { gameId, data } = props ?? {};
+
+    return transferWaitingPlayer(gameId, data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type TransferWaitingPlayerMutationResult = NonNullable<
+  Awaited<ReturnType<typeof transferWaitingPlayer>>
+>;
+export type TransferWaitingPlayerMutationBody =
+  BodyType<WaitingRoomTransferInput>;
+export type TransferWaitingPlayerMutationError = ErrorType<ErrorResponse>;
+
+/**
+ * @summary Transfer a participant between facilitated waiting rooms
+ */
+export const useTransferWaitingPlayer = <
+  TError = ErrorType<ErrorResponse>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof transferWaitingPlayer>>,
+    TError,
+    { gameId: string; data: BodyType<WaitingRoomTransferInput> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof transferWaitingPlayer>>,
+  TError,
+  { gameId: string; data: BodyType<WaitingRoomTransferInput> },
+  TContext
+> => {
+  return useMutation(getTransferWaitingPlayerMutationOptions(options));
 };

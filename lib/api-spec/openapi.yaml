@@ -112,7 +112,7 @@ paths:
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/GameState"
+                $ref: "#/components/schemas/CreatedGameResponse"
 
   /games/{gameId}:
     get:
@@ -125,6 +125,12 @@ paths:
           required: true
           schema:
             type: string
+        - name: token
+          in: query
+          required: false
+          description: Player token or reserved spectator-host token (player index -1 for new facilitated rooms, index 0 for legacy rooms).
+          schema:
+            type: string
       responses:
         "200":
           description: Game state
@@ -134,6 +140,44 @@ paths:
                 $ref: "#/components/schemas/GameState"
         "404":
           description: Game not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /games/{gameId}/claim:
+    post:
+      operationId: claimGameSeat
+      tags: [game]
+      summary: Claim or recover a game seat
+      description: An existing token only resumes the seat it already owns. Invalid tokens never claim another seat. If an existing token was transferred to another room, returns HTTP 409 with redirectGameId and targetToken.
+      parameters:
+        - name: gameId
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/GameSeatClaimInput"
+      responses:
+        "200":
+          description: Existing seat recovered
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/GameSeatClaimResult"
+        "409":
+          description: Existing token belongs to a different game, or no seat is available
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/GameSeatClaimConflict"
+        "403":
+          description: Invalid existing token
           content:
             application/json:
               schema:
@@ -176,7 +220,8 @@ paths:
     post:
       operationId: recoverHostToken
       tags: [game]
-      summary: Recover the host seat token for a session's creator
+      summary: Recover the facilitator token for a session's creator
+      description: Returns the reserved player-index -1 host token for new spectator-host rooms, or player-index 0 for legacy rooms.
       parameters:
         - name: gameId
           in: path
@@ -463,8 +508,164 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
 
+  /games/{gameId}/waiting/reorder:
+    post:
+      operationId: reorderWaitingPlayers
+      tags: [game]
+      summary: Reorder participant seats in a facilitated waiting room
+      description: Requires the approved facilitator account and its host token. playerIds must contain each participant ID exactly once; a legacy host seat is fixed and excluded. Returns the serialized room state. Seat tokens are remapped atomically with player order.
+      parameters:
+        - name: gameId
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/WaitingRoomReorderInput"
+      responses:
+        "200":
+          description: Updated serialized waiting-room state
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/GameState"
+        "403":
+          description: Host authorization failed
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "409":
+          description: Room is no longer waiting or player IDs do not match
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /games/{gameId}/waiting/transfer:
+    post:
+      operationId: transferWaitingPlayer
+      tags: [game]
+      summary: Transfer a participant between facilitated waiting rooms
+      description: Requires the approved facilitator account and host token. Both rooms must be waiting sessions owned by the same facilitator and the target must have space. The moved participant receives an SSE room_transfer event with data {gameId,targetToken}; the old stream is then disconnected and its token is invalid in the source room. Both rooms are broadcast after the atomic transfer.
+      parameters:
+        - name: gameId
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/WaitingRoomTransferInput"
+      responses:
+        "200":
+          description: Participant transferred
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/WaitingRoomTransferResult"
+        "403":
+          description: Host authorization failed
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "409":
+          description: Rooms are incompatible or target room is full
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
 components:
   schemas:
+    CreatedGameResponse:
+      allOf:
+        - $ref: "#/components/schemas/GameState"
+        - type: object
+          properties:
+            creatorToken:
+              type: ["string", "null"]
+              description: Facilitated host token (player index -1); online creator token uses player index 0.
+
+    WaitingRoomReorderInput:
+      type: object
+      properties:
+        token:
+          type: string
+          description: Host token (player index -1 for new rooms, 0 for legacy rooms).
+        userToken:
+          type: string
+        playerIds:
+          type: array
+          items:
+            type: string
+      required: [token, userToken, playerIds]
+
+    GameSeatClaimInput:
+      type: object
+      properties:
+        token:
+          type: string
+          description: Existing seat token. A token moved to another room receives a redirect response instead of claiming a new seat.
+        password:
+          type: string
+        userToken:
+          type: string
+
+    GameSeatClaimResult:
+      type: object
+      properties:
+        token:
+          type: string
+        playerIndex:
+          type: integer
+          description: Host recovery may return the reserved index -1.
+        playerId:
+          type: ["string", "null"]
+        playerName:
+          type: string
+      required: [token, playerIndex, playerId, playerName]
+
+    GameSeatClaimConflict:
+      type: object
+      properties:
+        error:
+          type: string
+        redirectGameId:
+          type: string
+        targetToken:
+          type: string
+
+    WaitingRoomTransferInput:
+      type: object
+      properties:
+        token:
+          type: string
+          description: Host token (player index -1 for new rooms, 0 for legacy rooms).
+        userToken:
+          type: string
+        playerId:
+          type: string
+        targetGameId:
+          type: string
+      required: [token, userToken, playerId, targetGameId]
+
+    WaitingRoomTransferResult:
+      type: object
+      properties:
+        success:
+          type: boolean
+          enum: [true]
+      required: [success]
+
     HostTokenRecovery:
       type: object
       properties:
@@ -842,6 +1043,9 @@ components:
         facilitatorId:
           type: string
           nullable: true
+        hostIsSpectator:
+          type: boolean
+          description: True for new facilitated rooms where the host is a spectator outside player seats; absent on legacy rooms.
         endedByHost:
           type: boolean
         hostMessage:
@@ -878,19 +1082,20 @@ components:
       properties:
         token:
           type: string
+        userToken:
+          type: string
         paused:
           type: boolean
-      required:
-        - token
-        - paused
+      required: [token, userToken, paused]
 
     FacilitatorResolveRequest:
       type: object
       properties:
         token:
           type: string
-      required:
-        - token
+        userToken:
+          type: string
+      required: [token, userToken]
 
     GameAction:
       type: object
@@ -910,6 +1115,9 @@ components:
         token:
           type: string
           nullable: true
+        userToken:
+          type: string
+          description: Required for facilitated reset actions.
         targetFunction:
           type: string
           nullable: true

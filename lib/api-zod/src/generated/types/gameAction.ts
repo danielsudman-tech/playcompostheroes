@@ -12,6 +12,8 @@ export interface GameAction {
   type: GameActionType;
   playerId: string;
   token?: string | null;
+  /** Required for facilitated reset actions. */
+  userToken?: string;
   targetFunction?: string | null;
   cardId?: string | null;
   targetPlayerId?: string | null;
