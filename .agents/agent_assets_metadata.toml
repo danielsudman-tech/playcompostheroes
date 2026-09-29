@@ -1,8 +1,21 @@
 uploads = []
-outputs = []
 
 [[generated]]
 id = "Hdm778UjxM4qNDPfbQ7cX"
 uri = "file://artifacts/compost-heroes/public/og-share.png"
 type = "image"
 title = "compost heroes og share image"
+
+[[outputs]]
+id = "JWC2t_QquLiKtzRXfK5Id"
+uri = "file://downloads/compost-heroes-source-2026-09-29.zip"
+type = "unspecified"
+title = "Compost Heroes source code"
+description = "ZIP with application source, API, shared libraries, assets, and setup files. Excludes secrets, database data, dependencies, and build outputs."
+logical_id = "fdf57f13-b114-4ed5-85e2-70feb10d6433"
+content_hash = "sha256:b2c65ebfc595572bb4a5c8f4f433f5f24c058111f0291cce423571d7551e6d03"
+size = 8264768
+mtime_ms = 1790709335995
+storage_uri = "gcs://replit-rams-assets-riker/rams/assets/repl:3f7f0763-f997-4313-8244-efe50696cc1e/fdf57f13-b114-4ed5-85e2-70feb10d6433/279a17cd-30f1-46de-ac75-33e1bbb8d5f1"
+storage_version_token = "1790709342484824"
+content_type = "application/octet-stream"
