@@ -35,6 +35,18 @@ export const ApproveFacilitatorResponse = zod.object({
 });
 
 /**
+ * Past games and analytics events are retained.
+ * @summary Permanently delete a registered account and its sign-in sessions
+ */
+export const DeleteAdminUserParams = zod.object({
+  userId: zod.coerce.string(),
+});
+
+export const DeleteAdminUserHeader = zod.object({
+  "x-admin-key": zod.string(),
+});
+
+/**
  * @summary Create a new game session
  */
 export const createGameBodyPlayerNamesMin = 2;
@@ -51,7 +63,7 @@ export const CreateGameBody = zod.object({
     .string()
     .optional()
     .describe(
-      "Registered-account token. Required for online creation; an approved facilitator's token is required for facilitated hosting.",
+      "Registered-account token. Required for online creation; an approved facilitator's token is required for facilitator and facilitated modes.",
     ),
 });
 

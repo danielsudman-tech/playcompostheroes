@@ -14,6 +14,6 @@ export interface CreateGameRequest {
    */
   playerNames?: string[];
   mode: CreateGameRequestMode;
-  /** Registered-account token. Required for online creation; an approved facilitator's token is required for facilitated hosting. */
+  /** Registered-account token. Required for online creation; an approved facilitator's token is required for facilitator and facilitated modes. */
   userToken?: string;
 }

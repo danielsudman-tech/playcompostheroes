@@ -409,6 +409,26 @@ router.patch("/admin/users/:userId/facilitator", async (req: Request, res: Respo
   }
 });
 
+// Remove the account and its sign-in sessions (cascading FK). Game state and
+// analytics are intentionally retained so existing sessions/history survive.
+router.delete("/admin/users/:userId", async (req: Request, res: Response) => {
+  const userId = String(req.params.userId);
+  try {
+    const result = await pool.query(
+      `DELETE FROM compost_users WHERE id = $1 RETURNING id`,
+      [userId]
+    );
+    if (!result.rowCount) {
+      res.status(404).json({ error: "User not found" });
+      return;
+    }
+    res.sendStatus(204);
+  } catch (err) {
+    console.error("[admin delete user]", err);
+    res.status(500).json({ error: "Failed to delete user" });
+  }
+});
+
 // ── User password reset ───────────────────────────────────────────────────────
 
 router.patch("/admin/users/:userId/reset-password", requireAdmin, async (req: Request, res: Response) => {

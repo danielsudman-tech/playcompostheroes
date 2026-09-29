@@ -2,3 +2,4 @@
 - [Facilitated table testing](facilitated-table-testing.md) — screenshot game routes with `?token=` + `?ut=` (app gate); board must fit 4 players at 900px with my row pinned above the hand.
 - [Sound system architecture](sound-system.md) — Web Audio synthesis, state-diff trigger, volume ducking by isActivePlayer.
 - [Facilitator approval provenance](facilitator-approval.md) — never trust legacy self-selected roles as admin approval or backfill them automatically.
+- [Account deletion scope](account-deletion.md) — deleting a user ends sign-in but deliberately retains historical games and analytics.

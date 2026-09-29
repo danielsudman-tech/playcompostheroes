@@ -867,6 +867,9 @@ function UsersTab({ adminKey }: { adminKey: string }) {
   const queryClient = useQueryClient();
   const [search, setSearch] = useState("");
   const [updatingRoleId, setUpdatingRoleId] = useState<string | null>(null);
+  const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
+  const [deleteEmail, setDeleteEmail] = useState("");
+  const [deletingId, setDeletingId] = useState<string | null>(null);
   const [resettingId, setResettingId] = useState<string | null>(null);
   const [resetPw, setResetPw] = useState("");
   const [resetBusy, setResetBusy] = useState(false);
@@ -886,8 +889,8 @@ function UsersTab({ adminKey }: { adminKey: string }) {
     return !q || u.name.toLowerCase().includes(q) || u.email.toLowerCase().includes(q) || (u.organization ?? "").toLowerCase().includes(q);
   });
 
-  const updateFacilitator = async (u: AdminUser) => {
-    const approved = u.role !== "facilitator";
+  const updateFacilitator = async (u: AdminUser, approved: boolean) => {
+    if (approved === (u.role === "facilitator")) return;
     if (!approved && !window.confirm(`Remove facilitator access from ${u.name}? They will lose the ability to host or manage sessions immediately.`)) return;
     setUpdatingRoleId(u.id);
     try {
@@ -906,6 +909,32 @@ function UsersTab({ adminKey }: { adminKey: string }) {
     }
   };
 
+  const deleteUser = async (u: AdminUser) => {
+    if (deleteEmail !== u.email || deletingId) return;
+    setDeletingId(u.id);
+    try {
+      const r = await fetch(`/api/admin/users/${encodeURIComponent(u.id)}`, {
+        method: "DELETE",
+        headers: { "x-admin-key": adminKey },
+      });
+      if (!r.ok) {
+        const data = await r.json().catch(() => ({}));
+        throw new Error(data.error ?? "Could not delete account");
+      }
+      setConfirmDeleteId(null);
+      setDeleteEmail("");
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ["admin-users"] }),
+        queryClient.invalidateQueries({ queryKey: ["admin-analytics"] }),
+      ]);
+      toast({ title: `${u.name}'s account deleted`, description: "Their sign-in sessions have ended. Past games remain." });
+    } catch (err) {
+      toast({ title: "Delete failed", description: (err as Error).message, variant: "destructive" });
+    } finally {
+      setDeletingId(null);
+    }
+  };
+
   const exportCsv = () => {
     if (!users) return;
     const headers = ["Name", "Email", "Organization", "Role", "Registered", "Sessions"];
@@ -913,7 +942,7 @@ function UsersTab({ adminKey }: { adminKey: string }) {
       u.name,
       u.email,
       u.organization ?? "",
-      u.role ?? "",
+      u.role === "facilitator" ? "Facilitator" : "Player",
       new Date(u.createdAt).toLocaleDateString(),
       String(u.sessionCount),
     ]);
@@ -987,7 +1016,7 @@ function UsersTab({ adminKey }: { adminKey: string }) {
                   <th className="text-left text-xs font-bold text-muted-foreground uppercase tracking-wider px-4 py-2.5">Name</th>
                   <th className="text-left text-xs font-bold text-muted-foreground uppercase tracking-wider px-4 py-2.5">Email</th>
                   <th className="text-left text-xs font-bold text-muted-foreground uppercase tracking-wider px-4 py-2.5 hidden md:table-cell">Organization</th>
-                  <th className="text-left text-xs font-bold text-muted-foreground uppercase tracking-wider px-4 py-2.5 hidden md:table-cell">Role</th>
+                  <th className="text-left text-xs font-bold text-muted-foreground uppercase tracking-wider px-4 py-2.5">Role</th>
                   <th className="text-left text-xs font-bold text-muted-foreground uppercase tracking-wider px-4 py-2.5">Joined</th>
                   <th className="px-4 py-2.5"></th>
                 </tr>
@@ -1002,40 +1031,92 @@ function UsersTab({ adminKey }: { adminKey: string }) {
                         <td className="px-4 py-3 font-semibold text-foreground whitespace-nowrap">{u.name}</td>
                         <td className="px-4 py-3 text-muted-foreground text-xs">{u.email}</td>
                         <td className="px-4 py-3 text-muted-foreground text-xs hidden md:table-cell">{u.organization ?? <span className="opacity-40">—</span>}</td>
-                        <td className="px-4 py-3 hidden md:table-cell">
-                          {u.role ? (
-                            <span className="text-[10px] font-bold bg-primary/10 text-primary border border-primary/20 rounded-full px-2 py-0.5">{u.role}</span>
-                          ) : (
-                            <span className="opacity-40 text-xs">—</span>
-                          )}
+                        <td className="px-4 py-3">
+                          <select
+                            aria-label={`Role for ${u.name}`}
+                            value={u.role === "facilitator" ? "facilitator" : "player"}
+                            onChange={(e) => updateFacilitator(u, e.target.value === "facilitator")}
+                            disabled={updatingRoleId === u.id || deletingId === u.id}
+                            className="h-8 rounded-lg border border-border bg-background px-2 text-xs font-semibold text-foreground disabled:opacity-50"
+                          >
+                            <option value="player">Player</option>
+                            <option value="facilitator">Facilitator</option>
+                          </select>
                         </td>
                         <td className="px-4 py-3 text-muted-foreground text-xs whitespace-nowrap">{new Date(u.createdAt).toLocaleDateString()}</td>
                         <td className="px-3 py-3">
-                          <button
-                            onClick={() => updateFacilitator(u)}
-                            disabled={updatingRoleId === u.id}
-                            className="mr-2 text-[11px] font-bold px-2 py-1 rounded-lg border border-primary/30 text-primary hover:bg-primary/10 disabled:opacity-50"
-                            title={u.role === "facilitator" ? "Revoke facilitator access" : "Approve as facilitator"}
-                          >
-                            {updatingRoleId === u.id ? "Saving…" : u.role === "facilitator" ? "Revoke host" : "Approve host"}
-                          </button>
-                          <button
-                            onClick={() => {
-                              if (resettingId === u.id) { setResettingId(null); setResetPw(""); }
-                              else { setResettingId(u.id); setResetPw(""); }
-                            }}
-                            title="Reset password"
-                            className={cn("flex items-center gap-1 text-[11px] font-bold px-2 py-1 rounded-lg transition-colors border",
-                              resettingId === u.id
-                                ? "bg-amber-100 border-amber-300 text-amber-800 hover:bg-amber-200"
-                                : "border-border text-muted-foreground hover:text-foreground hover:bg-muted/50"
-                            )}
-                          >
-                            <KeyRound className="w-3 h-3" />
-                            <span className="hidden sm:inline">Reset</span>
-                          </button>
+                          <div className="flex items-center gap-2">
+                            <button
+                              onClick={() => {
+                                if (resettingId === u.id) { setResettingId(null); setResetPw(""); }
+                                else { setResettingId(u.id); setResetPw(""); }
+                              }}
+                              title="Reset password"
+                              className={cn("flex items-center gap-1 text-[11px] font-bold px-2 py-1 rounded-lg transition-colors border",
+                                resettingId === u.id
+                                  ? "bg-amber-100 border-amber-300 text-amber-800 hover:bg-amber-200"
+                                  : "border-border text-muted-foreground hover:text-foreground hover:bg-muted/50"
+                              )}
+                            >
+                              <KeyRound className="w-3 h-3" />
+                              <span className="hidden sm:inline">Reset</span>
+                            </button>
+                            <button
+                              onClick={() => {
+                                setConfirmDeleteId(confirmDeleteId === u.id ? null : u.id);
+                                setDeleteEmail("");
+                                setResettingId(null);
+                                setResetPw("");
+                              }}
+                              disabled={deletingId === u.id}
+                              title={`Delete ${u.name}'s account`}
+                              aria-label={`Delete ${u.name}'s account`}
+                              className="flex items-center gap-1 text-[11px] font-bold px-2 py-1 rounded-lg border border-destructive/40 text-destructive hover:bg-destructive/10 disabled:opacity-50"
+                            >
+                              <Trash2 className="w-3 h-3" />
+                              <span className="hidden sm:inline">Delete</span>
+                            </button>
+                          </div>
                         </td>
                       </tr>
+                      {confirmDeleteId === u.id && (
+                        <tr className="bg-destructive/5 border-b border-destructive/30">
+                          <td colSpan={6} className="px-4 py-4">
+                            <p className="text-sm font-bold text-destructive">Permanently delete {u.name}'s account?</p>
+                            <p className="mt-1 text-xs text-muted-foreground">
+                              This cannot be undone. Their account and sign-in sessions will be removed immediately. Past games and analytics remain; existing game-seat links are not erased.
+                            </p>
+                            <label className="mt-3 block text-xs font-semibold text-foreground" htmlFor={`delete-email-${u.id}`}>
+                              Type {u.email} to confirm
+                            </label>
+                            <div className="mt-1 flex flex-wrap items-center gap-2">
+                              <input
+                                id={`delete-email-${u.id}`}
+                                type="text"
+                                autoComplete="off"
+                                value={deleteEmail}
+                                onChange={(e) => setDeleteEmail(e.target.value)}
+                                onKeyDown={(e) => { if (e.key === "Escape") { setConfirmDeleteId(null); setDeleteEmail(""); } }}
+                                className="h-9 min-w-0 flex-1 rounded-lg border border-destructive/40 bg-background px-3 text-sm"
+                              />
+                              <button
+                                onClick={() => deleteUser(u)}
+                                disabled={deleteEmail !== u.email || deletingId !== null}
+                                className="h-9 rounded-lg bg-destructive px-3 text-xs font-bold text-destructive-foreground disabled:opacity-40"
+                              >
+                                {deletingId === u.id ? "Deleting…" : "Delete account"}
+                              </button>
+                              <button
+                                onClick={() => { setConfirmDeleteId(null); setDeleteEmail(""); }}
+                                disabled={deletingId === u.id}
+                                className="h-9 rounded-lg border border-border px-3 text-xs font-bold"
+                              >
+                                Cancel
+                              </button>
+                            </div>
+                          </td>
+                        </tr>
+                      )}
                       {resettingId === u.id && (
                         <tr className="bg-amber-50/60 border-b border-amber-200">
                           <td colSpan={6} className="px-4 py-3">
