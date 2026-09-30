@@ -56,6 +56,12 @@ export function useGameSounds(
 ) {
   const { play, muted, toggleMute } = useSoundEngine();
   const prevRef = useRef<Snapshot | null>(null);
+  const pendingChimes = useRef(new Set<ReturnType<typeof setTimeout>>());
+
+  useEffect(() => () => {
+    for (const timer of pendingChimes.current) clearTimeout(timer);
+    pendingChimes.current.clear();
+  }, []);
 
   useEffect(() => {
     if (!gameState || !localPlayerId) return;
@@ -100,7 +106,11 @@ export function useGameSounds(
 
         if (layerCompleted) {
           // Small delay so the chime sits on top of the thud
-          setTimeout(() => play("layer_complete", true), 220);
+          const timer = setTimeout(() => {
+            pendingChimes.current.delete(timer);
+            play("layer_complete", true);
+          }, 220);
+          pendingChimes.current.add(timer);
         }
       }
 

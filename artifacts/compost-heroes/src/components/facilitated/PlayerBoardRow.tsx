@@ -32,6 +32,7 @@ function isMovable(card: Card, pile: Card[]): boolean {
 interface PlayerBoardRowProps {
   player: PlayerState;
   isMe: boolean;
+  showHandBacks?: boolean;
   isTurn: boolean;
   modifiers: ActiveModifier[];
   targetingActive: boolean;
@@ -46,6 +47,7 @@ interface PlayerBoardRowProps {
 export function PlayerBoardRow({
   player,
   isMe,
+  showHandBacks = false,
   isTurn,
   modifiers,
   targetingActive,
@@ -106,6 +108,19 @@ export function PlayerBoardRow({
           <div className="flex items-center gap-1.5 text-xs text-muted-foreground font-medium">
             <Layers className="w-3.5 h-3.5" /> {player.hand.length} cards in hand
           </div>
+          {showHandBacks && player.hand.length > 0 && (
+            <div className="flex items-center pl-0.5" aria-label={`${player.hand.length} hidden cards`}>
+              {Array.from({ length: Math.min(player.hand.length, 4) }).map((_, index) => (
+                <GameCard
+                  key={index}
+                  card={{ id: "back", name: "Card Back", type: "unknown", layer: null, effectType: "instant", cardText: "", factText: "", function: "", imageKey: "card-back.jpg" } as any}
+                  isFaceDown
+                  hoverable={false}
+                  className={cn("!w-5 !h-7 !rounded-sm !border", index > 0 && "-ml-3")}
+                />
+              ))}
+            </div>
+          )}
           {(player.skipsNextTurn || modifiers.length > 0) && (
              <div className="flex flex-wrap gap-1">
                {player.skipsNextTurn && (

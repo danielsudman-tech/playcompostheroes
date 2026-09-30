@@ -39,7 +39,7 @@ export function useSoundEngine() {
 
   const getCtx = useCallback((): AudioContext | null => {
     try {
-      if (!ctxRef.current) {
+      if (!ctxRef.current || ctxRef.current.state === "closed") {
         ctxRef.current = new (window.AudioContext ||
           (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext)();
       }
@@ -204,7 +204,9 @@ export function useSoundEngine() {
 
   useEffect(() => {
     return () => {
-      try { ctxRef.current?.close(); } catch { /* ignore */ }
+      const context = ctxRef.current;
+      ctxRef.current = null;
+      if (context && context.state !== "closed") void context.close().catch(() => {});
     };
   }, []);
 

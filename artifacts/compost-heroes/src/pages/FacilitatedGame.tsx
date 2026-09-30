@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useLayoutEffect, useCallback, useRef } from "react";
 import { createPortal } from "react-dom";
 import { useGameSounds } from "@/hooks/use-game-sounds";
 import { useCurrentUser } from "@/components/AppGate";
@@ -55,6 +55,7 @@ import {
   Hand,
   Send,
   LogOut,
+  Leaf,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -114,7 +115,14 @@ export default function FacilitatedGame() {
       return null;
     }
   })();
-  if (gameId && urlSeatToken) {
+  const storedToken = gameId ? getStoredToken(gameId) : null;
+  const { data: gameState, isLoading, error } = useGameState(gameId || null, urlSeatToken ?? storedToken);
+  const isFacilitated = gameState?.mode === "facilitated";
+  const isPassPlay = gameState?.mode === "standalone";
+
+  useEffect(() => {
+    // Seat links belong to facilitated tables, never local Pass & Play games.
+    if (!isFacilitated || !gameId || !urlSeatToken) return;
     storeToken(gameId, urlSeatToken);
     try {
       const params = new URLSearchParams(window.location.search);
@@ -122,26 +130,22 @@ export default function FacilitatedGame() {
       const query = params.toString();
       window.history.replaceState({}, "", window.location.pathname + (query ? `?${query}` : "") + window.location.hash);
     } catch {}
-  }
+  }, [isFacilitated, gameId, urlSeatToken]);
 
-  const storedToken = gameId ? getStoredToken(gameId) : null;
-  const { data: gameState, isLoading, error } = useGameState(gameId || null, storedToken);
-  const isFacilitated = gameState?.mode === "facilitated";
-
-  const { claim, loading: claimLoading } = useClaimSlot(gameId || null, isFacilitated && !!storedToken);
-  const localToken = claim?.token ?? storedToken;
+  const { claim, loading: claimLoading } = useClaimSlot(gameId || null, isFacilitated && !!(storedToken ?? urlSeatToken));
+  const localToken = isFacilitated ? claim?.token ?? urlSeatToken ?? storedToken : null;
   const eventCode = gameId ? getGameEventCode(gameId) : null;
   const eventSeat = eventCode ? rememberedEventSeat(eventCode) : null;
-  useEventPresence(eventCode ?? "", eventSeat, !!eventSeat && !!localToken);
-  const { data: guestEvent } = useGuestEvent(eventCode ?? "");
+  useEventPresence(eventCode ?? "", eventSeat, isFacilitated && !!eventSeat && !!localToken);
+  const { data: guestEvent } = useGuestEvent(isFacilitated ? eventCode ?? "" : "");
   const eventReady = useReadyEvent(eventCode ?? "");
   const eventClosing = guestEvent?.status === "ending" || guestEvent?.status === "completed";
   const [eventMarkedReady, setEventMarkedReady] = useState(() => {
     try { return !!gameId && localStorage.getItem(`compost_event_ready_${gameId}`) === "yes"; } catch { return false; }
   });
   useEffect(() => {
-    try { setEventMarkedReady(!!gameId && localStorage.getItem(`compost_event_ready_${gameId}`) === "yes"); } catch { setEventMarkedReady(false); }
-  }, [gameId]);
+    try { setEventMarkedReady(isFacilitated && !!gameId && localStorage.getItem(`compost_event_ready_${gameId}`) === "yes"); } catch { setEventMarkedReady(false); }
+  }, [gameId, isFacilitated]);
   const hostIsSpectator = (gameState as any)?.hostIsSpectator === true;
 
   const handleKicked = useCallback(() => {
@@ -166,12 +170,14 @@ export default function FacilitatedGame() {
     handleRoomTransfer
   );
 
-  const actionMutation = useGameAction(gameId || "", localToken, {
+  const actionMutation = useGameAction(gameId || "", isFacilitated ? localToken : null, {
     onError: (msg) => toast({ title: "Action failed", description: msg, variant: "destructive" }),
   });
   const leaveRoom = useLeaveRoom(gameId || null, localToken);
 
-  const localPlayerId = claim?.playerId ?? null;
+  const localPlayerId = isPassPlay
+    ? gameState?.players[gameState.currentPlayerIndex]?.id ?? null
+    : claim?.playerId ?? null;
 
   // Sound system
   const { muted: soundMuted, toggleMute: toggleSoundMute } = useGameSounds(gameState ?? undefined, localPlayerId ?? undefined);
@@ -189,6 +195,37 @@ export default function FacilitatedGame() {
   const [showRules, setShowRules] = useState(false);
   const [showLog, setShowLog] = useState(false);
   const [mobileControlsOpen, setMobileControlsOpen] = useState(false);
+  const [passScreen, setPassScreen] = useState<{ name: string; cardCount: number } | null>(null);
+  const previousLocalTurn = useRef<{
+    gameId: string | undefined;
+    playerIndex: number;
+    turnNumber: number;
+    phase: string;
+  } | null>(null);
+
+  useLayoutEffect(() => {
+    if (!isPassPlay || !gameState) return;
+    const idx = gameState.currentPlayerIndex;
+    const previous = previousLocalTurn.current;
+    const needsReveal = !previous || previous.gameId !== gameId ||
+      previous.playerIndex !== idx || previous.phase === "game_over" ||
+      gameState.turnNumber < previous.turnNumber;
+    previousLocalTurn.current = {
+      gameId, playerIndex: idx, turnNumber: gameState.turnNumber, phase: gameState.phase,
+    };
+    if (gameState.phase === "game_over") {
+      setPassScreen(null);
+      return;
+    }
+    if (needsReveal) {
+      // Clear any prior player's private card preview before the next hand appears.
+      setConfirmCard(null);
+      const newPlayer = gameState.players[idx];
+      setPassScreen(newPlayer && !newPlayer.isBot
+        ? { name: newPlayer.name, cardCount: newPlayer.hand.length }
+        : null);
+    }
+  }, [isPassPlay, gameId, gameState?.currentPlayerIndex, gameState?.phase, gameState?.turnNumber]);
 
   // Facilitator broadcast + participant questions
   const [dismissedMsgId, setDismissedMsgId] = useState<string | null>(null);
@@ -213,7 +250,7 @@ export default function FacilitatedGame() {
     // Only non-facilitated games belong on the classic screen. Facilitated
     // players stay here — the table shows its own name-entry join form
     // (no registration) while the game is waiting.
-    if (gameState.mode !== "facilitated") {
+    if (gameState.mode !== "facilitated" && gameState.mode !== "standalone") {
       setLocation(`/game/${gameId}`);
     }
   }, [gameState?.mode, gameState?.phase, storedToken, gameId, setLocation, gameState]);
@@ -255,13 +292,13 @@ export default function FacilitatedGame() {
     );
   }
 
-  if (gameState.mode !== "facilitated") {
+  if (gameState.mode !== "facilitated" && gameState.mode !== "standalone") {
     return null;
   }
 
   if (hostIsSpectator && claim?.playerIndex === -1) return null;
 
-  const waitingHostMessage = gameState.hostMessage && (
+  const waitingHostMessage = isFacilitated && gameState.hostMessage && (
     <div className="w-full max-w-md mb-4 rounded-2xl border border-primary/30 bg-primary/10 px-4 py-3 text-sm font-semibold text-foreground" data-testid="waiting-host-message">
       <span className="text-primary font-bold">Facilitator:</span> {gameState.hostMessage.text}
     </div>
@@ -319,7 +356,7 @@ export default function FacilitatedGame() {
             <Loader2 className="w-8 h-8 text-primary animate-spin mx-auto mb-4" />
             <h2 className="text-2xl font-display font-bold mb-2">You're at the table!</h2>
              <p className="text-muted-foreground mb-6">Waiting for your facilitator to start the game.</p>
-              {eventCode && eventSeat && <div className="flex flex-col sm:flex-row gap-2 mb-4"><Button className="flex-1" variant="outline" disabled={eventClosing || eventMarkedReady || eventReady.isPending} onClick={() => { if (!eventClosing) eventReady.mutate(eventSeat, { onSuccess: () => { try { localStorage.setItem(`compost_event_ready_${eventSeat.gameId}`, "yes"); } catch {} setEventMarkedReady(true); toast({ title: "Your host knows you're ready" }); }, onError: e => toast({ title: "Couldn't mark ready", description: e.message, variant: "destructive" }) }); }} data-testid="button-table-event-ready">{eventClosing ? "Event closing" : eventMarkedReady ? "You're ready" : "I'm ready"}</Button><Button className="flex-1" variant="outline" onClick={() => setLocation(`/event/${eventCode}`)} data-testid="button-back-event-lobby">Event lobby</Button></div>}
+              {isFacilitated && eventCode && eventSeat && <div className="flex flex-col sm:flex-row gap-2 mb-4"><Button className="flex-1" variant="outline" disabled={eventClosing || eventMarkedReady || eventReady.isPending} onClick={() => { if (!eventClosing) eventReady.mutate(eventSeat, { onSuccess: () => { try { localStorage.setItem(`compost_event_ready_${eventSeat.gameId}`, "yes"); } catch {} setEventMarkedReady(true); toast({ title: "Your host knows you're ready" }); }, onError: e => toast({ title: "Couldn't mark ready", description: e.message, variant: "destructive" }) }); }} data-testid="button-table-event-ready">{eventClosing ? "Event closing" : eventMarkedReady ? "You're ready" : "I'm ready"}</Button><Button className="flex-1" variant="outline" onClick={() => setLocation(`/event/${eventCode}`)} data-testid="button-back-event-lobby">Event lobby</Button></div>}
             <div className="bg-muted rounded-2xl p-4 text-left">
               <p className="text-xs font-bold uppercase tracking-wider text-muted-foreground mb-2">Players seated</p>
               <div className="space-y-1.5">
@@ -412,7 +449,7 @@ export default function FacilitatedGame() {
     }
   };
 
-  const showDecisionModal = isMyDecision && !isInlineTargeting;
+  const showDecisionModal = isMyDecision && !isInlineTargeting && !passScreen;
 
   const handleResolveDecision = (decisionData: any) => {
     if (!localPlayerId) return;
@@ -479,6 +516,40 @@ export default function FacilitatedGame() {
 
   return (
     <div className="facilitated-table h-[100dvh] bg-background game-table-pattern flex flex-col overflow-hidden text-foreground">
+      <AnimatePresence>
+        {passScreen && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-[250] flex items-center justify-center bg-black/90 backdrop-blur-md"
+          >
+            <motion.div
+              initial={{ scale: 0.85, y: 30 }}
+              animate={{ scale: 1, y: 0 }}
+              exit={{ scale: 0.9, opacity: 0 }}
+              transition={{ type: "spring", bounce: 0.4 }}
+              className="bg-card w-full max-w-sm mx-4 rounded-3xl shadow-2xl p-8 text-center border border-border"
+            >
+              <div className="w-20 h-20 rounded-full bg-primary/10 border-4 border-primary/30 flex items-center justify-center mx-auto mb-5">
+                <Leaf className="w-10 h-10 text-primary" />
+              </div>
+              <p className="text-sm font-bold uppercase tracking-widest text-muted-foreground mb-1">Pass the device to</p>
+              <h2 className="text-4xl font-display font-bold text-foreground mb-3">{passScreen.name}</h2>
+              <p className="text-muted-foreground text-sm mb-7">
+                You have <strong className="text-foreground">{passScreen.cardCount}</strong> card{passScreen.cardCount !== 1 ? "s" : ""} waiting for you. Reveal your hand when the device is with you.
+              </p>
+              <Button
+                size="lg"
+                className="w-full font-bold text-lg rounded-2xl"
+                onClick={() => setPassScreen(null)}
+              >
+                Reveal My Hand
+              </Button>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
       {/* HEADER */}
       <header className="shrink-0 min-h-14 flex flex-wrap md:flex-nowrap items-center gap-1.5 md:gap-3 px-2 py-2 md:px-4 md:py-0 bg-card/95 backdrop-blur-md border-b border-border shadow-sm z-30 relative">
         <img src={compostHeroesLogo} alt="Compost Heroes" className="h-8 w-auto shrink-0" draggable={false} />
@@ -495,7 +566,7 @@ export default function FacilitatedGame() {
         </div>
         
         <div className="flex items-center gap-1 md:gap-2 shrink-0 ml-auto">
-          {claim?.playerIndex === 0 && currentUser?.role === "facilitator" && currentUser.id === gameState.facilitatorId && (
+          {isFacilitated && claim?.playerIndex === 0 && currentUser?.role === "facilitator" && currentUser.id === gameState.facilitatorId && (
             <button
               onClick={() => setLocation(`/game/${gameId}/host`)}
               className="flex items-center gap-1.5 px-2 md:px-3 py-1.5 rounded-xl text-xs font-bold border transition-colors bg-amber-500/10 border-amber-500/30 text-amber-700 dark:text-amber-400 hover:bg-amber-500/20"
@@ -549,7 +620,7 @@ export default function FacilitatedGame() {
           >
             {soundMuted ? <VolumeX className="w-4 h-4" /> : <Volume2 className="w-4 h-4" />}
           </button>
-          <div
+          {isFacilitated && <div
             className={cn(
               "flex items-center gap-1.5 px-2 md:px-3 py-1.5 rounded-xl text-xs font-bold border",
               sseConnected ? "bg-green-500/10 border-green-500/30 text-green-700 dark:text-green-400" : "bg-yellow-500/10 border-yellow-500/30 text-yellow-700 dark:text-yellow-400"
@@ -557,13 +628,13 @@ export default function FacilitatedGame() {
           >
             <Wifi className={cn("w-3.5 h-3.5", !sseConnected && "animate-pulse")} />
             <span className="hidden md:inline">{sseConnected ? claim?.playerName ?? "Online" : "Reconnecting…"}</span>
-          </div>
+          </div>}
         </div>
       </header>
 
       {/* FACILITATOR BROADCAST BANNER */}
       <AnimatePresence>
-        {gameState.hostMessage && gameState.hostMessage.id !== dismissedMsgId && (
+        {isFacilitated && gameState.hostMessage && gameState.hostMessage.id !== dismissedMsgId && (
           <motion.div
             initial={{ opacity: 0, height: 0 }}
             animate={{ opacity: 1, height: "auto" }}
@@ -644,6 +715,7 @@ export default function FacilitatedGame() {
                   key={p.id}
                   player={p}
                   isMe={p.id === localPlayerId}
+                  showHandBacks={isPassPlay && p.id !== localPlayerId}
                   isTurn={p.id === currentPlayer.id}
                   modifiers={gameState.activeModifiers.filter((m) => m.appliedByPlayerId === p.id)}
                   targetingActive={isInlineTargeting}
@@ -664,6 +736,7 @@ export default function FacilitatedGame() {
                 <PlayerBoardRow
                   player={myRowPlayer}
                   isMe
+                  showHandBacks={false}
                   isTurn={myRowPlayer.id === currentPlayer.id}
                   modifiers={gameState.activeModifiers.filter((m) => m.appliedByPlayerId === myRowPlayer.id)}
                   targetingActive={isInlineTargeting}
@@ -678,7 +751,7 @@ export default function FacilitatedGame() {
           )}
 
           {/* MY HAND FOOTER — tall enough to show full md cards (208px) + header */}
-          <div className="table-hand-footer shrink-0 h-[188px] md:h-[208px] xl:h-[252px] bg-card/95 backdrop-blur-2xl border-t border-border/60 shadow-[0_-10px_40px_rgba(0,0,0,0.1)] z-20 flex flex-col relative before:absolute before:inset-0 before:bg-gradient-to-t before:from-background/20 before:pointer-events-none">
+          <div className={cn("table-hand-footer shrink-0 h-[188px] md:h-[208px] xl:h-[252px] bg-card/95 backdrop-blur-2xl border-t border-border/60 shadow-[0_-10px_40px_rgba(0,0,0,0.1)] z-20 flex flex-col relative before:absolute before:inset-0 before:bg-gradient-to-t before:from-background/20 before:pointer-events-none", passScreen && "invisible")} aria-hidden={!!passScreen}>
              <div className="px-3 md:px-6 py-2 md:py-2.5 border-b border-border/40 bg-muted/20 flex justify-between items-center relative z-10">
                <span className="text-xs font-bold uppercase tracking-widest text-muted-foreground flex items-center gap-2">
                  Your Hand <span className="bg-background px-2.5 py-0.5 rounded-full border shadow-sm">{me.hand.length} / {me.maxHandSize}</span>

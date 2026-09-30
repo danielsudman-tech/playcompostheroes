@@ -62,6 +62,7 @@ export default function Game() {
   // Facilitated mode reuses the whole online flow (tokens, SSE, hidden hands)
   // and layers guided announcements/decisions on top.
   const isFacilitated = gameState?.mode === "facilitated";
+  const isStandalone = gameState?.mode === "standalone";
   const hostIsSpectator = (gameState as any)?.hostIsSpectator === true;
   const isOnline = gameState?.mode === "online" || isFacilitated;
   const isWaiting = gameState?.phase === "waiting";
@@ -145,17 +146,18 @@ export default function Game() {
   // Sound system
   const { muted: soundMuted, toggleMute: toggleSoundMute } = useGameSounds(gameState ?? undefined, localPlayerId ?? undefined);
 
-  // Facilitated rooms use the dedicated Zoom-friendly table layout once play begins.
-  // Online mode is untouched — this only redirects facilitated-mode players with a token.
+  // Facilitated and Pass & Play games share the table layout once play begins.
+  // Online stays on the classic game view; Pass & Play needs no seat token.
   useEffect(() => {
     if (isFacilitated && hostIsSpectator && claim?.playerIndex === -1) {
       setLocation(`/game/${gameId}/host`);
       return;
     }
-    if (isFacilitated && gameState && gameState.phase !== "waiting" && localToken) {
+    if (gameState && gameState.phase !== "waiting" &&
+        ((isFacilitated && localToken) || isStandalone)) {
       setLocation(`/game/${gameId}/table`);
     }
-  }, [isFacilitated, hostIsSpectator, claim?.playerIndex, gameState?.phase, localToken, gameId, setLocation]);
+  }, [isFacilitated, isStandalone, hostIsSpectator, claim?.playerIndex, gameState?.phase, localToken, gameId, setLocation]);
 
   useEffect(() => {
     // Pass screen only makes sense in Pass & Play (same device)
@@ -387,6 +389,8 @@ export default function Game() {
       </div>
     );
   }
+
+  if (isStandalone && gameState.phase !== "waiting") return null;
 
   const currentPlayer = gameState.players[gameState.currentPlayerIndex];
   const isMyTurn = localPlayerId === currentPlayer.id;
