@@ -172,6 +172,7 @@ export default function FacilitatedGame() {
   const [zoomedCard, setZoomedCard] = useState<Card | null>(null);
   const [showRules, setShowRules] = useState(false);
   const [showLog, setShowLog] = useState(false);
+  const [mobileControlsOpen, setMobileControlsOpen] = useState(false);
 
   // Facilitator broadcast + participant questions
   const [dismissedMsgId, setDismissedMsgId] = useState<string | null>(null);
@@ -461,11 +462,11 @@ export default function FacilitatedGame() {
   return (
     <div className="h-[100dvh] bg-background game-table-pattern flex flex-col overflow-hidden text-foreground">
       {/* HEADER */}
-      <header className="shrink-0 h-14 flex items-center gap-3 px-4 bg-card/95 backdrop-blur-md border-b border-border shadow-sm z-30 relative">
+      <header className="shrink-0 min-h-14 flex flex-wrap md:flex-nowrap items-center gap-1.5 md:gap-3 px-2 py-2 md:px-4 md:py-0 bg-card/95 backdrop-blur-md border-b border-border shadow-sm z-30 relative">
         <img src={compostHeroesLogo} alt="Compost Heroes" className="h-8 w-auto shrink-0" draggable={false} />
         <div
           className={cn(
-            "flex-1 min-w-0 flex items-center gap-2 rounded-xl px-4 py-1.5 border shadow-sm text-sm font-bold truncate transition-colors",
+            "order-last md:order-none w-full md:w-auto md:flex-1 min-w-0 flex items-center gap-2 rounded-xl px-3 md:px-4 py-1.5 border shadow-sm text-sm font-bold truncate transition-colors",
             isMyTurn || isMyDecision
               ? "bg-primary/10 border-primary/40 text-primary"
               : "bg-muted/40 border-border text-muted-foreground"
@@ -475,11 +476,11 @@ export default function FacilitatedGame() {
           <span className="truncate">{stepText}</span>
         </div>
         
-        <div className="flex items-center gap-2 shrink-0">
+        <div className="flex items-center gap-1 md:gap-2 shrink-0 ml-auto">
           {claim?.playerIndex === 0 && currentUser?.role === "facilitator" && currentUser.id === gameState.facilitatorId && (
             <button
               onClick={() => setLocation(`/game/${gameId}/host`)}
-              className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold border transition-colors bg-amber-500/10 border-amber-500/30 text-amber-700 dark:text-amber-400 hover:bg-amber-500/20"
+              className="flex items-center gap-1.5 px-2 md:px-3 py-1.5 rounded-xl text-xs font-bold border transition-colors bg-amber-500/10 border-amber-500/30 text-amber-700 dark:text-amber-400 hover:bg-amber-500/20"
               title="Open the facilitator dashboard"
             >
               <Crown className="w-4 h-4" /> <span className="hidden sm:inline">Host</span>
@@ -488,7 +489,7 @@ export default function FacilitatedGame() {
           <button
             onClick={() => setShowLog((v) => !v)}
             className={cn(
-              "flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold border transition-colors",
+              "flex items-center gap-1.5 px-2 md:px-3 py-1.5 rounded-xl text-xs font-bold border transition-colors",
               showLog ? "bg-amber-600 text-white border-amber-500" : "bg-card border-border text-muted-foreground hover:bg-muted/50"
             )}
           >
@@ -497,7 +498,7 @@ export default function FacilitatedGame() {
           <button
             onClick={() => setShowRules((v) => !v)}
             className={cn(
-              "flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold border transition-colors",
+              "flex items-center gap-1.5 px-2 md:px-3 py-1.5 rounded-xl text-xs font-bold border transition-colors",
               showRules ? "bg-primary text-primary-foreground border-primary" : "bg-card border-border text-muted-foreground hover:bg-muted/50"
             )}
           >
@@ -510,7 +511,7 @@ export default function FacilitatedGame() {
                 disabled={myOpenQuestion}
                 title={myOpenQuestion ? "Your question is with the facilitator" : "Ask the facilitator a question"}
                 className={cn(
-                  "flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold border transition-colors",
+                  "flex items-center gap-1.5 px-2 md:px-3 py-1.5 rounded-xl text-xs font-bold border transition-colors",
                   myOpenQuestion
                     ? "bg-orange-500/15 border-orange-500/40 text-orange-700 dark:text-orange-400 cursor-default"
                     : askOpen
@@ -559,13 +560,13 @@ export default function FacilitatedGame() {
           <button
             onClick={toggleSoundMute}
             title={soundMuted ? "Unmute sounds" : "Mute sounds"}
-            className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold border transition-colors bg-card border-border text-muted-foreground hover:bg-muted/50"
+            className="flex items-center gap-1.5 px-2 md:px-3 py-1.5 rounded-xl text-xs font-bold border transition-colors bg-card border-border text-muted-foreground hover:bg-muted/50"
           >
             {soundMuted ? <VolumeX className="w-4 h-4" /> : <Volume2 className="w-4 h-4" />}
           </button>
           <div
             className={cn(
-              "flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold border",
+              "flex items-center gap-1.5 px-2 md:px-3 py-1.5 rounded-xl text-xs font-bold border",
               sseConnected ? "bg-green-500/10 border-green-500/30 text-green-700 dark:text-green-400" : "bg-yellow-500/10 border-yellow-500/30 text-yellow-700 dark:text-yellow-400"
             )}
           >
@@ -604,8 +605,30 @@ export default function FacilitatedGame() {
 
       {/* MAIN CONTENT SPLIT */}
       <div className="flex-1 flex flex-row overflow-hidden relative">
+        {mobileControlsOpen && (
+          <button
+            type="button"
+            className="absolute inset-0 z-20 bg-black/30 md:hidden"
+            onClick={() => setMobileControlsOpen(false)}
+            aria-label="Close controls and return to the table"
+            data-testid="button-close-controls-backdrop"
+          />
+        )}
+        <button
+          type="button"
+          className="absolute top-3 z-40 md:hidden flex h-11 items-center gap-1 rounded-l-xl border border-r-0 border-primary/40 bg-card px-2.5 text-xs font-bold text-primary shadow-lg"
+          style={{ right: mobileControlsOpen ? "min(320px, calc(100vw - 48px))" : 0 }}
+          onClick={() => setMobileControlsOpen((open) => !open)}
+          aria-controls="table-controls"
+          aria-expanded={mobileControlsOpen}
+          aria-label={mobileControlsOpen ? "Hide draw, discard and turn controls" : "Show draw, discard and turn controls"}
+          data-testid="button-toggle-mobile-controls"
+        >
+          {mobileControlsOpen ? <ChevronRight className="h-5 w-5" /> : <ChevronLeft className="h-5 w-5" />}
+          {!mobileControlsOpen && <span>{isMyTurn && !decision ? (gameState.phase === "draw" ? "Draw card" : "Turn controls") : "Controls"}</span>}
+        </button>
         {/* LEFT: Matrix Board + Footer Hand */}
-        <div className="flex-1 flex flex-col overflow-hidden relative bg-black/5 shadow-inner">
+        <div className="flex-1 min-w-0 flex flex-col overflow-hidden relative bg-black/5 shadow-inner">
           
           {/* THE MATRIX BOARD */}
           <div className="flex-1 overflow-auto px-4 py-3 md:px-6 custom-scrollbar">
@@ -670,14 +693,14 @@ export default function FacilitatedGame() {
           )}
 
           {/* MY HAND FOOTER — tall enough to show full md cards (208px) + header */}
-          <div className="shrink-0 h-[268px] bg-card/95 backdrop-blur-2xl border-t border-border/60 shadow-[0_-10px_40px_rgba(0,0,0,0.1)] z-20 flex flex-col relative before:absolute before:inset-0 before:bg-gradient-to-t before:from-background/20 before:to-transparent before:pointer-events-none">
-             <div className="px-6 py-2.5 border-b border-border/40 bg-muted/20 flex justify-between items-center relative z-10">
+          <div className="shrink-0 h-[188px] md:h-[268px] bg-card/95 backdrop-blur-2xl border-t border-border/60 shadow-[0_-10px_40px_rgba(0,0,0,0.1)] z-20 flex flex-col relative before:absolute before:inset-0 before:bg-gradient-to-t before:from-background/20 before:pointer-events-none">
+             <div className="px-3 md:px-6 py-2 md:py-2.5 border-b border-border/40 bg-muted/20 flex justify-between items-center relative z-10">
                <span className="text-xs font-bold uppercase tracking-widest text-muted-foreground flex items-center gap-2">
                  Your Hand <span className="bg-background px-2.5 py-0.5 rounded-full border shadow-sm">{me.hand.length} / {me.maxHandSize}</span>
                </span>
                {me.skipsNextTurn && <span className="text-xs font-bold text-destructive flex items-center gap-1.5"><AlertTriangle className="w-3.5 h-3.5"/> Skips Next Turn</span>}
              </div>
-             <div className="flex-1 flex items-center px-8 overflow-x-auto gap-4 custom-scrollbar relative z-10 py-2">
+              <div className="flex-1 flex items-center px-3 md:px-8 overflow-x-auto gap-2 md:gap-4 custom-scrollbar relative z-10 py-1 md:py-2">
                 {me.hand.length === 0 && (
                   <div className="text-muted-foreground/50 italic flex-1 text-center font-medium">No cards in hand</div>
                 )}
@@ -692,15 +715,15 @@ export default function FacilitatedGame() {
                       key={`${card.id}-${idx}`}
                       initial={{ opacity: 0, y: 20 }}
                       animate={{ opacity: isBlocked ? 0.5 : 1, y: 0 }}
-                      className="shrink-0 h-full py-2 flex items-center"
+                       className="shrink-0 h-full py-1 md:py-2 flex items-center"
                     >
                       <GameCard 
                         card={card} 
-                        size="md"
+                         size="sm"
                         showText={false}
                         onClick={() => !isBlocked && handleCardClick(card)}
                         className={cn(
-                          "transition-all duration-300",
+                           "md:w-36 md:h-52 md:rounded-xl transition-all duration-300",
                           playable ? "cursor-pointer hover:-translate-y-4 hover:scale-105 hover:shadow-2xl hover:border-primary ring-offset-background" : "",
                           isBlocked && "cursor-not-allowed grayscale-[20%]"
                         )}
@@ -713,7 +736,13 @@ export default function FacilitatedGame() {
         </div>
 
         {/* RIGHT SIDEBAR */}
-        <div className="w-[320px] shrink-0 bg-card/95 backdrop-blur-2xl border-l border-border/60 flex flex-col shadow-[-10px_0_40px_rgba(0,0,0,0.1)] z-30">
+        <div
+          id="table-controls"
+          className={cn(
+            "absolute inset-y-0 right-0 w-[calc(100vw-48px)] max-w-[320px] shrink-0 bg-card/95 backdrop-blur-2xl border-l border-border/60 flex flex-col shadow-[-10px_0_40px_rgba(0,0,0,0.1)] z-30 transition-transform duration-300 motion-reduce:transition-none md:static md:w-[320px] md:max-w-none md:translate-x-0 md:pointer-events-auto",
+            mobileControlsOpen ? "translate-x-0 pointer-events-auto" : "translate-x-full pointer-events-none"
+          )}
+        >
           
           {/* Decks */}
           <div className="p-6 border-b border-border/40 bg-muted/10 flex justify-center gap-6">
@@ -757,7 +786,7 @@ export default function FacilitatedGame() {
           </div>
 
           {/* Ongoing Effects */}
-          <div className="flex-1 overflow-y-auto p-6 flex flex-col gap-6 custom-scrollbar">
+          <div className="flex-1 min-h-0 overflow-y-auto p-6 flex flex-col gap-6 custom-scrollbar">
             <div>
               <div className="flex items-center gap-2 text-[11px] font-bold tracking-widest uppercase text-orange-600 dark:text-orange-400 border-b border-border/50 pb-2 mb-3">
                  <CircleDot className="w-3.5 h-3.5" /> Ongoing Card
@@ -852,7 +881,7 @@ export default function FacilitatedGame() {
             initial={{ opacity: 0, y: -8 }}
             animate={{ opacity: 1, y: 0 }}
             exit={{ opacity: 0, y: -8 }}
-            className="fixed top-16 right-[340px] z-[65] w-80 bg-card border border-border rounded-2xl shadow-2xl overflow-hidden"
+            className="fixed top-24 left-3 right-3 md:top-16 md:left-auto md:right-[340px] z-[65] md:w-80 bg-card border border-border rounded-2xl shadow-2xl overflow-y-auto max-h-[70dvh]"
           >
             <div className="px-4 py-3 bg-muted/50 border-b border-border flex items-center justify-between">
               <span className="font-bold text-xs uppercase tracking-wider">Quick Rules</span>
@@ -875,7 +904,7 @@ export default function FacilitatedGame() {
             initial={{ opacity: 0, y: -8 }}
             animate={{ opacity: 1, y: 0 }}
             exit={{ opacity: 0, y: -8 }}
-            className="fixed top-16 right-[340px] z-[65] w-80 bg-card border border-border rounded-2xl shadow-2xl flex flex-col overflow-hidden max-h-[60vh]"
+            className="fixed top-24 left-3 right-3 md:top-16 md:left-auto md:right-[340px] z-[65] md:w-80 bg-card border border-border rounded-2xl shadow-2xl flex flex-col overflow-hidden max-h-[60vh]"
           >
             <div className="px-4 py-3 bg-muted/50 border-b border-border flex items-center justify-between shrink-0">
               <span className="font-bold text-xs uppercase tracking-wider">Game Recap</span>
@@ -900,23 +929,23 @@ export default function FacilitatedGame() {
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
-            className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-center justify-center p-6"
+            className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-center justify-center p-3 md:p-6"
             onClick={() => setConfirmCard(null)}
           >
             <motion.div
               initial={{ scale: 0.9, y: 20 }}
               animate={{ scale: 1, y: 0 }}
               exit={{ scale: 0.9, y: 20 }}
-              className="bg-card rounded-3xl shadow-2xl border flex gap-0 overflow-hidden max-w-2xl w-full"
+              className="bg-card rounded-3xl shadow-2xl border flex flex-col md:flex-row gap-0 overflow-y-auto max-h-[calc(100dvh-24px)] max-w-2xl w-full"
               onClick={(e) => e.stopPropagation()}
             >
               {/* Full card — no text overlay */}
-              <div className="shrink-0 p-6 flex items-center justify-center bg-muted/30">
-                <GameCard card={confirmCard} size="lg" hoverable={false} showText={false} className="shadow-2xl" />
+              <div className="shrink-0 p-3 md:p-6 flex items-center justify-center bg-muted/30">
+                <GameCard card={confirmCard} size="sm" hoverable={false} showText={false} className="md:w-64 md:h-96 md:rounded-2xl shadow-2xl" />
               </div>
 
               {/* Explanation panel */}
-              <div className="flex-1 flex flex-col justify-between p-6 min-w-0">
+              <div className="flex-1 flex flex-col justify-between p-4 md:p-6 min-w-0">
                 <div>
                   <h2 className="text-2xl font-display font-bold mb-1" style={{ color: confirmCard.function ? undefined : undefined }}>
                     {confirmCard.name}
