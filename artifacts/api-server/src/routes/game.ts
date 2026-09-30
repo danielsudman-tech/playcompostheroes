@@ -49,7 +49,7 @@ import {
   releaseGameMutationLock,
   withGameMutationLocks,
 } from "../lib/gameStore.js";
-import { buildEffectAnnouncement, findEffectCard } from "../lib/facilitatedEffects.js";
+import { buildEffectAnnouncement, findEffectCard, serializeEffectAnnouncement } from "../lib/facilitatedEffects.js";
 import { getUserByToken, isApprovedFacilitator, type CompostUser } from "../lib/userStore.js";
 
 // Registration rules: online games (and facilitated hosting) require a
@@ -126,6 +126,13 @@ const HIDDEN_CARD = {
 export function serializeState(state: GameState, viewerIndex?: number) {
   const isOnline = state.mode === "online" || state.mode === "facilitated";
   const { deck, ...rest } = state;
+  const viewerId = viewerIndex !== undefined && viewerIndex >= 0
+    ? state.players[viewerIndex]?.id
+    : undefined;
+
+  // Effect details about a discarded hand card are withheld from the shared
+  // state and materialized only for the viewer who owns that hand.
+  const lastEffect = serializeEffectAnnouncement(state.lastEffect, viewerId, isOnline);
 
   // Hidden-information contract: a pending decision's options/meta can contain
   // hand-derived card identities (e.g. Worm Party, hand-choice decisions).
@@ -133,7 +140,6 @@ export function serializeState(state: GameState, viewerIndex?: number) {
   // the waiting UI (type, owner, prompt).
   let pendingDecision = state.pendingDecision;
   if (isOnline && pendingDecision) {
-    const viewerId = viewerIndex !== undefined ? state.players[viewerIndex]?.id : undefined;
     if (viewerId !== pendingDecision.playerId) {
       pendingDecision = { ...pendingDecision, options: [], meta: undefined };
     }
@@ -145,12 +151,12 @@ export function serializeState(state: GameState, viewerIndex?: number) {
   const isFacilitatorViewer = state.mode === "facilitated" &&
     viewerIndex === (state.hostIsSpectator === true ? -1 : 0);
   if (isOnline && questions && !isFacilitatorViewer) {
-    const viewerId = viewerIndex !== undefined ? state.players[viewerIndex]?.id : undefined;
     questions = questions.filter((q) => q.playerId === viewerId);
   }
 
   return {
     ...rest,
+    lastEffect,
     pendingDecision,
     questions,
     deckCount: deck.length,

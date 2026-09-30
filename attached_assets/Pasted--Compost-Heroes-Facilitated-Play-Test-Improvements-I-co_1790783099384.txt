@@ -1,0 +1,529 @@
+# Compost Heroes — Facilitated Play Test Improvements
+
+I completed another live play test of the facilitated/Event version of Compost Heroes and identified several participant and host experience improvements.
+
+Please implement these as a **focused usability and bug-fix round**.
+
+## Important scope
+
+Please:
+
+- preserve the existing Event Control Center architecture;
+- preserve Quick Game / standalone facilitated play;
+- preserve Pass-and-Play and standard online multiplayer;
+- do not redesign the underlying game rules;
+- do not redesign Action-card logic;
+- do not implement the larger drag-and-drop/physical-card interaction concept yet.
+
+The purpose of this round is to improve **communication, readability, audio, post-game flow, and Event facilitation** based on actual play-test observations.
+
+Before changing anything, inspect the existing implementation and reuse current notification, modal, audio, Event, presence, results, and responsive-layout systems wherever practical.
+
+---
+
+# 1. Fix Single-Table Host Messaging Language
+
+There is misleading language in the individual/single-table Host Dashboard indicating that a host message is going to "every table."
+
+In the individual Host Dashboard, the message only goes to players at that particular table/game.
+
+Please change the wording so this distinction is clear.
+
+Use terminology consistently:
+
+- **Player** = one participant
+- **Table** = one Compost Heroes game
+- **Event** = collection of multiple tables
+
+Therefore:
+
+**Message Table** = everyone at one table.
+
+**Message Event** = everyone across all Event tables.
+
+Please check nearby Host UI for similar terminology inconsistencies.
+
+---
+
+# 2. Show Disconnected Duration in Event Attention List
+
+Presence is already tracked.
+
+Please expose useful last-seen/disconnection information in the Event Control Center attention system.
+
+Instead of simply:
+
+**John disconnected**
+
+show something like:
+
+**John disconnected 38 seconds ago**
+
+or:
+
+**John disconnected 2 minutes ago**
+
+The duration should update appropriately while the participant remains disconnected.
+
+If they reconnect, remove/resolve the disconnection alert promptly.
+
+Keep this information concise. We do not need a detailed presence history.
+
+---
+
+# 3. Create Clearer Personal Impact Notifications
+
+This was one of the most important findings from the play test.
+
+Currently, game effects can appear in a notification containing useful information, but the notification can disappear before the affected player has enough time to understand what happened.
+
+For example:
+
+Sally plays an Action card that causes Bob to discard a Nitrogen card.
+
+Bob needs a very clear indication that:
+
+**Sally caused you to discard a Nitrogen card.**
+
+## Create a notification hierarchy
+
+Do NOT simply make every notification larger.
+
+Different game events should have different levels of prominence.
+
+### Level 1 — Routine Game Activity
+
+Examples:
+
+- another player draws;
+- another player completes a normal turn;
+- routine game-state information.
+
+These can remain relatively small and transient.
+
+### Level 2 — Important Shared Game Event
+
+Something important happened at the table, but it did not directly affect the current player.
+
+Make this noticeable without unnecessarily interrupting gameplay.
+
+### Level 3 — Personal Impact
+
+An Action/effect directly changes the current player's:
+
+- hand;
+- compost pile;
+- turn;
+- available actions;
+- cards;
+- ongoing effects;
+- or another meaningful part of their game state.
+
+This should receive a substantially clearer **Personal Impact Notification**.
+
+For example:
+
+## Sally affected you
+
+You discarded **1 Nitrogen card** because of **[Action Card Name]**.
+
+[Got it]
+
+When helpful, show the relevant card/effect.
+
+## Persistence
+
+Do not make Personal Impact notifications disappear after only a few seconds.
+
+The affected player needs enough time to understand what happened.
+
+A good approach may be:
+
+- persistent until acknowledged;
+- or persistent substantially longer with an obvious dismiss control.
+
+Use judgment based on the existing notification architecture.
+
+## Do not unnecessarily obscure the table
+
+The notification needs to be prominent without automatically blocking the entire board.
+
+A modal may not always be necessary.
+
+The key design principle is:
+
+**Prominence should primarily depend on whether the event directly affects me—not simply whether it is currently my turn.**
+
+Please test this with effects that occur during another player's turn.
+
+---
+
+# 4. Player Question / Help Dialog Layering Bug
+
+During the play test, the player question/help dialog appeared **behind the right-side turn-control area**.
+
+This makes part of the dialog difficult or impossible to use.
+
+Please fix the stacking/z-index/positioning so player dialogs always appear above gameplay UI, including:
+
+- table;
+- hand;
+- right-side rail;
+- turn controls;
+- notifications;
+- ongoing-card display.
+
+Also audit the other modal/dialog components for similar stacking problems.
+
+The existing "Action Required" selection dialog is a useful reference for the intended visual hierarchy: when a player must interact with a dialog, it should clearly sit above the normal game interface.
+
+---
+
+# 5. Remove/Fix Background Humming Sound
+
+During gameplay there is currently an audible background humming/noise.
+
+Turning game sound off makes the humming disappear, so it appears to originate from the application's audio system.
+
+Please identify the source of the humming and remove/fix it.
+
+## Audio philosophy for now
+
+Do NOT add continuous ambient/background audio.
+
+For the current version, sound should primarily provide short, useful feedback for meaningful events, such as:
+
+- your turn;
+- playing a card;
+- Action-card effect;
+- important personal impact;
+- completing a compost pile/game.
+
+Sounds should be subtle and should not become repetitive or annoying during a 20–30 minute game.
+
+Preserve the existing easy-to-access sound on/off control.
+
+This task does not require a full sound redesign. The immediate priority is eliminating the humming/background noise.
+
+---
+
+# 6. Improve Desktop Card Size and Use of Screen Space
+
+The cards currently feel somewhat smaller than necessary on a large desktop display.
+
+The attached/referenced play-test screenshot shows that there appears to be unused space that could allow larger cards while still preserving an overall view of the game.
+
+Please review the responsive desktop layout rather than simply increasing every card by a fixed percentage.
+
+## Goal
+
+On a typical laptop/desktop or 1440p-style display, make cards as large and readable as reasonably possible while still allowing the player to understand the whole table.
+
+Pay particular attention to cards already played in opponents' compost piles.
+
+The current player's hand may also be able to become somewhat larger.
+
+## Preserve simultaneous visibility of important information
+
+Do not increase card size so much that the player loses the ability to see:
+
+- opponents and their compost piles;
+- their own compost pile;
+- their own hand;
+- draw pile;
+- discard pile;
+- ongoing Action/effect;
+- primary turn controls.
+
+The goal is:
+
+**better card readability without sacrificing table awareness.**
+
+Preserve the existing ability to click/tap a card to see a larger/detail view.
+
+Please use responsive sizing based on available viewport space rather than assuming one fixed desktop resolution.
+
+---
+
+# 7. Fix Event "Play Again" Behavior
+
+At the end of an Event table, the UI currently offers:
+
+**Play Again**
+
+But selecting it results in:
+
+**Finished event tables cannot be reset.**
+
+The application already knows that the game belongs to an Event, so it should not present an action that cannot be completed.
+
+## Change behavior based on context
+
+### Quick Game / standalone facilitated game
+
+If resetting/replaying is supported, keep:
+
+**Play Again**
+
+### Event Table
+
+Do NOT show Play Again.
+
+Replace it with:
+
+**Return to Event**
+
+This should take the participant to an Event post-game/gathering page.
+
+---
+
+# 8. Create an Event Results / Gathering Page
+
+Participants at different Event tables will not necessarily finish at the same time.
+
+A player whose table finishes early needs somewhere useful to go while other tables continue playing.
+
+Create a simple **Event Results / Gathering Page**.
+
+The first version does not need to be complicated.
+
+Example:
+
+# Great game! 🌱
+
+## Your Table
+
+**Table 3**
+
+Sally completed her compost pile!
+
+**Your result:** 4/5 compost components
+
+## Event Progress
+
+Table 1 — Finished  
+Table 2 — Playing  
+Table 3 — Finished  
+Table 4 — Playing
+
+**Other tables are still playing. Your host will bring everyone back together shortly.**
+
+The exact copy/design can follow existing Compost Heroes styling.
+
+## Important privacy rule
+
+Do not expose private hands, hidden cards, or other information that could affect games still in progress.
+
+Basic table status and completed-game information are sufficient.
+
+---
+
+# 9. Connect This Page to the Event Lifecycle
+
+Use the existing Event lifecycle/state if available.
+
+The page can adapt based on Event state.
+
+### While other tables are playing
+
+Show:
+
+- participant's table result;
+- basic Event progress;
+- message that other tables are still playing.
+
+### During Wrap-Up
+
+Show an appropriate host/wrap-up message.
+
+### Event Complete / Ended
+
+The page may show overall results if those results already exist and can be displayed cleanly.
+
+Do not build a large analytics system for this task.
+
+A simple Event conclusion is enough.
+
+---
+
+# 10. Post-Game Compost Heroes / Green Camps Engagement
+
+The end of the game is a natural opportunity to connect players with the broader Compost Heroes mission.
+
+Add a restrained post-game section below the game/Event results.
+
+The experience should still feel like the conclusion of the game—not an advertising page.
+
+## Primary actions
+
+Prioritize approximately:
+
+### Get the Physical Game
+
+Example copy:
+
+**Keep playing Compost Heroes**
+
+Bring the physical Compost Heroes card game to your family, classroom, camp, or organization.
+
+[Get Compost Heroes]
+
+### Start Composting
+
+Invite the participant to explore the Compost Heroes composting resources / Composting Solution Finder.
+
+[Find My Composting Solution]
+
+### Learn About Green Camps
+
+Explain briefly that Compost Heroes supports or connects with Green Camps' sustainability work.
+
+[Learn About Green Camps]
+
+## Secondary support action
+
+A less prominent option may invite someone to:
+
+**Support Green Camps**
+
+This can lead to donation/support information.
+
+Do not give Buy, Donate, Volunteer, Green Camps, Composting Finder, newsletter signup, etc. equal visual prominence.
+
+Too many equal CTAs will dilute the post-game experience.
+
+Prioritize the most natural next steps after playing.
+
+## Links
+
+Please inspect existing application configuration and existing Compost Heroes/Green Camps links before implementing these buttons.
+
+Reuse configurable/existing destinations where possible rather than scattering hardcoded URLs throughout components.
+
+---
+
+# 11. Preserve Event Host Experience
+
+These participant improvements should not interfere with the Event Control Center.
+
+Please verify that the host can still:
+
+- see Event readiness;
+- monitor table progress;
+- receive prioritized attention alerts;
+- see disconnections;
+- see help requests;
+- open individual tables;
+- message tables;
+- message the Event;
+- pause/resume;
+- move through Event lifecycle;
+- end the Event.
+
+---
+
+# 12. Testing Requirements
+
+Please test these changes as actual gameplay flows rather than only checking that components render.
+
+At minimum test:
+
+## Personal Impact Test
+
+Player A plays an Action that directly affects Player B.
+
+Verify:
+
+- Player B receives a clear persistent Personal Impact notification.
+- Player A and other players receive appropriate lower-priority information.
+- The notification accurately describes what happened.
+- Player B has enough time to understand it.
+- It works when it is NOT Player B's turn.
+
+## Question Dialog Test
+
+Open the player question/help dialog on the normal gameplay screen.
+
+Verify that it appears above the right-side controls and all other gameplay UI.
+
+## Audio Test
+
+Play through several turns with sound enabled.
+
+Verify there is no continuous humming/background noise.
+
+Then mute/unmute sound and verify normal sound controls continue to work.
+
+## Desktop Layout Test
+
+Test at several common desktop/laptop viewport sizes.
+
+Verify cards become larger where space permits without making essential game information inaccessible.
+
+## Event Completion Test
+
+Finish one table while other Event tables remain active.
+
+Verify:
+
+- Play Again does not appear;
+- Return to Event appears;
+- participant reaches Event gathering/results page;
+- participant can see basic Event progress;
+- no hidden/private information from active games is exposed.
+
+## Quick Game Completion Test
+
+Finish a standalone/Quick Game.
+
+Verify its existing supported replay behavior remains intact.
+
+## Event Attention Test
+
+Disconnect a participant.
+
+Verify the Event Control Center displays how long the participant has been disconnected and clears/updates the warning after reconnection.
+
+---
+
+# 13. Please Avoid Scope Creep
+
+Do NOT use this task to implement:
+
+- drag-and-drop card movement;
+- major table redesign;
+- Zoom API integration;
+- new game rules;
+- deck changes;
+- major Action-card engine changes;
+- complex post-game analytics;
+- multi-server realtime architecture;
+- a large chat system.
+
+Those can be considered separately.
+
+This is a focused improvement round based on real facilitated play testing.
+
+---
+
+# Before Implementation
+
+Please inspect the current implementation and briefly report:
+
+1. what currently generates game notifications;
+2. how direct-player effects are identified;
+3. what is causing the background humming;
+4. which components control desktop card sizing;
+5. how Event versus Quick Game end-state behavior is currently determined;
+6. what Event results/status information is already available;
+7. what links/configuration already exist for Compost Heroes and Green Camps;
+8. how you plan to implement these changes without breaking other play modes.
+
+Then proceed with implementation.
+
+After implementation, summarize:
+
+- what changed;
+- any behavior you intentionally left unchanged;
+- any issues that require a later development round;
+- results of the gameplay tests above.

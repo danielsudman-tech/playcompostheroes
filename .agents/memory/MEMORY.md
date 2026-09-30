@@ -1,7 +1,8 @@
 - [Compost Heroes conventions](compost-heroes-conventions.md) — facilitated mode reuses the online flow (tokens/SSE/hidden hands, token must match acting player); API contract is spec-first via lib/api-spec + orval codegen.
 - [Facilitated table testing](facilitated-table-testing.md) — screenshot game routes with `?token=` + `?ut=` (app gate); board must fit 4 players at 900px with my row pinned above the hand.
-- [Sound system architecture](sound-system.md) — Web Audio synthesis, state-diff trigger, volume ducking by isActivePlayer.
+- [Sound UX](sound-system.md) — keep short, meaningful cues and a mute switch; do not restore a continuous ambient hum.
 - [Facilitator approval provenance](facilitator-approval.md) — never trust legacy self-selected roles as admin approval or backfill them automatically.
 - [Account deletion scope](account-deletion.md) — deleting a user ends sign-in but deliberately retains historical games and analytics.
 - [Admin UI verification](admin-ui-verification.md) — API checks can use the workspace admin secret without logging it; browser testers cannot safely inject it.
 - [Event mutation consistency](event-mutation-consistency.md) — event joins and ordinary game actions share database locks; development event tables must be added without a destructive generic push.
+- [Event results privacy](event-results-privacy.md) — share table phases publicly, but require a guest seat token for individual results; face-up discards remain public game state.

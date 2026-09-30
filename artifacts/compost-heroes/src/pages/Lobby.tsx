@@ -15,6 +15,7 @@ import {
 import { useToast } from "@/hooks/use-toast";
 import { useCurrentUser, useLogout } from "@/components/AppGate";
 import { getPublicEvent } from "@workspace/api-client-react";
+import { GREEN_CAMPS_URL, PHYSICAL_GAME_URL } from "@/lib/links";
 
 // ── Room Browser ────────────────────────────────────────────────────────────
 
@@ -302,7 +303,7 @@ export default function Lobby() {
           <p className="text-muted-foreground font-medium mb-3">The card game of soil and strategy</p>
           <div className="flex items-center justify-center gap-2 opacity-70">
             <span className="text-xs text-muted-foreground font-medium tracking-wide">A Project of</span>
-            <a href="https://www.greencamps.org" target="_blank" rel="noopener noreferrer">
+            <a href={GREEN_CAMPS_URL} target="_blank" rel="noopener noreferrer">
               <img
                 src={greenCampsLogo}
                 alt="Green Camps"
@@ -587,7 +588,7 @@ export default function Lobby() {
         <div className="mt-5 flex flex-col items-center gap-3">
           <p className="text-sm text-muted-foreground text-center">Collect 1 Hero from each of the 5 layers to win!</p>
           <a
-            href="https://www.compostheroes.org/purchase"
+            href={PHYSICAL_GAME_URL}
             target="_blank"
             rel="noopener noreferrer"
             className="inline-flex items-center gap-2 border-2 border-primary/40 text-primary hover:bg-primary/10 rounded-full px-4 py-2 text-sm font-semibold transition-colors"

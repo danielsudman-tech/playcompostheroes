@@ -147,12 +147,12 @@ export function DecisionModal({ decision, gameState, onResolve, stepInfo }: Deci
 
   return (
     <AnimatePresence>
-      <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
+      <div className="fixed inset-0 z-[95] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
         <motion.div 
           initial={{ opacity: 0, scale: 0.9, y: 20 }}
           animate={{ opacity: 1, scale: 1, y: 0 }}
           exit={{ opacity: 0, scale: 0.9, y: 20 }}
-          className="bg-card w-full max-w-2xl rounded-3xl shadow-2xl overflow-hidden border border-border"
+          className="bg-card w-full max-w-2xl max-h-[calc(100dvh-2rem)] overflow-y-auto rounded-3xl shadow-2xl border border-border"
         >
           <div className="p-6 bg-primary/10 border-b border-border">
             {stepInfo && (

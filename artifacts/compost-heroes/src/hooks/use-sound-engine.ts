@@ -1,9 +1,5 @@
 /**
- * Compost Heroes — Nature-inspired Web Audio synthesizer (Simplified)
- *
- * Five core sound events, one LFO-modulated ambient bed that shifts
- * through 3 frequency states on a slow cycle so it stays perceptible.
- * Feel: earthy thuds, leaf rustles, water drops, soft wind — playfully animated.
+ * Compost Heroes — Web Audio synthesizer for short, meaningful game cues.
  */
 import { useCallback, useEffect, useRef, useState } from "react";
 
@@ -32,11 +28,6 @@ export function useSoundEngine() {
     () => localStorage.getItem("ch-muted") === "1"
   );
   const ctxRef = useRef<AudioContext | null>(null);
-  const ambientRef = useRef<{
-    osc: OscillatorNode;
-    gain: GainNode;
-    cleanup: () => void;
-  } | null>(null);
 
   const toggleMute = useCallback(() => {
     setMuted((m) => {
@@ -211,125 +202,11 @@ export function useSoundEngine() {
     [muted, getCtx] // eslint-disable-line react-hooks/exhaustive-deps
   );
 
-  // ── Ongoing ambient (LFO-modulated cycling wind tone) ────────────────────
-  //
-  // Three "states" cycle every 7.5 s (base → up → down → base …), giving a
-  // slow perceptible shift without competing with game sounds.
-  // Each layer function gets a distinct base pitch and modulation speed.
-  // Called with no arg (or unknown fn) → defaults to Decomposer colour.
-
-  const startAmbient = useCallback((layerFn?: string) => {
-    if (muted || ambientRef.current) return;
-    const ctx = getCtx();
-    if (!ctx) return;
-    try {
-      // Per-function ambient colours ─────────────────────────────────────
-      type AmbientColour = {
-        base: number;       // oscillator base frequency (Hz)
-        lfoRate: number;    // vibrato LFO speed (Hz)
-        lfoDepth: number;   // vibrato depth (Hz ±)
-        filterFreq: number; // lowpass cutoff
-      };
-      const COLOURS: Record<string, AmbientColour> = {
-        Nitrogen:   { base: 65, lfoRate: 0.13, lfoDepth: 9,  filterFreq: 420 },
-        Carbon:     { base: 42, lfoRate: 0.07, lfoDepth: 5,  filterFreq: 200 },
-        Moisture:   { base: 55, lfoRate: 0.11, lfoDepth: 7,  filterFreq: 320 },
-        Airflow:    { base: 62, lfoRate: 0.10, lfoDepth: 8,  filterFreq: 480 },
-        Decomposer: { base: 50, lfoRate: 0.09, lfoDepth: 6,  filterFreq: 270 },
-      };
-      const colour: AmbientColour =
-        COLOURS[layerFn ?? ""] ?? COLOURS.Decomposer;
-
-      // Primary oscillator — sawtooth for a slightly rich wind tone
-      const osc = ctx.createOscillator();
-      osc.type = "sawtooth";
-      osc.frequency.value = colour.base;
-
-      // Vibrato LFO → oscillator frequency
-      const lfo = ctx.createOscillator();
-      lfo.type = "sine";
-      lfo.frequency.value = colour.lfoRate;
-      const lfoGain = ctx.createGain();
-      lfoGain.gain.value = colour.lfoDepth;
-      lfo.connect(lfoGain);
-      lfoGain.connect(osc.frequency);
-
-      // Warmth lowpass filter
-      const filter = ctx.createBiquadFilter();
-      filter.type = "lowpass";
-      filter.frequency.value = colour.filterFreq;
-      filter.Q.value = 0.7;
-
-      // Slow amplitude "breath" LFO (~12 s per breath cycle)
-      const breathLfo = ctx.createOscillator();
-      breathLfo.type = "sine";
-      breathLfo.frequency.value = 0.08;
-      const breathGain = ctx.createGain();
-      breathGain.gain.value = 0.006;
-      breathLfo.connect(breathGain);
-
-      // Master gain with 2 s fade-in
-      const gain = ctx.createGain();
-      gain.gain.setValueAtTime(0.0001, ctx.currentTime);
-      gain.gain.linearRampToValueAtTime(0.026, ctx.currentTime + 2.0);
-
-      osc.connect(filter);
-      filter.connect(gain);
-      breathGain.connect(gain.gain); // breath modulates amplitude
-      gain.connect(ctx.destination);
-
-      lfo.start();
-      breathLfo.start();
-      osc.start();
-
-      // 3-state frequency cycle: base → up (+18 %) → down (−13 %) → repeat
-      // Each step lasts 7.5 s; glide takes 3 s so the shift is gradual.
-      const cycleFreqs = [colour.base, colour.base * 1.18, colour.base * 0.87];
-      let cycleIndex = 0;
-      const timer = setInterval(() => {
-        if (!ambientRef.current) { clearInterval(timer); return; }
-        cycleIndex = (cycleIndex + 1) % cycleFreqs.length;
-        const now = ctx.currentTime;
-        // Ramp the base pitch; LFO continues to wobble around the new centre
-        osc.frequency.cancelScheduledValues(now);
-        osc.frequency.setValueAtTime(osc.frequency.value, now);
-        osc.frequency.linearRampToValueAtTime(cycleFreqs[cycleIndex], now + 3.0);
-      }, 7500);
-
-      ambientRef.current = {
-        osc,
-        gain,
-        cleanup: () => {
-          clearInterval(timer);
-          try { lfo.stop(); } catch { /* ignore */ }
-          try { breathLfo.stop(); } catch { /* ignore */ }
-        },
-      };
-    } catch { /* ignore */ }
-  }, [muted, getCtx]);
-
-  const stopAmbient = useCallback(() => {
-    const ctx = ctxRef.current;
-    const amb = ambientRef.current;
-    if (!ctx || !amb) return;
-    try {
-      amb.gain.gain.cancelScheduledValues(ctx.currentTime);
-      amb.gain.gain.setValueAtTime(amb.gain.gain.value, ctx.currentTime);
-      amb.gain.gain.linearRampToValueAtTime(0.0001, ctx.currentTime + 1.2);
-      amb.osc.stop(ctx.currentTime + 1.3);
-    } catch { /* ignore */ }
-    amb.cleanup();
-    ambientRef.current = null;
-  }, []);
-
-  useEffect(() => { if (muted) stopAmbient(); }, [muted, stopAmbient]);
-
   useEffect(() => {
     return () => {
-      stopAmbient();
       try { ctxRef.current?.close(); } catch { /* ignore */ }
     };
-  }, [stopAmbient]);
+  }, []);
 
-  return { play, startAmbient, stopAmbient, muted, toggleMute };
+  return { play, muted, toggleMute };
 }

@@ -44,7 +44,10 @@ try {
   gameIds.push(gameId);
   assert.equal(created.json.assignmentMode, "auto");
   assert.ok(created.json.hostTokens[gameId], "creation returns reserved host spectator token");
-  assert.equal((await request(`/events/${code}`)).status, 200, "public event lookup accepts lowercase codes");
+  const publicWaiting = await request(`/events/${code}`);
+  assert.equal(publicWaiting.status, 200, "public event lookup accepts lowercase codes");
+  assert.equal(publicWaiting.json.tables[0].phase, "waiting", "public table status includes its waiting phase");
+  assert.deepEqual(Object.keys(publicWaiting.json.tables[0]).sort(), ["capacity", "occupied", "phase", "tableNumber"]);
   assert.equal((await request(`/events/${code}/join`, post({ name: "Choice rejected", tableNumber: 1 }))).status, 400,
     "auto assignment rejects an explicit table choice");
 
@@ -93,8 +96,21 @@ try {
   assert.equal(detail.status, 200);
   assert.equal(detail.json.tables[0].pendingDecisionOwner, state!.players[0].name);
   assert.equal(detail.json.tables[0].questions[0].text, "Need a hand?");
+  assert.equal(typeof detail.json.tables[0].players[0].lastSeenAt, "number", "host player detail includes heartbeat time in epoch milliseconds");
   assert.equal(JSON.stringify(detail.json).includes("secret-hidden-card"), false, "event summary never serializes pending decision options");
   assert.equal(JSON.stringify(detail.json).includes('"pendingDecision":'), false, "event summary omits the raw pending decision object");
+
+  const publicActive = await request(`/events/${code}`);
+  assert.equal(publicActive.json.status, "active", "public lookup reports active event status");
+  assert.equal(publicActive.json.tables[0].phase, "draw", "public table reports the actual active game phase");
+  assert.equal(JSON.stringify(publicActive.json).includes("Guest"), false, "public event response omits player names");
+  for (const forbidden of ["playerName", "playerId", "players", "questions", "pendingDecision", "cardId", "token", "hostTokens", "hand"]) {
+    assert.equal(JSON.stringify(publicActive.json).includes(forbidden), false, `public event response omits ${forbidden}`);
+  }
+  await pool.query(`UPDATE compost_event_seats SET last_seen_at=NULL WHERE event_id=$1 AND player_id=$2`, [eventId, state!.players[0].id]);
+  const neverSeenDetail = await request(`/facilitator/events/${eventId}?userToken=${userToken}`);
+  assert.equal(neverSeenDetail.json.tables[0].players.find((p: any) => p.playerId === state!.players[0].id).lastSeenAt, null,
+    "host detail distinguishes a guest who has never been seen");
 
   const naturalWinnerId = state!.players[0].id;
   state!.phase = "game_over";
@@ -109,7 +125,10 @@ try {
   assert.equal((await request(`/events/${code}/ready`, post({ token: attempts.find((r) => r.status === 201)!.json.token, ready: false }))).status, 409,
     "readiness cannot change after event completion");
   assert.equal((await request(`/events/${code}/join`, post({ name: "Late Guest" }))).status, 409);
-  assert.equal((await request(`/events/${code}`)).json.status, "completed", "lowercase code resolves completed event too");
+  const publicFinished = await request(`/events/${code}`);
+  assert.equal(publicFinished.json.status, "completed", "lowercase code resolves completed event too");
+  assert.equal(publicFinished.json.tables[0].phase, "game_over", "public table reports its finished phase");
+  assert.equal(JSON.stringify(publicFinished.json).includes("playerName"), false, "finished public results remain privacy-safe");
   const resumed = await request(`/events/${code}/join`, post({ name: "Guest 1", existingToken: attempts.find((r) => r.status === 201)!.json.token }));
   assert.equal(resumed.status, 200, "existing seat can be resumed after event completion");
 

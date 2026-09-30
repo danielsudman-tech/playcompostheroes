@@ -10,6 +10,7 @@ import FacilitatorDashboard from "./pages/FacilitatorDashboard";
 import FacilitatorHome from "./pages/FacilitatorHome";
 import EventControl from "./pages/EventControl";
 import EventLobby from "./pages/EventLobby";
+import EventGathering from "./pages/EventGathering";
 import Admin from "./pages/Admin";
 import { AppGate } from "./components/AppGate";
 import { ErrorBoundary } from "./components/ErrorBoundary";
@@ -22,6 +23,7 @@ function GameRouter() {
       <Route path="/" component={Lobby} />
       <Route path="/facilitator" component={FacilitatorHome} />
       <Route path="/facilitator/events/:eventId" component={EventControl} />
+      <Route path="/event/:code/results" component={EventGathering} />
       <Route path="/event/:code" component={EventLobby} />
       <Route path="/game/:gameId" component={Game} />
       <Route path="/game/:gameId/table" component={FacilitatedGame} />

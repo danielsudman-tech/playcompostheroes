@@ -190,6 +190,12 @@ export const GetGameResponse = zod.object({
       playedById: zod.string(),
       playedByName: zod.string(),
       outcome: zod.array(zod.string()),
+      privateEvents: zod
+        .array(zod.string())
+        .optional()
+        .describe(
+          "Private effect details visible only to the viewer whose token owns the affected hand.",
+        ),
       events: zod.array(
         zod.object({
           kind: zod.enum([
@@ -446,6 +452,12 @@ export const GetFacilitatorEventResponse = zod
               playerName: zod.string(),
               ready: zod.boolean(),
               connected: zod.boolean(),
+              lastSeenAt: zod
+                .number()
+                .nullable()
+                .describe(
+                  "Guest heartbeat time as Unix epoch milliseconds; null when never seen.",
+                ),
             }),
           ),
           progress: zod
@@ -519,6 +531,12 @@ export const UpdateFacilitatorEventResponse = zod
               playerName: zod.string(),
               ready: zod.boolean(),
               connected: zod.boolean(),
+              lastSeenAt: zod
+                .number()
+                .nullable()
+                .describe(
+                  "Guest heartbeat time as Unix epoch milliseconds; null when never seen.",
+                ),
             }),
           ),
           progress: zod
@@ -608,18 +626,48 @@ export const GetPublicEventParams = zod.object({
   code: zod.coerce.string(),
 });
 
+export const getPublicEventResponseTablesItemTableNumberMax = 10;
+
+export const getPublicEventResponseTablesItemCapacityMin = 2;
+export const getPublicEventResponseTablesItemCapacityMax = 4;
+
+export const getPublicEventResponseTablesItemOccupiedMin = 0;
+export const getPublicEventResponseTablesItemOccupiedMax = 4;
+
+export const getPublicEventResponseTablesMax = 10;
+
 export const GetPublicEventResponse = zod.object({
   code: zod.string(),
   name: zod.string(),
   status: zod.enum(["upcoming", "active", "ending", "completed"]),
   assignmentMode: zod.enum(["choose", "auto"]),
-  tables: zod.array(
-    zod.object({
-      tableNumber: zod.number(),
-      capacity: zod.number(),
-      occupied: zod.number(),
-    }),
-  ),
+  tables: zod
+    .array(
+      zod.object({
+        tableNumber: zod
+          .number()
+          .min(1)
+          .max(getPublicEventResponseTablesItemTableNumberMax),
+        capacity: zod
+          .number()
+          .min(getPublicEventResponseTablesItemCapacityMin)
+          .max(getPublicEventResponseTablesItemCapacityMax),
+        occupied: zod
+          .number()
+          .min(getPublicEventResponseTablesItemOccupiedMin)
+          .max(getPublicEventResponseTablesItemOccupiedMax),
+        phase: zod.enum([
+          "waiting",
+          "setup",
+          "draw",
+          "play",
+          "effect_resolution",
+          "end_turn",
+          "game_over",
+        ]),
+      }),
+    )
+    .max(getPublicEventResponseTablesMax),
 });
 
 /**
@@ -814,6 +862,12 @@ export const SendHostMessageResponse = zod.object({
       playedById: zod.string(),
       playedByName: zod.string(),
       outcome: zod.array(zod.string()),
+      privateEvents: zod
+        .array(zod.string())
+        .optional()
+        .describe(
+          "Private effect details visible only to the viewer whose token owns the affected hand.",
+        ),
       events: zod.array(
         zod.object({
           kind: zod.enum([
@@ -1026,6 +1080,12 @@ export const ResolveQuestionResponse = zod.object({
       playedById: zod.string(),
       playedByName: zod.string(),
       outcome: zod.array(zod.string()),
+      privateEvents: zod
+        .array(zod.string())
+        .optional()
+        .describe(
+          "Private effect details visible only to the viewer whose token owns the affected hand.",
+        ),
       events: zod.array(
         zod.object({
           kind: zod.enum([
@@ -1221,6 +1281,12 @@ export const EndSessionResponse = zod.object({
       playedById: zod.string(),
       playedByName: zod.string(),
       outcome: zod.array(zod.string()),
+      privateEvents: zod
+        .array(zod.string())
+        .optional()
+        .describe(
+          "Private effect details visible only to the viewer whose token owns the affected hand.",
+        ),
       events: zod.array(
         zod.object({
           kind: zod.enum([
@@ -1417,6 +1483,12 @@ export const PauseGameResponse = zod.object({
       playedById: zod.string(),
       playedByName: zod.string(),
       outcome: zod.array(zod.string()),
+      privateEvents: zod
+        .array(zod.string())
+        .optional()
+        .describe(
+          "Private effect details visible only to the viewer whose token owns the affected hand.",
+        ),
       events: zod.array(
         zod.object({
           kind: zod.enum([
@@ -1612,6 +1684,12 @@ export const FacilitatorResolveResponse = zod.object({
       playedById: zod.string(),
       playedByName: zod.string(),
       outcome: zod.array(zod.string()),
+      privateEvents: zod
+        .array(zod.string())
+        .optional()
+        .describe(
+          "Private effect details visible only to the viewer whose token owns the affected hand.",
+        ),
       events: zod.array(
         zod.object({
           kind: zod.enum([
@@ -1825,6 +1903,12 @@ export const PerformActionResponse = zod.object({
       playedById: zod.string(),
       playedByName: zod.string(),
       outcome: zod.array(zod.string()),
+      privateEvents: zod
+        .array(zod.string())
+        .optional()
+        .describe(
+          "Private effect details visible only to the viewer whose token owns the affected hand.",
+        ),
       events: zod.array(
         zod.object({
           kind: zod.enum([
@@ -2026,6 +2110,12 @@ export const ReorderWaitingPlayersResponse = zod.object({
       playedById: zod.string(),
       playedByName: zod.string(),
       outcome: zod.array(zod.string()),
+      privateEvents: zod
+        .array(zod.string())
+        .optional()
+        .describe(
+          "Private effect details visible only to the viewer whose token owns the affected hand.",
+        ),
       events: zod.array(
         zod.object({
           kind: zod.enum([

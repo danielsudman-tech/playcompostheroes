@@ -26,6 +26,20 @@ export function findEffectCard(before: GameState, after: GameState, cardId: stri
   return getCardById(cardId.split("__")[0]) ?? null;
 }
 
+/** Removes private per-player details and adds only the requesting viewer's detail. */
+export function serializeEffectAnnouncement(
+  effect: EffectAnnouncement | null | undefined,
+  viewerId?: string,
+  isOnline = true
+): EffectAnnouncement | null | undefined {
+  if (!effect) return effect;
+  const { privateEventsByPlayerId, privateEvents: _unscopedPrivateEvents, ...publicEffect } = effect;
+  return {
+    ...publicEffect,
+    privateEvents: isOnline && viewerId ? privateEventsByPlayerId?.[viewerId] ?? [] : [],
+  };
+}
+
 function pileCardKeys(p: PlayerState): Set<string> {
   return new Set(p.compostPile.map((c) => c.id));
 }
@@ -44,26 +58,44 @@ export function buildEffectAnnouncement(
   const actor = before.players.find((p) => p.id === actorId);
   if (!actor) return null;
 
-  // New log entries = plain-language outcome
-  // (log is capped at 50 entries, so compare from the tail of the common prefix)
-  const beforeLog = before.log;
-  const afterLog = after.log;
-  let common = 0;
-  while (common < beforeLog.length && common < afterLog.length && beforeLog[common] === afterLog[common]) common++;
-  const outcome = afterLog.slice(common);
-
+  // Never put raw log lines in the shared announcement: some game log entries
+  // name cards discarded from a hidden hand.
+  const outcome: string[] = [];
   const events: EffectEvent[] = [];
+  const privateEventsByPlayerId: Record<string, string[]> = {};
 
   // Per-player diffs (hand counts + pile contents — pile contents are public)
   for (const pBefore of before.players) {
     const pAfter = after.players.find((p) => p.id === pBefore.id);
     if (!pAfter) continue;
 
-    const handDelta = pAfter.hand.length - pBefore.hand.length;
+    // Playing an Action consumes one card from the actor's hand. It is a cost,
+    // not a consequence of the Action. Exclude only that exact instance so
+    // simultaneous self-draws/discards are still reflected in the net delta.
+    const playedFromActorHand =
+      pBefore.id === actorId &&
+      card !== null &&
+      pBefore.hand.some((held) => held.id === card.id) &&
+      !pAfter.hand.some((held) => held.id === card.id);
+    const handDelta = pAfter.hand.length - pBefore.hand.length + (playedFromActorHand ? 1 : 0);
     if (handDelta > 0) {
       events.push({ kind: "draw", playerIds: [pBefore.id], text: `${pBefore.name} gained ${handDelta} card${handDelta > 1 ? "s" : ""}` });
     } else if (handDelta < 0) {
       events.push({ kind: "discard", playerIds: [pBefore.id], text: `${pBefore.name} gave up ${-handDelta} card${handDelta < -1 ? "s" : ""} from hand` });
+    }
+
+    const handAfterIds = new Set(after.players.flatMap((player) => player.hand.map((held) => held.id)));
+    const privatelyDiscarded = pBefore.hand.filter((held) =>
+      !pAfter.hand.some((remaining) => remaining.id === held.id) &&
+      !handAfterIds.has(held.id) &&
+      !(playedFromActorHand && held.id === card?.id) &&
+      after.discardPile.some((discarded) => discarded.id === held.id)
+    );
+    if (privatelyDiscarded.length > 0) {
+      privateEventsByPlayerId[pBefore.id] = privatelyDiscarded.map((discarded) => {
+        const fn = discarded.chosenFunction ?? discarded.function;
+        return `${discarded.name}${fn ? ` (${fn})` : ""} was discarded from your hand`;
+      });
     }
 
     const beforeKeys = pileCardKeys(pBefore);
@@ -129,5 +161,6 @@ export function buildEffectAnnouncement(
     playedByName: actor.name,
     outcome,
     events,
+    privateEventsByPlayerId,
   };
 }

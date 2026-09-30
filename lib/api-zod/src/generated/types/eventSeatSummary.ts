@@ -11,4 +11,9 @@ export interface EventSeatSummary {
   playerName: string;
   ready: boolean;
   connected: boolean;
+  /**
+   * Guest heartbeat time as Unix epoch milliseconds; null when never seen.
+   * @nullable
+   */
+  lastSeenAt: number | null;
 }

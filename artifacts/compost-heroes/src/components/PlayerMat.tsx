@@ -310,7 +310,7 @@ export function PlayerMat({
         {/* Face-down hand cards — vertical stack */}
         <div className="flex items-start gap-2 mt-1">
           <span className="text-[10px] text-muted-foreground font-bold uppercase mt-0.5 shrink-0">Hand:</span>
-          <div className="flex flex-col gap-0.5">
+          <div className="flex items-center -space-x-3.5 min-h-5 overflow-hidden max-w-[140px]">
             {Array.from({ length: player.hand.length }).map((_, i) => (
               <div
                 key={i}

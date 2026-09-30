@@ -157,6 +157,59 @@
   z-index: 50 !important;
 }
 
+/* Table dimensions follow the actual reading space left beside the controls.
+   At laptop widths the entire five-slot matrix fits without horizontal panning. */
+.facilitated-table {
+  --board-info: 160px;
+  --board-card-w: 110px;
+  --board-card-h: 154px;
+  --board-gap: 12px;
+  --hand-card-w: 144px;
+  --hand-card-h: 208px;
+}
+@media (min-width: 768px) and (max-width: 1199px) {
+  .facilitated-table {
+    --board-info: 112px;
+    --board-card-w: 72px;
+    --board-card-h: 99px;
+    --board-gap: 6px;
+    --hand-card-w: 112px;
+    --hand-card-h: 162px;
+  }
+}
+@media (max-width: 767px) {
+  .facilitated-table {
+    --board-info: 112px;
+    --board-card-w: 72px;
+    --board-card-h: 99px;
+    --board-gap: 6px;
+    --hand-card-w: 112px;
+    --hand-card-h: 162px;
+  }
+}
+@media (min-width: 1200px) {
+  .facilitated-table {
+    --board-info: 160px;
+    --board-card-w: 110px;
+    --board-card-h: 154px;
+  }
+}
+@media (min-width: 1600px) {
+  .facilitated-table {
+    --board-card-w: 124px;
+    --board-card-h: 174px;
+  }
+}
+@media (min-width: 768px) and (max-height: 760px) {
+  .facilitated-table {
+    --board-card-w: 70px;
+    --board-card-h: 96px;
+    --hand-card-w: 96px;
+    --hand-card-h: 138px;
+  }
+  .facilitated-table .table-hand-footer { height: 178px; }
+}
+
 /* Event control: field notes, not a corporate dashboard. */
 .event-shell { min-height: 100dvh; background: #f4f0e4; color: #304235; }
 .event-shell::before { content: ""; position: fixed; inset: 0; pointer-events: none; opacity: .045; z-index: 40; background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 160 160' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.7' numOctaves='2'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E"); }

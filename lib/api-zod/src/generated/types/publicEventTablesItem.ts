@@ -5,9 +5,23 @@
  * Compost Heroes Game API
  * OpenAPI spec version: 0.1.0
  */
+import type { PublicEventTablesItemPhase } from "./publicEventTablesItemPhase";
 
 export type PublicEventTablesItem = {
+  /**
+   * @minimum 1
+   * @maximum 10
+   */
   tableNumber: number;
+  /**
+   * @minimum 2
+   * @maximum 4
+   */
   capacity: number;
+  /**
+   * @minimum 0
+   * @maximum 4
+   */
   occupied: number;
+  phase: PublicEventTablesItemPhase;
 };

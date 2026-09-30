@@ -32,9 +32,87 @@ export const userToken = () => { try { return localStorage.getItem("compost_user
 export const rememberedEventSeat = (code: string): EventJoin | null => {
   try { const value = localStorage.getItem(`compost_event_${code.toLowerCase()}`); return value ? JSON.parse(value) as EventJoin : null; } catch { return null; }
 };
+export const moveRememberedEventSeat = (
+  seat: EventJoin | null,
+  sourceGameId: string,
+  sourceToken: string,
+  gameId: string,
+  targetToken: string,
+): EventJoin | null => {
+  if (!seat || seat.gameId !== sourceGameId || seat.token !== sourceToken) return null;
+  // The room-transfer SSE payload has only { gameId, targetToken }; it does not
+  // include the destination event table number. Don't retain a potentially
+  // incorrect table number from the source room.
+  const { tableNumber: _sourceTableNumber, ...seatWithoutTable } = seat;
+  return { ...seatWithoutTable, gameId, token: targetToken };
+};
 export const rememberEventSeat = (code: string, seat: EventJoin) => {
   storeToken(seat.gameId, seat.token);
   try { localStorage.setItem(`compost_event_${code.toLowerCase()}`, JSON.stringify(seat)); localStorage.setItem(`compost_game_event_code_${seat.gameId}`, code.toLowerCase()); } catch {}
+};
+export const transferRememberedEventSeat = (
+  sourceGameId: string,
+  sourceToken: string,
+  gameId: string,
+  targetToken: string,
+) => {
+  try {
+    const code = localStorage.getItem(`compost_game_event_code_${sourceGameId}`)?.toLowerCase();
+    if (!code) return;
+    const saved = rememberedEventSeat(code);
+    const moved = moveRememberedEventSeat(saved, sourceGameId, sourceToken, gameId, targetToken);
+    if (!moved) return;
+
+    const destinationCode = localStorage.getItem(`compost_game_event_code_${gameId}`);
+    // A destination already associated with another event is not ours to change.
+    if (destinationCode && destinationCode.toLowerCase() !== code) return;
+
+    localStorage.setItem(`compost_event_${code}`, JSON.stringify(moved));
+    localStorage.setItem(`compost_game_event_code_${gameId}`, code);
+    if (localStorage.getItem(`compost_game_event_code_${sourceGameId}`)?.toLowerCase() === code) {
+      localStorage.removeItem(`compost_game_event_code_${sourceGameId}`);
+    }
+    localStorage.removeItem(`compost_event_ready_${sourceGameId}`);
+
+    // The player ID normally survives a transfer, but the server may assign a
+    // new ID if that ID is already present in the destination room. Resolve the
+    // authoritative destination identity with the transferred token.
+    void fetch(`/api/games/${encodeURIComponent(gameId)}/claim`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ token: targetToken }),
+      keepalive: true,
+    }).then(async response => {
+      if (!response.ok) return;
+      const identity = await response.json() as Partial<EventJoin>;
+      const current = rememberedEventSeat(code);
+      if (!current || current.gameId !== gameId || current.token !== targetToken) return;
+      const updated = {
+        ...current,
+        ...(typeof identity.playerId === "string" ? { playerId: identity.playerId } : {}),
+        ...(typeof identity.playerName === "string" ? { playerName: identity.playerName } : {}),
+      };
+      localStorage.setItem(`compost_event_${code}`, JSON.stringify(updated));
+    }).catch(() => {});
+  } catch {}
+};
+export const updateRememberedEventSeatIdentity = (
+  gameId: string,
+  token: string,
+  identity: { playerId?: string | null; playerName?: string },
+) => {
+  try {
+    const code = localStorage.getItem(`compost_game_event_code_${gameId}`)?.toLowerCase();
+    if (!code) return;
+    const seat = rememberedEventSeat(code);
+    if (!seat || seat.gameId !== gameId || seat.token !== token) return;
+    const updated = {
+      ...seat,
+      ...(typeof identity.playerId === "string" ? { playerId: identity.playerId } : {}),
+      ...(typeof identity.playerName === "string" ? { playerName: identity.playerName } : {}),
+    };
+    localStorage.setItem(`compost_event_${code}`, JSON.stringify(updated));
+  } catch {}
 };
 export const getGameEventCode = (gameId: string) => { try { return localStorage.getItem(`compost_game_event_code_${gameId}`); } catch { return null; } };
 export const getGameEventId = (gameId: string) => { try { return localStorage.getItem(`compost_game_event_id_${gameId}`); } catch { return null; } };

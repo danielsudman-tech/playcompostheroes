@@ -54,23 +54,8 @@ export function useGameSounds(
   gameState: GameState | undefined,
   localPlayerId: string | undefined
 ) {
-  const { play, startAmbient, stopAmbient, muted, toggleMute } = useSoundEngine();
+  const { play, muted, toggleMute } = useSoundEngine();
   const prevRef = useRef<Snapshot | null>(null);
-  const ambientStarted = useRef(false);
-
-  // Start/stop the steady ambient bed based on game phase
-  useEffect(() => {
-    if (!gameState) return;
-    if (gameState.phase !== "waiting" && gameState.phase !== "game_over") {
-      if (!ambientStarted.current) {
-        startAmbient();
-        ambientStarted.current = true;
-      }
-    } else {
-      stopAmbient();
-      ambientStarted.current = false;
-    }
-  }, [gameState?.phase, startAmbient, stopAmbient]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     if (!gameState || !localPlayerId) return;
@@ -88,8 +73,6 @@ export function useGameSounds(
     // ── 1. Win ────────────────────────────────────────────────────────────
     if (curr.phase === "game_over" && prev.phase !== "game_over") {
       play("win", true); // full volume for everyone
-      stopAmbient();
-      ambientStarted.current = false;
       return;
     }
 
@@ -148,7 +131,7 @@ export function useGameSounds(
     // branch above (the card lands in the discard pile when played). Clearing
     // of an ongoing on turn-end is intentionally silent per the simplified spec.
 
-  }, [gameState, localPlayerId, play, stopAmbient]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [gameState, localPlayerId, play]); // eslint-disable-line react-hooks/exhaustive-deps
 
   return { muted, toggleMute };
 }

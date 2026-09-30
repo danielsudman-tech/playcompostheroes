@@ -14,5 +14,6 @@ export interface PublicEvent {
   name: string;
   status: PublicEventStatus;
   assignmentMode: PublicEventAssignmentMode;
+  /** @maxItems 10 */
   tables: PublicEventTablesItem[];
 }

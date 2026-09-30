@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback } from "react";
+import { createPortal } from "react-dom";
 import { useGameSounds } from "@/hooks/use-game-sounds";
 import { useCurrentUser } from "@/components/AppGate";
 import { forgetEventSeat, getGameEventCode, rememberedEventSeat, useEventPresence, useGuestEvent, useReadyEvent } from "@/hooks/use-events";
@@ -20,6 +21,7 @@ import {
 import { GameCard } from "@/components/GameCard";
 import { DecisionModal, PLAYER_SELECTION_TYPES } from "@/components/DecisionModal";
 import { EffectAnnouncementOverlay } from "@/components/EffectAnnouncementOverlay";
+import { PostGameLinks } from "@/components/PostGameLinks";
 import { getDecisionStepInfo } from "@/lib/decisionSteps";
 import { OpponentPileModal } from "@/components/OpponentPileModal";
 import {
@@ -476,7 +478,7 @@ export default function FacilitatedGame() {
   const isPlayPhase = isMyTurn && gameState.phase === "play" && !gameState.pendingDecision;
 
   return (
-    <div className="h-[100dvh] bg-background game-table-pattern flex flex-col overflow-hidden text-foreground">
+    <div className="facilitated-table h-[100dvh] bg-background game-table-pattern flex flex-col overflow-hidden text-foreground">
       {/* HEADER */}
       <header className="shrink-0 min-h-14 flex flex-wrap md:flex-nowrap items-center gap-1.5 md:gap-3 px-2 py-2 md:px-4 md:py-0 bg-card/95 backdrop-blur-md border-b border-border shadow-sm z-30 relative">
         <img src={compostHeroesLogo} alt="Compost Heroes" className="h-8 w-auto shrink-0" draggable={false} />
@@ -521,7 +523,7 @@ export default function FacilitatedGame() {
             <BookOpen className="w-4 h-4" /> <span className="hidden sm:inline">Rules</span>
           </button>
           {claim && (
-            <div className="relative">
+            <div>
               <button
                 onClick={() => setAskOpen((v) => !v)}
                 disabled={myOpenQuestion}
@@ -538,39 +540,6 @@ export default function FacilitatedGame() {
               >
                 <Hand className="w-4 h-4" /> <span className="hidden sm:inline">{myOpenQuestion ? "Asked" : "Ask"}</span>
               </button>
-              <AnimatePresence>
-                {askOpen && !myOpenQuestion && (
-                  <motion.div
-                    initial={{ opacity: 0, y: -6 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    exit={{ opacity: 0, y: -6 }}
-                    className="absolute right-0 top-full mt-2 w-72 bg-card border border-border rounded-2xl shadow-xl p-3 space-y-2 z-50"
-                  >
-                    <p className="text-xs font-bold text-foreground">Ask your facilitator</p>
-                    <input
-                      value={askText}
-                      onChange={(e) => setAskText(e.target.value)}
-                      onKeyDown={(e) => { if (e.key === "Enter") handleAskQuestion(); }}
-                      maxLength={300}
-                      autoFocus
-                      placeholder="Type your question (optional)…"
-                      className="w-full h-9 px-3 rounded-xl border border-border bg-background/50 text-sm focus:outline-none focus:ring-2 focus:ring-primary/20"
-                      data-testid="input-question"
-                    />
-                    <Button
-                      size="sm"
-                      className="w-full rounded-xl font-bold"
-                      disabled={askMutation.isPending}
-                      onClick={handleAskQuestion}
-                      data-testid="button-send-question"
-                    >
-                      {askMutation.isPending ? <Loader2 className="w-4 h-4 animate-spin" /> : (
-                         <><Send className="w-4 h-4 mr-1.5" /> {askText.trim() ? "Send question" : "Raise hand"}</>
-                      )}
-                    </Button>
-                  </motion.div>
-                )}
-              </AnimatePresence>
             </div>
           )}
           <button
@@ -647,7 +616,7 @@ export default function FacilitatedGame() {
         <div className="flex-1 min-w-0 flex flex-col overflow-hidden relative bg-black/5 shadow-inner">
           
           {/* THE MATRIX BOARD */}
-          <div className="flex-1 overflow-auto px-4 py-3 md:px-6 custom-scrollbar">
+          <div className="flex-1 min-h-0 overflow-auto px-3 py-2 xl:px-6 xl:py-3 custom-scrollbar">
             <div className="flex flex-col gap-2 w-max mx-auto pb-4">
               
               {/* TARGETING BANNER */}
@@ -659,12 +628,12 @@ export default function FacilitatedGame() {
               )}
 
               {/* MATRIX HEADERS */}
-              <div className="flex gap-3 px-3">
-                <div className="w-[160px] shrink-0" /> {/* Info spacer */}
+              <div className="flex gap-[var(--board-gap)] px-3">
+                <div className="w-[var(--board-info)] shrink-0" /> {/* Info spacer */}
                 {PILE_CATEGORIES.map(cat => (
-                  <div key={cat.key} className={cn("w-[92px] shrink-0 flex items-center justify-center gap-1.5", cat.color)}>
-                    <img src={cat.iconSrc} alt={cat.label} className="w-5 h-5 drop-shadow-sm mix-blend-multiply dark:mix-blend-normal" draggable={false} />
-                    <span className="font-display font-bold tracking-wide text-[13px] drop-shadow-sm">{cat.label}</span>
+                  <div key={cat.key} className={cn("w-[var(--board-card-w)] shrink-0 flex items-center justify-center gap-1", cat.color)}>
+                    <img src={cat.iconSrc} alt={cat.label} className="w-4 h-4 xl:w-5 xl:h-5 drop-shadow-sm mix-blend-multiply dark:mix-blend-normal" draggable={false} />
+                    <span className="font-display font-bold tracking-wide text-[10px] xl:text-[13px] drop-shadow-sm">{cat.label}</span>
                   </div>
                 ))}
               </div>
@@ -709,7 +678,7 @@ export default function FacilitatedGame() {
           )}
 
           {/* MY HAND FOOTER — tall enough to show full md cards (208px) + header */}
-          <div className="shrink-0 h-[188px] md:h-[268px] bg-card/95 backdrop-blur-2xl border-t border-border/60 shadow-[0_-10px_40px_rgba(0,0,0,0.1)] z-20 flex flex-col relative before:absolute before:inset-0 before:bg-gradient-to-t before:from-background/20 before:pointer-events-none">
+          <div className="table-hand-footer shrink-0 h-[188px] md:h-[208px] xl:h-[252px] bg-card/95 backdrop-blur-2xl border-t border-border/60 shadow-[0_-10px_40px_rgba(0,0,0,0.1)] z-20 flex flex-col relative before:absolute before:inset-0 before:bg-gradient-to-t before:from-background/20 before:pointer-events-none">
              <div className="px-3 md:px-6 py-2 md:py-2.5 border-b border-border/40 bg-muted/20 flex justify-between items-center relative z-10">
                <span className="text-xs font-bold uppercase tracking-widest text-muted-foreground flex items-center gap-2">
                  Your Hand <span className="bg-background px-2.5 py-0.5 rounded-full border shadow-sm">{me.hand.length} / {me.maxHandSize}</span>
@@ -737,11 +706,11 @@ export default function FacilitatedGame() {
                         card={card} 
                          size="sm"
                         showText={false}
-                        onClick={() => !isBlocked && handleCardClick(card)}
+                        onClick={() => playable ? handleCardClick(card) : setZoomedCard(card)}
                         className={cn(
-                           "md:w-36 md:h-52 md:rounded-xl transition-all duration-300",
+                           "md:w-[var(--hand-card-w)] md:h-[var(--hand-card-h)] md:rounded-xl cursor-zoom-in transition-all duration-300",
                           playable ? "cursor-pointer hover:-translate-y-4 hover:scale-105 hover:shadow-2xl hover:border-primary ring-offset-background" : "",
-                          isBlocked && "cursor-not-allowed grayscale-[20%]"
+                          isBlocked && "grayscale-[20%]"
                         )}
                       />
                     </motion.div>
@@ -755,13 +724,13 @@ export default function FacilitatedGame() {
         <div
           id="table-controls"
           className={cn(
-            "absolute inset-y-0 right-0 w-[calc(100vw-48px)] max-w-[320px] shrink-0 bg-card/95 backdrop-blur-2xl border-l border-border/60 flex flex-col shadow-[-10px_0_40px_rgba(0,0,0,0.1)] z-30 transition-transform duration-300 motion-reduce:transition-none md:static md:w-[320px] md:max-w-none md:translate-x-0 md:pointer-events-auto",
+            "absolute inset-y-0 right-0 w-[calc(100vw-48px)] max-w-[320px] shrink-0 bg-card/95 backdrop-blur-2xl border-l border-border/60 flex flex-col shadow-[-10px_0_40px_rgba(0,0,0,0.1)] z-30 transition-transform duration-300 motion-reduce:transition-none md:static md:w-[280px] xl:w-[320px] md:max-w-none md:translate-x-0 md:pointer-events-auto",
             mobileControlsOpen ? "translate-x-0 pointer-events-auto" : "translate-x-full pointer-events-none"
           )}
         >
           
           {/* Decks */}
-          <div className="p-6 border-b border-border/40 bg-muted/10 flex justify-center gap-6">
+          <div className="p-3 xl:p-6 border-b border-border/40 bg-muted/10 flex justify-center gap-4 xl:gap-6">
             {/* Draw pile */}
             <div className="flex flex-col items-center gap-2">
               <span className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground flex items-center gap-1"><Layers className="w-3 h-3"/> Draw ({gameState.deckCount ?? 0})</span>
@@ -772,7 +741,7 @@ export default function FacilitatedGame() {
               >
                 <div
                   className={cn(
-                    "w-24 h-36 rounded-xl border-[3px] shadow-lg bg-cover bg-center transition-all",
+                    "w-20 h-[120px] xl:w-24 xl:h-36 rounded-xl border-[3px] shadow-lg bg-cover bg-center transition-all",
                     gameState.phase === "draw" && isMyTurn
                       ? "border-primary ring-4 ring-primary/30 shadow-primary/40 animate-pulse"
                       : "border-border shadow-black/10"
@@ -791,9 +760,9 @@ export default function FacilitatedGame() {
                 data-testid="discard-pile"
               >
                 {topDiscard ? (
-                  <GameCard card={topDiscard} size="sm" hoverable={false} className="shadow-lg border-border" />
+                  <GameCard card={topDiscard} size="sm" hoverable={false} className="w-20 h-[120px] xl:w-24 xl:h-36 shadow-lg border-border" />
                 ) : (
-                  <div className="w-24 h-36 rounded-xl border-[3px] border-dashed border-border/50 flex items-center justify-center bg-black/5 shadow-inner">
+                  <div className="w-20 h-[120px] xl:w-24 xl:h-36 rounded-xl border-[3px] border-dashed border-border/50 flex items-center justify-center bg-black/5 shadow-inner">
                     <RefreshCcw className="w-6 h-6 text-muted-foreground/30" />
                   </div>
                 )}
@@ -802,14 +771,14 @@ export default function FacilitatedGame() {
           </div>
 
           {/* Ongoing Effects */}
-          <div className="flex-1 min-h-0 overflow-y-auto p-6 flex flex-col gap-6 custom-scrollbar">
+          <div className="flex-1 min-h-0 overflow-y-auto p-3 xl:p-6 flex flex-col gap-4 xl:gap-6 custom-scrollbar">
             <div>
               <div className="flex items-center gap-2 text-[11px] font-bold tracking-widest uppercase text-orange-600 dark:text-orange-400 border-b border-border/50 pb-2 mb-3">
                  <CircleDot className="w-3.5 h-3.5" /> Ongoing Card
               </div>
               {gameState.ongoingActionCard ? (
                 <div className="flex flex-col gap-3 bg-orange-500/5 border border-orange-500/20 rounded-xl p-3 shadow-sm">
-                   <GameCard card={gameState.ongoingActionCard} size="sm" className="mx-auto shadow-md" hoverable={false} />
+                   <GameCard card={gameState.ongoingActionCard} size="sm" className="mx-auto shadow-md" hoverable={false} onClick={() => setZoomedCard(gameState.ongoingActionCard!)} />
                    <div className="text-center px-1">
                      <div className="text-sm font-bold text-orange-700 dark:text-orange-400 leading-tight">{gameState.ongoingActionCard.name}</div>
                      <div className="text-[11px] text-muted-foreground mt-1.5 line-clamp-3 leading-snug">{gameState.ongoingActionCard.cardText}</div>
@@ -857,7 +826,7 @@ export default function FacilitatedGame() {
           </div>
 
           {/* Turn Actions */}
-          <div className="h-[220px] p-6 border-t border-border/40 bg-muted/10 flex flex-col justify-center gap-4 relative before:absolute before:inset-0 before:bg-gradient-to-t before:from-background/30 before:to-transparent before:pointer-events-none">
+          <div className="shrink-0 h-[150px] xl:h-[190px] p-3 xl:p-6 border-t border-border/40 bg-muted/10 flex flex-col justify-center gap-4 relative before:absolute before:inset-0 before:bg-gradient-to-t before:from-background/30 before:to-transparent before:pointer-events-none">
             <div className="relative z-10 flex flex-col gap-4 h-full justify-center">
               {gameState.phase !== "game_over" && isMyTurn ? (
                  gameState.phase === "draw" ? (
@@ -889,6 +858,65 @@ export default function FacilitatedGame() {
 
         </div>
       </div>
+
+      {/* Body portal avoids the header's stacking context and the clipped table/controls. */}
+      {createPortal(
+        <AnimatePresence>
+          {askOpen && !myOpenQuestion && (
+            <motion.div
+              key="ask-question"
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              className="fixed inset-0 z-[200] flex items-center justify-center bg-foreground/55 p-4 backdrop-blur-sm"
+              onMouseDown={(e) => { if (e.target === e.currentTarget) setAskOpen(false); }}
+            >
+              <motion.div
+                role="dialog"
+                aria-modal="true"
+                aria-labelledby="ask-question-title"
+                initial={{ opacity: 0, y: 12, scale: 0.97 }}
+                animate={{ opacity: 1, y: 0, scale: 1 }}
+                exit={{ opacity: 0, y: 12, scale: 0.97 }}
+                className="w-full max-w-md rounded-2xl border border-border bg-card p-5 shadow-2xl"
+                onKeyDown={(e) => { if (e.key === "Escape") setAskOpen(false); }}
+              >
+                <div className="mb-4 flex items-start justify-between gap-3">
+                  <div>
+                    <h2 id="ask-question-title" className="font-display text-xl">Ask your facilitator</h2>
+                    <p className="text-sm text-muted-foreground">Your question goes directly to the host.</p>
+                  </div>
+                  <button type="button" aria-label="Close question" onClick={() => setAskOpen(false)} className="rounded-full p-2 text-muted-foreground hover:bg-muted hover:text-foreground" data-testid="button-close-question">
+                    <X className="h-4 w-4" />
+                  </button>
+                </div>
+                <input
+                  value={askText}
+                  onChange={(e) => setAskText(e.target.value)}
+                  onKeyDown={(e) => { if (e.key === "Enter") handleAskQuestion(); }}
+                  maxLength={300}
+                  autoFocus
+                  placeholder="Type your question (optional)…"
+                  className="mb-3 h-11 w-full rounded-xl border border-border bg-background/50 px-3 text-sm focus:outline-none focus:ring-2 focus:ring-primary/20"
+                  data-testid="input-question"
+                />
+                <Button
+                  size="sm"
+                  className="w-full rounded-xl font-bold"
+                  disabled={askMutation.isPending}
+                  onClick={handleAskQuestion}
+                  data-testid="button-send-question"
+                >
+                  {askMutation.isPending ? <Loader2 className="w-4 h-4 animate-spin" /> : (
+                    <><Send className="w-4 h-4 mr-1.5" /> {askText.trim() ? "Send question" : "Raise hand"}</>
+                  )}
+                </Button>
+              </motion.div>
+            </motion.div>
+          )}
+        </AnimatePresence>,
+        document.body
+      )}
 
       {/* Rules popover */}
       <AnimatePresence>
@@ -945,7 +973,7 @@ export default function FacilitatedGame() {
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
-            className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-center justify-center p-3 md:p-6"
+            className="fixed inset-0 z-[90] bg-black/60 backdrop-blur-sm flex items-center justify-center p-3 md:p-6"
             onClick={() => setConfirmCard(null)}
           >
             <motion.div
@@ -1018,7 +1046,7 @@ export default function FacilitatedGame() {
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
               exit={{ opacity: 0 }}
-              className="fixed inset-0 z-50 bg-black/75 backdrop-blur-md flex flex-col items-center justify-center p-6"
+              className="fixed inset-0 z-[90] bg-black/75 backdrop-blur-md flex flex-col items-center justify-center p-3 md:p-6 overflow-auto"
               onClick={() => setViewingDiscard(false)}
             >
               {/* Header */}
@@ -1053,7 +1081,7 @@ export default function FacilitatedGame() {
                     animate={{ opacity: 1, x: 0 }}
                     exit={{ opacity: 0, x: -24 }}
                     transition={{ duration: 0.18 }}
-                    className="grid grid-cols-3 gap-3"
+                    className="grid grid-cols-3 gap-2 md:gap-3"
                   >
                     {pageCards.map((card, i) => (
                       <div
@@ -1061,12 +1089,12 @@ export default function FacilitatedGame() {
                         className="cursor-zoom-in"
                         onClick={() => setZoomedCard(card)}
                       >
-                        <GameCard card={card} size="md" hoverable={false} className="shadow-lg hover:scale-105 transition-transform duration-150" />
+                        <GameCard card={card} size="md" hoverable={false} className="w-auto h-[min(20dvh,13rem)] aspect-[9/13] shadow-lg hover:scale-105 transition-transform duration-150" />
                       </div>
                     ))}
                     {/* Fill empty slots so grid stays stable */}
                     {Array.from({ length: PAGE - pageCards.length }).map((_, i) => (
-                      <div key={`empty-${i}`} className="w-36 h-52" />
+                      <div key={`empty-${i}`} className="w-auto h-[min(20dvh,13rem)] aspect-[9/13]" />
                     ))}
                   </motion.div>
                 </AnimatePresence>
@@ -1094,7 +1122,7 @@ export default function FacilitatedGame() {
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
-            className="fixed inset-0 z-50 bg-black/75 backdrop-blur-md flex items-center justify-center p-6 cursor-zoom-out"
+            className="fixed inset-0 z-[95] bg-black/75 backdrop-blur-md flex items-center justify-center p-6 cursor-zoom-out"
             onClick={() => setZoomedCard(null)}
           >
             <motion.div
@@ -1104,7 +1132,7 @@ export default function FacilitatedGame() {
               transition={{ type: "spring", stiffness: 380, damping: 30 }}
               onClick={(e) => e.stopPropagation()}
             >
-              <GameCard card={zoomedCard} size="lg" hoverable={false} showText={false} className="shadow-2xl" />
+              <GameCard card={zoomedCard} size="lg" hoverable={false} showText={false} className="w-[min(64vw,16rem)] h-auto aspect-[2/3] max-h-[85dvh] shadow-2xl" />
             </motion.div>
           </motion.div>
         )}
@@ -1126,7 +1154,7 @@ export default function FacilitatedGame() {
       )}
 
       {/* Effect Announcements */}
-      <EffectAnnouncementOverlay effect={gameState.lastEffect ?? null} />
+      <EffectAnnouncementOverlay effect={gameState.lastEffect ?? null} localPlayerId={localPlayerId} />
 
       {/* Game Over Screen */}
       {gameState.phase === "game_over" && (
@@ -1135,12 +1163,12 @@ export default function FacilitatedGame() {
             initial={{ scale: 0.8, y: 50, opacity: 0 }}
             animate={{ scale: 1, y: 0, opacity: 1 }}
             transition={{ type: "spring", bounce: 0.5 }}
-            className="bg-card rounded-3xl p-8 md:p-12 max-w-lg w-full text-center border-4 border-primary shadow-2xl relative overflow-hidden"
+            className="bg-card rounded-3xl p-6 md:p-8 max-w-lg w-full max-h-[calc(100dvh-2rem)] overflow-y-auto text-center border-4 border-primary shadow-2xl relative"
           >
             <div className="absolute top-0 left-0 w-full h-2 bg-gradient-to-r from-primary via-yellow-400 to-primary" />
             <h2 className="text-5xl font-display font-bold text-foreground mb-2">Game Over!</h2>
             <div className="text-2xl font-medium text-muted-foreground mb-8">
-              Winner: <span className="font-bold text-primary">{gameState.players.find((p) => p.id === gameState.winner)?.name}</span>
+              {gameState.winner ? <>Winner: <span className="font-bold text-primary">{gameState.players.find((p) => p.id === gameState.winner)?.name}</span></> : "This round was ended by the host."}
             </div>
             <div className="bg-muted rounded-2xl p-6 mb-8">
               <p className="text-sm text-muted-foreground mb-4 font-medium uppercase tracking-wider">Final Standings</p>
@@ -1161,7 +1189,7 @@ export default function FacilitatedGame() {
               </div>
             </div>
             <div className="flex flex-col gap-3">
-              <Button
+              {!gameState.eventId && <Button
                 size="lg"
                 className="w-full text-lg font-bold h-14"
                 disabled={actionMutation.isPending}
@@ -1170,11 +1198,12 @@ export default function FacilitatedGame() {
                 }}
               >
                 Play Again
-              </Button>
-              <Button size="lg" variant="outline" className="w-full text-lg font-bold h-14" onClick={() => setLocation("/")}>
-                Return to Lobby
+              </Button>}
+              <Button size="lg" variant="outline" className="w-full text-lg font-bold h-14" onClick={() => setLocation(gameState.eventId && eventCode ? `/event/${eventCode}/results` : "/")} data-testid="button-postgame-return">
+                {gameState.eventId && eventCode ? "Return to Event" : "Return to Lobby"}
               </Button>
             </div>
+            <PostGameLinks className="mt-6 text-left" />
           </motion.div>
         </div>
       )}

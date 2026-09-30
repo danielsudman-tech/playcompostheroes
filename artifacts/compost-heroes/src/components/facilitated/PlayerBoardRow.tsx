@@ -63,7 +63,7 @@ export function PlayerBoardRow({
     <div
       onClick={targetingActive ? onTarget : onViewPile}
       className={cn(
-        "flex gap-3 px-2 py-1.5 rounded-2xl border-2 transition-all group relative",
+        "flex gap-[var(--board-gap)] px-2 py-1.5 rounded-2xl border-2 transition-all group relative",
         targetingActive && isEligibleTarget ? "border-destructive/60 bg-destructive/10 shadow-[0_0_20px_rgba(239,68,68,0.15)] animate-pulse cursor-pointer" : "border-transparent",
         dimmed ? "opacity-35 grayscale-[50%] pointer-events-none" : "",
         !targetingActive && "hover:bg-card/40 cursor-pointer hover:border-primary/20 hover:shadow-lg"
@@ -71,7 +71,7 @@ export function PlayerBoardRow({
     >
       {/* Player Info Cell */}
       <div className={cn(
-        "w-[160px] shrink-0 rounded-xl p-2.5 border-2 flex flex-col gap-1.5 relative transition-colors bg-card/80 backdrop-blur-sm",
+        "w-[var(--board-info)] shrink-0 rounded-xl p-2 lg:p-2.5 border-2 flex flex-col gap-1.5 relative transition-colors bg-card/80 backdrop-blur-sm",
         isTurn ? "border-primary shadow-md shadow-primary/20" : "border-border/50",
         isMe ? "bg-primary/5" : ""
       )}>
@@ -88,13 +88,13 @@ export function PlayerBoardRow({
 
         <div className="flex items-start justify-between gap-2 mt-1">
           <div className="flex flex-col min-w-0">
-            <span className="font-display font-bold text-lg leading-tight truncate">{player.name}</span>
+            <span className="font-display font-bold text-sm xl:text-lg leading-tight truncate">{player.name}</span>
             <span className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider flex items-center gap-1 mt-0.5">
               {isMe ? <><User className="w-3 h-3" /> You</> : "Opponent"}
             </span>
           </div>
           <div className={cn(
-            "shrink-0 flex flex-col items-center justify-center w-10 h-10 rounded-full border-2",
+            "shrink-0 flex flex-col items-center justify-center w-8 h-8 xl:w-10 xl:h-10 rounded-full border-2",
             oneAway ? "border-red-400 bg-red-100 text-red-700" : "border-primary/30 bg-primary/10 text-primary"
           )}>
             <span className="text-sm font-black leading-none">{collected}</span>
@@ -133,7 +133,7 @@ export function PlayerBoardRow({
         return (
           <div
             key={cat.key}
-            className="w-[92px] h-[126px] shrink-0 relative flex items-center justify-center"
+            className="w-[var(--board-card-w)] h-[var(--board-card-h)] shrink-0 relative flex items-center justify-center"
             onClick={!targetingActive && has && onZoomCard ? (e) => { e.stopPropagation(); onZoomCard(topCard); } : undefined}
           >
              {!has ? (
@@ -142,7 +142,7 @@ export function PlayerBoardRow({
                  <span className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground/50">Empty</span>
                </div>
              ) : (
-               <div className={cn("relative w-full h-full scale-[0.85] origin-top-left", !targetingActive && onZoomCard && "cursor-zoom-in")}>
+                <div className={cn("relative w-full h-full", !targetingActive && onZoomCard && "cursor-zoom-in")}>
                  {cards.map((c, idx) => (
                    <div
                      key={c.id}
@@ -152,7 +152,7 @@ export function PlayerBoardRow({
                        zIndex: idx
                      }}
                    >
-                     <GameCard card={c} size="sm" hoverable={false} />
+                      <GameCard card={c} size="sm" hoverable={false} className="w-[calc(var(--board-card-w)-12px)] h-[calc(var(--board-card-h)-12px)]" />
                    </div>
                  ))}
 

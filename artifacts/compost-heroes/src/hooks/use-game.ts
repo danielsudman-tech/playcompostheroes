@@ -2,6 +2,7 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { getGetGameQueryKey } from "@workspace/api-client-react";
 import type { GameAction, GameState } from "@workspace/api-client-react";
+import { transferRememberedEventSeat, updateRememberedEventSeatIdentity } from "@/hooks/use-events";
 
 // ── Token management ──────────────────────────────────────────────────────────
 
@@ -42,9 +43,10 @@ function getUserToken(): string | undefined {
   }
 }
 
-function followMovedRoom(sourceGameId: string, data: { redirectGameId?: string; targetToken?: string }): boolean {
+function followMovedRoom(sourceGameId: string, sourceToken: string, data: { redirectGameId?: string; targetToken?: string }): boolean {
   if (!data.redirectGameId || !data.targetToken) return false;
   storeToken(data.redirectGameId, data.targetToken);
+  transferRememberedEventSeat(sourceGameId, sourceToken, data.redirectGameId, data.targetToken);
   try { localStorage.removeItem(tokenKey(sourceGameId)); } catch {}
   window.location.assign(`/game/${encodeURIComponent(data.redirectGameId)}/table`);
   return true;
@@ -71,7 +73,7 @@ export function useClaimSlot(gameId: string | null, enabled: boolean) {
     })
       .then(async (r) => {
         const data = await r.json().catch(() => ({}));
-        if (r.status === 409 && gameId && followMovedRoom(gameId, data)) return;
+        if (r.status === 409 && gameId && followMovedRoom(gameId, existingToken ?? "", data)) return;
         if (r.status === 403 && data.requiresPassword) {
           setRequiresPassword(true);
           if (data.error !== "This game is password protected") {
@@ -81,6 +83,7 @@ export function useClaimSlot(gameId: string | null, enabled: boolean) {
         }
         if (!r.ok) throw new Error(data.error ?? "Failed to claim slot");
         storeToken(gameId, data.token);
+        updateRememberedEventSeatIdentity(gameId, data.token, data);
         setClaim(data as ClaimResult);
       })
       .catch((e) => setError(e.message))
@@ -178,6 +181,7 @@ export function useGameSse(
         const data = JSON.parse((e as MessageEvent).data) as { gameId?: string; targetToken?: string };
         if (!data.gameId || !data.targetToken) return;
         storeToken(data.gameId, data.targetToken);
+        transferRememberedEventSeat(gameId, token, data.gameId, data.targetToken);
         try { localStorage.removeItem(tokenKey(gameId)); } catch {}
         queryClient.invalidateQueries({ queryKey: getGetGameQueryKey(data.gameId) });
         source.close();
@@ -201,7 +205,7 @@ export function useGameSse(
               onKickedRef.current?.();
               return true;
             }
-            return r.status === 409 && followMovedRoom(gameId, data);
+            return r.status === 409 && followMovedRoom(gameId, token, data);
           })
           .catch(() => false)
           .then((wasMoved) => {

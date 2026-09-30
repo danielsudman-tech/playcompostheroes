@@ -927,12 +927,14 @@ components:
       required: [ok]
     EventSeatSummary:
       type: object
+      additionalProperties: false
       properties:
         playerId: { type: string }
         playerName: { type: string }
         ready: { type: boolean }
         connected: { type: boolean }
-      required: [playerId, playerName, ready, connected]
+        lastSeenAt: { type: ["number", "null"], description: Guest heartbeat time as Unix epoch milliseconds; null when never seen. }
+      required: [playerId, playerName, ready, connected, lastSeenAt]
     EventTableSummary:
       type: object
       properties:
@@ -972,6 +974,7 @@ components:
           required: [tables]
     PublicEvent:
       type: object
+      additionalProperties: false
       properties:
         code: { type: string }
         name: { type: string }
@@ -979,13 +982,16 @@ components:
         assignmentMode: { type: string, enum: [choose, auto] }
         tables:
           type: array
+          maxItems: 10
           items:
             type: object
+            additionalProperties: false
             properties:
-              tableNumber: { type: integer }
-              capacity: { type: integer }
-              occupied: { type: integer }
-            required: [tableNumber, capacity, occupied]
+              tableNumber: { type: integer, minimum: 1, maximum: 10 }
+              capacity: { type: integer, minimum: 2, maximum: 4 }
+              occupied: { type: integer, minimum: 0, maximum: 4 }
+              phase: { type: string, enum: [waiting, setup, draw, play, effect_resolution, end_turn, game_over] }
+            required: [tableNumber, capacity, occupied, phase]
       required: [code, name, status, assignmentMode, tables]
     EventTableResult:
       type: object
@@ -1340,6 +1346,11 @@ components:
         playedByName:
           type: string
         outcome:
+          type: array
+          items:
+            type: string
+        privateEvents:
+          description: Private effect details visible only to the viewer whose token owns the affected hand.
           type: array
           items:
             type: string

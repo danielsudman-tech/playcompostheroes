@@ -76,6 +76,7 @@ async function buildDetail(eventId: string, includeTokens = false) {
         playerName: player.name,
         ready: seat?.ready === true,
         connected: !!seat?.last_seen_at && Date.now() - new Date(seat.last_seen_at).getTime() <= 45_000,
+        lastSeenAt: seat?.last_seen_at == null ? null : new Date(seat.last_seen_at).getTime(),
       };
     }).filter((p) => guestById.has(p.playerId));
     const questions = (state.questions ?? []).map(({ playerName, text, ts, resolved }) => ({ playerName, text, ts, resolved }));
@@ -360,7 +361,12 @@ router.get("/events/:code", async (req, res): Promise<void> => {
   const result = [];
   for (const table of tables) {
     const state = await getGame(table.game_id);
-    result.push({ tableNumber: table.table_number, capacity: table.capacity, occupied: (state?.players.length ?? 0) });
+    result.push({
+      tableNumber: table.table_number,
+      capacity: table.capacity,
+      occupied: Math.min(table.capacity, Math.max(0, state?.players.length ?? 0)),
+      phase: state?.phase ?? "waiting",
+    });
   }
   res.json(GetPublicEventResponse.parse({ code: row.code, name: row.name, status: row.status, assignmentMode: row.assignment_mode, tables: result }));
 });

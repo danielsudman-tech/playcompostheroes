@@ -42,6 +42,8 @@ import {
   VolumeX,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { getGameEventCode } from "@/hooks/use-events";
+import { PostGameLinks } from "@/components/PostGameLinks";
 
 const CARD_BACK = { id: "back", name: "Card Back", type: "unknown" as const, layer: null, effectType: "instant" as const, cardText: "", factText: "", function: "", imageKey: "card-back.jpg" };
 
@@ -49,6 +51,7 @@ export default function Game() {
   const { gameId } = useParams();
   const [, setLocation] = useLocation();
   const { toast } = useToast();
+  const gameEventCode = gameId ? getGameEventCode(gameId) : null;
 
   // ── Token-based identity for online multiplayer ──
   // 1. Use any token already in localStorage (so returning players get filtered state immediately)
@@ -656,7 +659,7 @@ export default function Game() {
                   isFaceDown
                   hoverable={gameState.phase === 'draw' && isMyTurn}
                   className={cn(
-                    "ring-4 ring-transparent transition-all cursor-pointer",
+                    "w-28 h-40 xl:w-36 xl:h-52 ring-4 ring-transparent transition-all cursor-pointer",
                     gameState.phase === 'draw' && isMyTurn && "ring-primary shadow-primary/30 shadow-lg -translate-y-2"
                   )}
                 />
@@ -679,7 +682,7 @@ export default function Game() {
               >
                 {topCardInDiscard ? (
                   <motion.div initial={{ scale: 0.8, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} className="relative">
-                    <GameCard card={topCardInDiscard} hoverable={gameState.discardPile.length > 0} />
+                    <GameCard card={topCardInDiscard} hoverable={gameState.discardPile.length > 0} className="w-28 h-40 xl:w-36 xl:h-52" />
                     {gameState.discardPile.length > 0 && (
                       <div className="absolute inset-0 rounded-xl bg-black/0 group-hover:bg-black/20 transition-colors flex items-center justify-center">
                         <div className="opacity-0 group-hover:opacity-100 transition-opacity bg-black/70 text-white text-xs font-bold px-2 py-1 rounded-full flex items-center gap-1">
@@ -689,7 +692,7 @@ export default function Game() {
                     )}
                   </motion.div>
                 ) : (
-                  <div className="w-36 h-52 rounded-xl border-4 border-dashed border-muted-foreground/20 flex flex-col items-center justify-center text-muted-foreground/40 bg-black/5">
+                  <div className="w-28 h-40 xl:w-36 xl:h-52 rounded-xl border-4 border-dashed border-muted-foreground/20 flex flex-col items-center justify-center text-muted-foreground/40 bg-black/5">
                     <RefreshCcw className="w-8 h-8 mb-2" />
                     <span className="text-xs font-bold uppercase">Empty</span>
                   </div>
@@ -875,7 +878,7 @@ export default function Game() {
                   animate={{ height: "auto", opacity: 1 }}
                   exit={{ height: 0, opacity: 0 }}
                   transition={{ duration: 0.22, ease: "easeInOut" }}
-                  className="overflow-hidden bg-card/95 backdrop-blur-md border-t border-border"
+                  className="overflow-y-auto bg-card/95 backdrop-blur-md border-t border-border max-h-[min(70dvh,580px)]"
                 >
                   {/* Pile */}
                   <div className="border-b border-border/40">
@@ -946,7 +949,7 @@ export default function Game() {
                             transition={{ type: "spring", stiffness: 280, damping: 28 }}
                             onClick={() => !isBlocked && handleCardClick(card)}
                             className={cn(
-                              "shrink-0 cursor-pointer rounded-xl overflow-hidden w-[176px] h-[256px]",
+                              "shrink-0 cursor-pointer rounded-xl overflow-hidden w-32 h-[186px] xl:w-[176px] xl:h-[256px]",
                               isPlayable && "ring-2 ring-primary/60 shadow-md shadow-primary/20 hover:shadow-lg hover:shadow-primary/30 hover:-translate-y-1 transition-transform",
                               isBlocked && "cursor-not-allowed",
                             )}
@@ -1262,7 +1265,7 @@ export default function Game() {
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
-            className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm"
+            className="fixed inset-0 z-[90] flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm"
             onClick={() => setConfirmCard(null)}
           >
             <motion.div
@@ -1408,7 +1411,7 @@ export default function Game() {
       )}
 
       {/* Effect announcement broadcast to everyone (all modes) */}
-      <EffectAnnouncementOverlay effect={gameState.lastEffect ?? null} />
+      <EffectAnnouncementOverlay effect={gameState.lastEffect ?? null} localPlayerId={localPlayerId} />
 
       {/* FACILITATED: waiting state — someone else is making a choice */}
       {isFacilitated &&
@@ -1560,7 +1563,7 @@ export default function Game() {
               initial={{ scale: 0.8, y: 50 }}
               animate={{ scale: 1, y: 0 }}
               transition={{ type: "spring", bounce: 0.5 }}
-              className="bg-card w-full max-w-lg rounded-3xl shadow-2xl p-8 text-center relative overflow-hidden"
+              className="bg-card w-full max-w-lg max-h-[calc(100dvh-2rem)] overflow-y-auto rounded-3xl shadow-2xl p-8 text-center relative"
             >
               <div className="absolute top-0 left-0 w-full h-2 bg-gradient-to-r from-primary via-secondary to-primary" />
               <img
@@ -1569,7 +1572,9 @@ export default function Game() {
                 className="w-56 mx-auto mb-4 drop-shadow-xl"
                 draggable={false}
               />
-              {localPlayerId === gameState.winner ? (
+              {gameState.endedByHost && !gameState.winner ? (
+                <><h2 className="text-4xl font-display font-bold text-foreground mb-2">Round complete</h2><p className="text-xl text-muted-foreground mb-8">Your host ended this round.</p></>
+              ) : localPlayerId === gameState.winner ? (
                 <>
                   <h2 className="text-4xl font-display font-bold text-primary mb-2">You're a Compost Hero!</h2>
                   <p className="text-xl text-muted-foreground mb-8">
@@ -1588,7 +1593,7 @@ export default function Game() {
               )}
               
               <div className="flex flex-col sm:flex-row justify-center gap-3">
-                <Button
+                {!gameState.eventId && <Button
                   size="lg"
                   className="font-bold text-lg"
                   disabled={actionMutation.isPending}
@@ -1602,11 +1607,14 @@ export default function Game() {
                   ) : (
                     "Play Again"
                   )}
-                </Button>
-                <Button size="lg" variant="outline" className="font-bold text-lg" onClick={() => setLocation("/")}>
-                  Return to Lobby
+                </Button>}
+                <Button size="lg" variant="outline" className="font-bold text-lg" onClick={() => {
+                  setLocation(gameState.eventId && gameEventCode ? `/event/${gameEventCode}/results` : "/");
+                }} data-testid="button-postgame-return">
+                  {gameState.eventId && gameEventCode ? "Return to Event" : "Return to Lobby"}
                 </Button>
               </div>
+              <PostGameLinks className="mt-6 text-left" />
             </motion.div>
           </motion.div>
         )}

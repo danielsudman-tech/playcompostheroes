@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback, createContext, useContext, type React
 import { useLocation as useWouterLocation } from "wouter";
 import { Loader2, Lock, Eye, EyeOff, HelpCircle, X } from "lucide-react";
 import compostHeroesLogo from "@assets/Compost_Heroes_Logo_no_background_1773537933517.png";
+import { PHYSICAL_GAME_URL } from "@/lib/links";
 
 const STORAGE_KEY = "compost_user_token";
 
@@ -75,7 +76,7 @@ function PasswordInput({
 // - Pass & Play and facilitated games at /game/:id are open; online games
 //   require sign-in (checked per-game via the API below).
 function isUngatedPath(p: string): boolean {
-  return p === "/" || /^\/event\/[^/]+\/?$/.test(p) || /^\/game\/[^/]+\/(table|host)\/?$/.test(p);
+  return p === "/" || /^\/event\/[^/]+(?:\/results)?\/?$/.test(p) || /^\/game\/[^/]+\/(table|host)\/?$/.test(p);
 }
 
 function pathGameId(p: string): string | null {
@@ -470,7 +471,7 @@ export function AppGate({ children }: { children: ReactNode }) {
         {/* Purchase link */}
         <div className="text-center">
           <a
-            href="https://www.compostheroes.org/purchase"
+            href={PHYSICAL_GAME_URL}
             target="_blank"
             rel="noopener noreferrer"
             className="inline-flex items-center gap-2 bg-primary text-primary-foreground hover:bg-primary/90 rounded-full px-4 py-2 text-sm font-semibold transition-colors shadow-sm"

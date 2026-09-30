@@ -135,6 +135,11 @@ export interface EventSeatSummary {
   playerName: string;
   ready: boolean;
   connected: boolean;
+  /**
+   * Guest heartbeat time as Unix epoch milliseconds; null when never seen.
+   * @nullable
+   */
+  lastSeenAt: number | null;
 }
 
 export type EventTableSummaryQuestionsItem = { [key: string]: unknown };
@@ -219,10 +224,36 @@ export const PublicEventAssignmentMode = {
   auto: "auto",
 } as const;
 
+export type PublicEventTablesItemPhase =
+  (typeof PublicEventTablesItemPhase)[keyof typeof PublicEventTablesItemPhase];
+
+export const PublicEventTablesItemPhase = {
+  waiting: "waiting",
+  setup: "setup",
+  draw: "draw",
+  play: "play",
+  effect_resolution: "effect_resolution",
+  end_turn: "end_turn",
+  game_over: "game_over",
+} as const;
+
 export type PublicEventTablesItem = {
+  /**
+   * @minimum 1
+   * @maximum 10
+   */
   tableNumber: number;
+  /**
+   * @minimum 2
+   * @maximum 4
+   */
   capacity: number;
+  /**
+   * @minimum 0
+   * @maximum 4
+   */
   occupied: number;
+  phase: PublicEventTablesItemPhase;
 };
 
 export interface PublicEvent {
@@ -230,6 +261,7 @@ export interface PublicEvent {
   name: string;
   status: PublicEventStatus;
   assignmentMode: PublicEventAssignmentMode;
+  /** @maxItems 10 */
   tables: PublicEventTablesItem[];
 }
 
@@ -368,6 +400,8 @@ export interface EffectAnnouncement {
   playedById: string;
   playedByName: string;
   outcome: string[];
+  /** Private effect details visible only to the viewer whose token owns the affected hand. */
+  privateEvents?: string[];
   events: EffectEvent[];
 }
 

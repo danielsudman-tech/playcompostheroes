@@ -16,5 +16,7 @@ export interface EffectAnnouncement {
   playedById: string;
   playedByName: string;
   outcome: string[];
+  /** Private effect details visible only to the viewer whose token owns the affected hand. */
+  privateEvents?: string[];
   events: EffectEvent[];
 }

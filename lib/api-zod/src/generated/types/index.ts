@@ -75,6 +75,7 @@ export * from "./publicEvent";
 export * from "./publicEventAssignmentMode";
 export * from "./publicEventStatus";
 export * from "./publicEventTablesItem";
+export * from "./publicEventTablesItemPhase";
 export * from "./questionFlag";
 export * from "./recoverHostToken200";
 export * from "./streamFacilitatorEventParams";

@@ -390,7 +390,7 @@ export default function FacilitatorDashboard() {
             )}
           </div>
 
-          {/* Broadcast a message to all tables */}
+          {/* Broadcast a message to this table only */}
           <div className="flex items-center gap-2 bg-card/90 backdrop-blur-md border border-border rounded-2xl px-3 py-2">
             <Megaphone className="w-4 h-4 text-primary shrink-0" />
             <input
@@ -398,7 +398,7 @@ export default function FacilitatorDashboard() {
               onChange={(e) => setBroadcastText(e.target.value)}
               onKeyDown={(e) => { if (e.key === "Enter") handleSendBroadcast(); }}
               maxLength={300}
-              placeholder="Broadcast a message to every table (e.g. '5 minutes left!' or 'Great move, Team B!')"
+              placeholder="Message everyone at this table (e.g. '5 minutes left!')"
               className="flex-1 min-w-0 bg-transparent text-sm focus:outline-none placeholder:text-muted-foreground/60"
               data-testid="input-broadcast"
             />

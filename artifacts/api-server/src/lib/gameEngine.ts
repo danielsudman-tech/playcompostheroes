@@ -148,9 +148,13 @@ export interface EffectAnnouncement {
   imageKey: string | null;
   playedById: string;
   playedByName: string;
-  /** Plain-language outcome lines (from the game log). */
+  /** Safe public outcome lines; raw game-log entries are never copied here. */
   outcome: string[];
   events: EffectEvent[];
+  /** Resolved only for the matching token-scoped viewer by serializeState. */
+  privateEventsByPlayerId?: Record<string, string[]>;
+  /** Private detail populated by the per-viewer serializer. */
+  privateEvents?: string[];
 }
 
 type integer = number;

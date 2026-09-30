@@ -17,6 +17,14 @@ function elapsedSince(timestamp: unknown): string | undefined {
   if (seconds < 86400) return `${Math.floor(seconds / 3600)} hr ago`;
   return `${Math.floor(seconds / 86400)} days ago`;
 }
+function disconnectedDuration(lastSeenAt: number | null | undefined): string {
+  if (lastSeenAt == null) return "Never connected";
+  // Presence is considered disconnected 45 seconds after the last heartbeat.
+  const seconds = Math.max(0, Math.floor((Date.now() - lastSeenAt - 45_000) / 1000));
+  if (seconds < 60) return `Disconnected for ${seconds} sec`;
+  if (seconds < 3600) return `Disconnected for ${Math.floor(seconds / 60)} min`;
+  return `Disconnected for ${Math.floor(seconds / 3600)} hr`;
+}
 function attentionIssues(table: EventTable, thresholdMinutes: number): AttentionIssue[] {
   const issues: AttentionIssue[] = [];
   const questions = (table.questions ?? []).filter((q): q is Record<string, unknown> => !!q && typeof q === "object" && !Array.isArray(q) && (q as Record<string, unknown>).resolved !== true);
@@ -28,7 +36,7 @@ function attentionIssues(table: EventTable, thresholdMinutes: number): Attention
     issues.push({ table, rank: 0, title: "Help requested", context: `${table.openQuestions ?? 1} open question${(table.openQuestions ?? 1) === 1 ? "" : "s"} at this table` });
   }
   const disconnected = (table.seats ?? table.players ?? []).filter(s => s.connected === false);
-  for (const seat of disconnected) issues.push({ table, rank: 1, title: "Guest disconnected", context: `${seat.name ?? seat.playerName ?? "A guest"} is disconnected`, elapsed: elapsedSince(seat.lastSeenAt) });
+  for (const seat of disconnected) issues.push({ table, rank: 1, title: "Guest disconnected", context: `${seat.name ?? seat.playerName ?? "A guest"} is disconnected`, elapsed: disconnectedDuration(seat.lastSeenAt) });
   if (!disconnected.length && (table.attention?.includes("disconnected") || (table.disconnectedCount ?? 0) > 0)) {
     issues.push({ table, rank: 1, title: "Guest disconnected", context: `${table.disconnectedCount ?? 1} guest${(table.disconnectedCount ?? 1) === 1 ? "" : "s"} disconnected` });
   }
