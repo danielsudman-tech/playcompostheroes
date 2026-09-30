@@ -14,6 +14,7 @@ import {
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { useCurrentUser, useLogout } from "@/components/AppGate";
+import { getPublicEvent } from "@workspace/api-client-react";
 
 // ── Room Browser ────────────────────────────────────────────────────────────
 
@@ -142,6 +143,13 @@ export default function Lobby() {
     }
     setJoiningCode(true);
     try {
+      try {
+        await getPublicEvent(code);
+        setLocation(`/event/${code}`);
+        return;
+      } catch (eventError) {
+        if ((eventError as { status?: number }).status !== 404) throw eventError;
+      }
       const r = await fetch(`/api/games/${encodeURIComponent(code)}`);
       if (!r.ok) throw new Error("not found");
       const game = await r.json() as { mode?: string };

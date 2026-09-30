@@ -17,6 +17,8 @@ import type { QuestionFlag } from "./questionFlag";
 
 export interface GameState {
   gameId: string;
+  /** Owning event for an event table; absent for standalone games and legacy rooms. */
+  eventId?: string;
   mode: GameStateMode;
   phase: GameStatePhase;
   currentPlayerIndex: number;

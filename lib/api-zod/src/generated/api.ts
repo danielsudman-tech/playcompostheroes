@@ -85,6 +85,12 @@ export const GetGameQueryParams = zod.object({
 
 export const GetGameResponse = zod.object({
   gameId: zod.string(),
+  eventId: zod
+    .string()
+    .optional()
+    .describe(
+      "Owning event for an event table; absent for standalone games and legacy rooms.",
+    ),
   mode: zod.enum(["facilitator", "standalone", "online", "facilitated"]),
   phase: zod.enum([
     "waiting",
@@ -340,6 +346,339 @@ export const GetFacilitatorRoomsResponse = zod.array(
 );
 
 /**
+ * @summary List events owned by the approved facilitator
+ */
+export const GetFacilitatorEventsQueryParams = zod.object({
+  userToken: zod.coerce.string(),
+});
+
+export const GetFacilitatorEventsResponseItem = zod.object({
+  eventId: zod.string(),
+  code: zod.string(),
+  name: zod.string(),
+  status: zod.enum(["upcoming", "active", "ending", "completed"]),
+  assignmentMode: zod.enum(["choose", "auto"]),
+  idleSeconds: zod.number(),
+  tableCount: zod.number(),
+});
+export const GetFacilitatorEventsResponse = zod.array(
+  GetFacilitatorEventsResponseItem,
+);
+
+/**
+ * @summary Create an event and its facilitated game tables atomically
+ */
+export const createFacilitatorEventBodyNameMax = 100;
+
+export const createFacilitatorEventBodyTableCountMax = 10;
+
+export const createFacilitatorEventBodyTableCapacitiesItemMin = 2;
+export const createFacilitatorEventBodyTableCapacitiesItemMax = 4;
+
+export const createFacilitatorEventBodyTableCapacitiesMax = 10;
+
+export const createFacilitatorEventBodyIdleSecondsDefault = 120;
+export const createFacilitatorEventBodyIdleSecondsMin = 30;
+export const createFacilitatorEventBodyIdleSecondsMax = 3600;
+
+export const createFacilitatorEventBodyAssignmentModeDefault = `auto`;
+
+export const CreateFacilitatorEventBody = zod.object({
+  userToken: zod.string(),
+  name: zod.string().min(1).max(createFacilitatorEventBodyNameMax),
+  tableCount: zod.number().min(1).max(createFacilitatorEventBodyTableCountMax),
+  tableCapacities: zod
+    .array(
+      zod
+        .number()
+        .min(createFacilitatorEventBodyTableCapacitiesItemMin)
+        .max(createFacilitatorEventBodyTableCapacitiesItemMax),
+    )
+    .min(1)
+    .max(createFacilitatorEventBodyTableCapacitiesMax)
+    .optional(),
+  idleSeconds: zod
+    .number()
+    .min(createFacilitatorEventBodyIdleSecondsMin)
+    .max(createFacilitatorEventBodyIdleSecondsMax)
+    .default(createFacilitatorEventBodyIdleSecondsDefault),
+  assignmentMode: zod
+    .enum(["choose", "auto"])
+    .default(createFacilitatorEventBodyAssignmentModeDefault),
+});
+
+/**
+ * @summary Get an event control-center summary
+ */
+export const GetFacilitatorEventParams = zod.object({
+  eventId: zod.coerce.string(),
+});
+
+export const GetFacilitatorEventQueryParams = zod.object({
+  userToken: zod.coerce.string(),
+});
+
+export const getFacilitatorEventResponseTwoTablesItemProgressMin = 0;
+export const getFacilitatorEventResponseTwoTablesItemProgressMax = 5;
+
+export const GetFacilitatorEventResponse = zod
+  .object({
+    eventId: zod.string(),
+    code: zod.string(),
+    name: zod.string(),
+    status: zod.enum(["upcoming", "active", "ending", "completed"]),
+    assignmentMode: zod.enum(["choose", "auto"]),
+    idleSeconds: zod.number(),
+    tableCount: zod.number(),
+  })
+  .and(
+    zod.object({
+      tables: zod.array(
+        zod.object({
+          gameId: zod.string(),
+          tableNumber: zod.number(),
+          capacity: zod.number(),
+          phase: zod.string(),
+          paused: zod.boolean(),
+          players: zod.array(
+            zod.object({
+              playerId: zod.string(),
+              playerName: zod.string(),
+              ready: zod.boolean(),
+              connected: zod.boolean(),
+            }),
+          ),
+          progress: zod
+            .number()
+            .min(getFacilitatorEventResponseTwoTablesItemProgressMin)
+            .max(getFacilitatorEventResponseTwoTablesItemProgressMax)
+            .describe(
+              "Highest count of distinct win-condition compost components among players at this table.",
+            ),
+          currentTurnPlayerName: zod.string().nullable(),
+          winner: zod.string().nullable(),
+          pendingDecisionOwner: zod.string().nullable(),
+          questions: zod.array(zod.record(zod.string(), zod.unknown())),
+          lastMeaningfulActivityAt: zod.number().nullable(),
+          attention: zod.array(zod.string()),
+          message: zod.string().nullable(),
+        }),
+      ),
+      hostTokens: zod.record(zod.string(), zod.string()).optional(),
+    }),
+  );
+
+/**
+ * @summary Edit event name or idle threshold
+ */
+export const UpdateFacilitatorEventParams = zod.object({
+  eventId: zod.coerce.string(),
+});
+
+export const updateFacilitatorEventBodyNameMax = 100;
+
+export const updateFacilitatorEventBodyIdleSecondsMin = 30;
+export const updateFacilitatorEventBodyIdleSecondsMax = 3600;
+
+export const UpdateFacilitatorEventBody = zod.object({
+  userToken: zod.string(),
+  name: zod.string().min(1).max(updateFacilitatorEventBodyNameMax).optional(),
+  idleSeconds: zod
+    .number()
+    .min(updateFacilitatorEventBodyIdleSecondsMin)
+    .max(updateFacilitatorEventBodyIdleSecondsMax)
+    .optional(),
+  assignmentMode: zod.enum(["choose", "auto"]).optional(),
+});
+
+export const updateFacilitatorEventResponseTwoTablesItemProgressMin = 0;
+export const updateFacilitatorEventResponseTwoTablesItemProgressMax = 5;
+
+export const UpdateFacilitatorEventResponse = zod
+  .object({
+    eventId: zod.string(),
+    code: zod.string(),
+    name: zod.string(),
+    status: zod.enum(["upcoming", "active", "ending", "completed"]),
+    assignmentMode: zod.enum(["choose", "auto"]),
+    idleSeconds: zod.number(),
+    tableCount: zod.number(),
+  })
+  .and(
+    zod.object({
+      tables: zod.array(
+        zod.object({
+          gameId: zod.string(),
+          tableNumber: zod.number(),
+          capacity: zod.number(),
+          phase: zod.string(),
+          paused: zod.boolean(),
+          players: zod.array(
+            zod.object({
+              playerId: zod.string(),
+              playerName: zod.string(),
+              ready: zod.boolean(),
+              connected: zod.boolean(),
+            }),
+          ),
+          progress: zod
+            .number()
+            .min(updateFacilitatorEventResponseTwoTablesItemProgressMin)
+            .max(updateFacilitatorEventResponseTwoTablesItemProgressMax)
+            .describe(
+              "Highest count of distinct win-condition compost components among players at this table.",
+            ),
+          currentTurnPlayerName: zod.string().nullable(),
+          winner: zod.string().nullable(),
+          pendingDecisionOwner: zod.string().nullable(),
+          questions: zod.array(zod.record(zod.string(), zod.unknown())),
+          lastMeaningfulActivityAt: zod.number().nullable(),
+          attention: zod.array(zod.string()),
+          message: zod.string().nullable(),
+        }),
+      ),
+      hostTokens: zod.record(zod.string(), zod.string()).optional(),
+    }),
+  );
+
+/**
+ * @summary Start, pause, resume, end, or message across event tables
+ */
+export const ControlFacilitatorEventParams = zod.object({
+  eventId: zod.coerce.string(),
+});
+
+export const controlFacilitatorEventBodyTextMax = 300;
+
+export const ControlFacilitatorEventBody = zod.object({
+  userToken: zod.string(),
+  action: zod.enum(["start", "pause_all", "resume_all", "end", "message"]),
+  text: zod.string().max(controlFacilitatorEventBodyTextMax).optional(),
+});
+
+export const ControlFacilitatorEventResponse = zod.object({
+  eventId: zod.string(),
+  action: zod.string(),
+  results: zod.array(
+    zod.object({
+      gameId: zod.string(),
+      success: zod.boolean(),
+      error: zod.string().nullable(),
+    }),
+  ),
+});
+
+/**
+ * @summary Control a single event table
+ */
+export const ControlFacilitatorEventTableParams = zod.object({
+  eventId: zod.coerce.string(),
+  gameId: zod.coerce.string(),
+});
+
+export const controlFacilitatorEventTableBodyTextMax = 300;
+
+export const ControlFacilitatorEventTableBody = zod.object({
+  userToken: zod.string(),
+  action: zod.enum(["pause", "resume", "message"]),
+  text: zod.string().max(controlFacilitatorEventTableBodyTextMax).optional(),
+});
+
+export const ControlFacilitatorEventTableResponse = zod.object({
+  gameId: zod.string(),
+  success: zod.boolean(),
+  error: zod.string().nullable(),
+});
+
+/**
+ * @summary SSE event detail updates, with polling as a client fallback
+ */
+export const StreamFacilitatorEventParams = zod.object({
+  eventId: zod.coerce.string(),
+});
+
+export const StreamFacilitatorEventQueryParams = zod.object({
+  userToken: zod.coerce.string(),
+});
+
+/**
+ * @summary Public event lobby with safe table and seat summary
+ */
+export const GetPublicEventParams = zod.object({
+  code: zod.coerce.string(),
+});
+
+export const GetPublicEventResponse = zod.object({
+  code: zod.string(),
+  name: zod.string(),
+  status: zod.enum(["upcoming", "active", "ending", "completed"]),
+  assignmentMode: zod.enum(["choose", "auto"]),
+  tables: zod.array(
+    zod.object({
+      tableNumber: zod.number(),
+      capacity: zod.number(),
+      occupied: zod.number(),
+    }),
+  ),
+});
+
+/**
+ * @summary Join an event table anonymously or resume using an existing seat token
+ */
+export const JoinEventParams = zod.object({
+  code: zod.coerce.string(),
+});
+
+export const joinEventBodyNameMax = 60;
+
+export const joinEventBodyTableNumberMax = 10;
+
+export const JoinEventBody = zod.object({
+  name: zod.string().min(1).max(joinEventBodyNameMax),
+  tableNumber: zod.number().min(1).max(joinEventBodyTableNumberMax).optional(),
+  existingToken: zod.string().optional(),
+});
+
+export const JoinEventResponse = zod.object({
+  gameId: zod.string(),
+  token: zod.string(),
+  playerId: zod.string(),
+  playerName: zod.string(),
+  tableNumber: zod.number(),
+});
+
+/**
+ * @summary Set the authenticated event seat's ready state
+ */
+export const SetEventReadyParams = zod.object({
+  code: zod.coerce.string(),
+});
+
+export const SetEventReadyBody = zod.object({
+  token: zod.string(),
+  ready: zod.boolean(),
+});
+
+export const SetEventReadyResponse = zod.object({
+  ok: zod.boolean(),
+});
+
+/**
+ * @summary Refresh event guest presence heartbeat
+ */
+export const HeartbeatEventPresenceParams = zod.object({
+  code: zod.coerce.string(),
+});
+
+export const HeartbeatEventPresenceBody = zod.object({
+  token: zod.string(),
+});
+
+export const HeartbeatEventPresenceResponse = zod.object({
+  ok: zod.boolean(),
+});
+
+/**
  * Returns the reserved player-index -1 host token for new spectator-host rooms, or player-index 0 for legacy rooms.
  * @summary Recover the facilitator token for a session's creator
  */
@@ -370,6 +709,12 @@ export const SendHostMessageBody = zod.object({
 
 export const SendHostMessageResponse = zod.object({
   gameId: zod.string(),
+  eventId: zod
+    .string()
+    .optional()
+    .describe(
+      "Owning event for an event table; absent for standalone games and legacy rooms.",
+    ),
   mode: zod.enum(["facilitator", "standalone", "online", "facilitated"]),
   phase: zod.enum([
     "waiting",
@@ -576,6 +921,12 @@ export const ResolveQuestionBody = zod.object({
 
 export const ResolveQuestionResponse = zod.object({
   gameId: zod.string(),
+  eventId: zod
+    .string()
+    .optional()
+    .describe(
+      "Owning event for an event table; absent for standalone games and legacy rooms.",
+    ),
   mode: zod.enum(["facilitator", "standalone", "online", "facilitated"]),
   phase: zod.enum([
     "waiting",
@@ -765,6 +1116,12 @@ export const EndSessionBody = zod.object({
 
 export const EndSessionResponse = zod.object({
   gameId: zod.string(),
+  eventId: zod
+    .string()
+    .optional()
+    .describe(
+      "Owning event for an event table; absent for standalone games and legacy rooms.",
+    ),
   mode: zod.enum(["facilitator", "standalone", "online", "facilitated"]),
   phase: zod.enum([
     "waiting",
@@ -955,6 +1312,12 @@ export const PauseGameBody = zod.object({
 
 export const PauseGameResponse = zod.object({
   gameId: zod.string(),
+  eventId: zod
+    .string()
+    .optional()
+    .describe(
+      "Owning event for an event table; absent for standalone games and legacy rooms.",
+    ),
   mode: zod.enum(["facilitator", "standalone", "online", "facilitated"]),
   phase: zod.enum([
     "waiting",
@@ -1144,6 +1507,12 @@ export const FacilitatorResolveBody = zod.object({
 
 export const FacilitatorResolveResponse = zod.object({
   gameId: zod.string(),
+  eventId: zod
+    .string()
+    .optional()
+    .describe(
+      "Owning event for an event table; absent for standalone games and legacy rooms.",
+    ),
   mode: zod.enum(["facilitator", "standalone", "online", "facilitated"]),
   phase: zod.enum([
     "waiting",
@@ -1351,6 +1720,12 @@ export const PerformActionBody = zod.object({
 
 export const PerformActionResponse = zod.object({
   gameId: zod.string(),
+  eventId: zod
+    .string()
+    .optional()
+    .describe(
+      "Owning event for an event table; absent for standalone games and legacy rooms.",
+    ),
   mode: zod.enum(["facilitator", "standalone", "online", "facilitated"]),
   phase: zod.enum([
     "waiting",
@@ -1546,6 +1921,12 @@ export const ReorderWaitingPlayersBody = zod.object({
 
 export const ReorderWaitingPlayersResponse = zod.object({
   gameId: zod.string(),
+  eventId: zod
+    .string()
+    .optional()
+    .describe(
+      "Owning event for an event table; absent for standalone games and legacy rooms.",
+    ),
   mode: zod.enum(["facilitator", "standalone", "online", "facilitated"]),
   phase: zod.enum([
     "waiting",

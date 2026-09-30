@@ -156,3 +156,24 @@
   transform: translateY(-24px) scale(1.05) rotate(0deg) !important;
   z-index: 50 !important;
 }
+
+/* Event control: field notes, not a corporate dashboard. */
+.event-shell { min-height: 100dvh; background: #f4f0e4; color: #304235; }
+.event-shell::before { content: ""; position: fixed; inset: 0; pointer-events: none; opacity: .045; z-index: 40; background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 160 160' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.7' numOctaves='2'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E"); }
+.event-panel { background: #fffcf4; border: 1px solid #d9ddca; border-radius: 20px; box-shadow: 0 8px 30px rgba(49,65,46,.055); }
+.event-kicker { color: #71826a; font: 800 11px 'Nunito', sans-serif; letter-spacing: .17em; text-transform: uppercase; }
+.event-input { background: #f8f7ed; border: 1px solid #cbd3c2; border-radius: 11px; min-height: 42px; padding: 0 13px; color: #304235; outline: none; width: 100%; }
+.event-input:focus { border-color: #6d9759; box-shadow: 0 0 0 3px #6d975926; }
+.event-button { display: inline-flex; align-items: center; justify-content: center; gap: 7px; min-height: 40px; padding: 8px 14px; border-radius: 11px; font: 800 13px 'Nunito', sans-serif; transition: background .2s, transform .2s; }
+.event-button:hover:not(:disabled) { transform: translateY(-1px); }
+.event-button:disabled { opacity: .48; cursor: not-allowed; }
+.event-button-primary { background: #426c4a; color: #fffbed; }
+.event-button-primary:hover:not(:disabled) { background: #315a3b; }
+.event-button-soft { background: #e9edde; color: #385b42; }
+.event-button-soft:hover:not(:disabled) { background: #dce5d3; }
+.event-button-warn { background: #f7e4d4; color: #9a5036; }
+.event-button-warn:hover:not(:disabled) { background: #f4d6c1; }
+.event-button-outline { border: 1px solid #cbd3c2; color: #445a46; background: #fffcf4; }
+.event-button-outline:hover:not(:disabled) { background: #f0f2e9; }
+.event-skeleton { border-radius: 11px; background: #e4e9d9; animation: event-breathe 1.7s ease-in-out infinite; }
+@keyframes event-breathe { 50% { opacity: .45; } }

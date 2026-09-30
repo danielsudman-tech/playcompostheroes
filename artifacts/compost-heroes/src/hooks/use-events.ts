@@ -1,0 +1,124 @@
+import { useEffect, useState } from "react";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { getStoredToken, storeToken } from "@/hooks/use-game";
+import {
+  getFacilitatorEvents, createFacilitatorEvent, getFacilitatorEvent, updateFacilitatorEvent,
+  controlFacilitatorEvent, controlFacilitatorEventTable, getPublicEvent, joinEvent, setEventReady,
+  heartbeatEventPresence,
+  getGetFacilitatorEventsQueryKey, getGetFacilitatorEventQueryKey, getGetPublicEventQueryKey,
+  type EventDetail, type EventSummary, type PublicEvent, type EventControlResult, type EventTableResult, type EventInput,
+} from "@workspace/api-client-react";
+
+export interface EventSeat { playerId?: string; name?: string; playerName?: string; ready?: boolean; connected?: boolean; present?: boolean; lastSeenAt?: number | null }
+export interface EventTable {
+  gameId: string; tableNumber?: number; label?: string; name?: string; phase?: string; paused?: boolean;
+  seats?: EventSeat[]; players?: EventSeat[]; playerCount?: number; readyCount?: number; maxPlayers?: number;
+  turnNumber?: number; currentPlayerName?: string; pendingDecision?: string | null; winner?: string | null;
+  openQuestions?: number; lastActivityAt?: number | null; disconnectedCount?: number; idleSeconds?: number;
+  capacity?: number; occupied?: number; progress?: number; attention?: string[]; questions?: unknown[];
+}
+export interface EventRecord {
+  id?: string; eventId?: string; code: string; name: string; status: "upcoming" | "active" | "ending" | "completed";
+  tableCount?: number; maxPlayersPerTable?: number; playersPerTable?: number; assignmentMode?: "choose" | "auto";
+  idleThresholdMinutes?: number; idleSeconds?: number; tables: EventTable[]; createdAt?: number; paused?: boolean;
+}
+export interface GuestEvent { code: string; name: string; status: string; assignmentMode?: "choose" | "auto"; tables: EventTable[]; maxPlayersPerTable?: number; playersPerTable?: number }
+export interface EventJoin { gameId: string; token: string; playerId?: string; playerName?: string; tableNumber?: number }
+
+export const eventId = (event: EventRecord) => event.eventId ?? event.id ?? "";
+export const eventKey = (id: string) => getGetFacilitatorEventQueryKey(id, { userToken: userToken() });
+export const guestEventKey = (code: string) => getGetPublicEventQueryKey(code);
+export const userToken = () => { try { return localStorage.getItem("compost_user_token") ?? ""; } catch { return ""; } };
+export const rememberedEventSeat = (code: string): EventJoin | null => {
+  try { const value = localStorage.getItem(`compost_event_${code.toLowerCase()}`); return value ? JSON.parse(value) as EventJoin : null; } catch { return null; }
+};
+export const rememberEventSeat = (code: string, seat: EventJoin) => {
+  storeToken(seat.gameId, seat.token);
+  try { localStorage.setItem(`compost_event_${code.toLowerCase()}`, JSON.stringify(seat)); localStorage.setItem(`compost_game_event_code_${seat.gameId}`, code.toLowerCase()); } catch {}
+};
+export const getGameEventCode = (gameId: string) => { try { return localStorage.getItem(`compost_game_event_code_${gameId}`); } catch { return null; } };
+export const getGameEventId = (gameId: string) => { try { return localStorage.getItem(`compost_game_event_id_${gameId}`); } catch { return null; } };
+export const forgetEventSeat = (gameId: string) => { try { const code = getGameEventCode(gameId); if (code) localStorage.removeItem(`compost_event_${code}`); localStorage.removeItem(`compost_game_event_code_${gameId}`); localStorage.removeItem(`compost_event_ready_${gameId}`); } catch {} };
+const normalizeTable = (t: EventDetail["tables"][number]): EventTable => ({
+  ...t, seats: t.players.map(p => ({ ...p, name: p.playerName })), maxPlayers: t.capacity,
+  playerCount: t.players.length, readyCount: t.players.filter(p => p.ready).length,
+  currentPlayerName: t.currentTurnPlayerName ?? undefined, pendingDecision: t.pendingDecisionOwner,
+  openQuestions: t.questions.length, lastActivityAt: t.lastMeaningfulActivityAt,
+  disconnectedCount: t.players.filter(p => !p.connected).length,
+});
+const normalizeEvent = (event: EventDetail): EventRecord => ({
+  ...event, idleThresholdMinutes: Math.max(2, Math.ceil(event.idleSeconds / 60)),
+  tables: event.tables.map(normalizeTable),
+});
+const rememberHostEvent = (event: EventRecord) => {
+  try { event.tables.forEach(table => localStorage.setItem(`compost_game_event_id_${table.gameId}`, event.eventId ?? "")); } catch {}
+  return event;
+};
+const normalizeSummary = (event: EventSummary): EventRecord => ({ ...event, tables: [] });
+const normalizeGuest = (event: PublicEvent): GuestEvent => ({
+  ...event, assignmentMode: (event as PublicEvent & { assignmentMode?: "choose" | "auto" }).assignmentMode ?? "choose",
+  tables: event.tables.map(t => ({ ...t, gameId: `table-${t.tableNumber}`, maxPlayers: t.capacity, playerCount: t.occupied })),
+});
+export function useEvents() {
+  return useQuery({ queryKey: getGetFacilitatorEventsQueryKey({ userToken: userToken() }), queryFn: async () => (await getFacilitatorEvents({ userToken: userToken() })).map(normalizeSummary), refetchInterval: 10000 });
+}
+export function useEvent(id: string) {
+  return useQuery({ queryKey: eventKey(id), queryFn: async () => rememberHostEvent(normalizeEvent(await getFacilitatorEvent(id, { userToken: userToken() }))), enabled: !!id, refetchInterval: 10000 });
+}
+export function useGuestEvent(code: string) {
+  return useQuery({ queryKey: guestEventKey(code), queryFn: async () => normalizeGuest(await getPublicEvent(code)), enabled: !!code, refetchInterval: 5000 });
+}
+export function useCreateEvent() {
+  const qc = useQueryClient();
+  return useMutation({ mutationFn: async (data: { name: string; tableCount: number; playersPerTable: number; assignmentMode: "choose" | "auto"; idleThresholdMinutes: number }) => {
+    const payload: EventInput & { assignmentMode: "choose" | "auto" } = { name: data.name, tableCount: data.tableCount, tableCapacities: Array(data.tableCount).fill(data.playersPerTable), idleSeconds: data.idleThresholdMinutes * 60, assignmentMode: data.assignmentMode, userToken: userToken() };
+    return rememberHostEvent(normalizeEvent(await createFacilitatorEvent(payload)));
+  }, onSuccess: (event) => { qc.invalidateQueries({ queryKey: getGetFacilitatorEventsQueryKey({ userToken: userToken() }) }); if (event.eventId) qc.setQueryData(eventKey(event.eventId), event); } });
+}
+export function useUpdateEvent(id: string) {
+  const qc = useQueryClient();
+  return useMutation({ mutationFn: async (data: { name?: string; idleThresholdMinutes?: number }) => normalizeEvent(await updateFacilitatorEvent(id, { name: data.name, idleSeconds: data.idleThresholdMinutes ? data.idleThresholdMinutes * 60 : undefined, userToken: userToken() })), onSuccess: (event) => { qc.setQueryData(eventKey(id), event); qc.invalidateQueries({ queryKey: getGetFacilitatorEventsQueryKey({ userToken: userToken() }) }); } });
+}
+export interface ControlResult { results: EventTableResult[] }
+export function useEventControl(id: string) {
+  const qc = useQueryClient();
+  return useMutation({ mutationFn: (data: { action: "start" | "message" | "pause" | "resume" | "end"; text?: string }): Promise<EventControlResult> => controlFacilitatorEvent(id, { action: data.action === "pause" ? "pause_all" : data.action === "resume" ? "resume_all" : data.action, text: data.text, userToken: userToken() }), onSuccess: () => { qc.invalidateQueries({ queryKey: eventKey(id) }); qc.invalidateQueries({ queryKey: getGetFacilitatorEventsQueryKey({ userToken: userToken() }) }); } });
+}
+export function useTableControl(id: string) {
+  const qc = useQueryClient();
+  return useMutation({ mutationFn: (data: { gameId: string; action: "message" | "pause" | "resume"; text?: string }): Promise<EventTableResult> => controlFacilitatorEventTable(id, data.gameId, { action: data.action, text: data.text, userToken: userToken() }), onSuccess: () => qc.invalidateQueries({ queryKey: eventKey(id) }) });
+}
+export function useJoinEvent(code: string) {
+  const qc = useQueryClient();
+  return useMutation({ mutationFn: (data: { name: string; tableNumber?: number; existingToken?: string }): Promise<EventJoin> => joinEvent(code, data), onSuccess: (seat) => { rememberEventSeat(code, seat); qc.invalidateQueries({ queryKey: guestEventKey(code) }); } });
+}
+export function useReadyEvent(code: string) {
+  const qc = useQueryClient();
+  return useMutation({ mutationFn: (seat: EventJoin) => setEventReady(code, { token: getStoredToken(seat.gameId) ?? seat.token, ready: true }), onSuccess: () => qc.invalidateQueries({ queryKey: guestEventKey(code) }) });
+}
+export function useEventPresence(code: string, seat: EventJoin | null, enabled: boolean) {
+  useEffect(() => {
+    if (!code || !seat || !enabled) return;
+    const send = () => {
+      if (document.visibilityState === "visible") void heartbeatEventPresence(code, { token: getStoredToken(seat.gameId) ?? seat.token }).catch(() => {});
+    };
+    send();
+    const timer = window.setInterval(send, 15000);
+    document.addEventListener("visibilitychange", send);
+    window.addEventListener("online", send);
+    return () => { window.clearInterval(timer); document.removeEventListener("visibilitychange", send); window.removeEventListener("online", send); };
+  }, [code, seat?.gameId, seat?.token, enabled]);
+}
+export function useEventStream(id: string) {
+  const qc = useQueryClient();
+  const [connected, setConnected] = useState(false);
+  useEffect(() => {
+    if (!id || !userToken()) return;
+    const source = new EventSource(`/api/facilitator/events/${encodeURIComponent(id)}/stream?userToken=${encodeURIComponent(userToken())}`);
+    source.onopen = () => setConnected(true);
+    source.onmessage = () => { qc.invalidateQueries({ queryKey: eventKey(id) }); };
+    source.onerror = () => { setConnected(false); qc.invalidateQueries({ queryKey: eventKey(id) }); };
+    return () => { source.close(); setConnected(false); };
+  }, [id, qc]);
+  return connected;
+}

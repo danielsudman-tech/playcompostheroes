@@ -12,6 +12,7 @@ const gameStateCache = new Map<string, GameState>();
 // ── In-memory token → player-index map per game ───────────────────────────────
 // Eliminates a DB query on every SSE broadcast.
 const tokenIndexCache = new Map<string, Map<string, number>>();
+const gameBroadcastListeners = new Set<(gameId: string) => void>();
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -46,6 +47,16 @@ export async function storeGame(state: GameState): Promise<void> {
   );
 }
 
+/** Keep the durable transaction's committed state visible to normal game readers. */
+export function updateGameStateCache(state: GameState): void {
+  gameStateCache.set(state.gameId, state);
+}
+
+export function onGameBroadcast(listener: (gameId: string) => void): () => void {
+  gameBroadcastListeners.add(listener);
+  return () => gameBroadcastListeners.delete(listener);
+}
+
 export async function getGame(gameId: string): Promise<GameState | undefined> {
   if (gameStateCache.has(gameId)) return gameStateCache.get(gameId);
   const result = await pool.query(
@@ -57,6 +68,96 @@ export async function getGame(gameId: string): Promise<GameState | undefined> {
   const state = (typeof row.state === "string" ? JSON.parse(row.state) : row.state) as GameState;
   gameStateCache.set(gameId, state);
   return state;
+}
+
+type PgQueryable = { query: (...args: any[]) => Promise<any> };
+type PgClient = PgQueryable & { release: () => void };
+
+async function eventLookupInTransaction<T>(client: PgClient, query: () => Promise<T>): Promise<T | null> {
+  await client.query("SAVEPOINT event_table_lookup");
+  try {
+    const result = await query();
+    await client.query("RELEASE SAVEPOINT event_table_lookup");
+    return result;
+  } catch (error) {
+    await client.query("ROLLBACK TO SAVEPOINT event_table_lookup");
+    await client.query("RELEASE SAVEPOINT event_table_lookup");
+    if ((error as { code?: string }).code === "42P01") return null;
+    throw error;
+  }
+}
+
+export async function reloadGameState(gameId: string, client: PgQueryable = pool): Promise<GameState | undefined> {
+  const result = await client.query(`SELECT state FROM compost_games WHERE game_id=$1`, [gameId]);
+  if (!result.rows.length) {
+    gameStateCache.delete(gameId);
+    tokenIndexCache.delete(gameId);
+    return undefined;
+  }
+  const value = result.rows[0].state;
+  const state = (typeof value === "string" ? JSON.parse(value) : value) as GameState;
+  gameStateCache.set(gameId, state);
+  const tokenRows = await client.query(`SELECT token,player_index FROM compost_game_tokens WHERE game_id=$1`, [gameId]);
+  tokenIndexCache.set(gameId, new Map(tokenRows.rows.map((row: { token: string; player_index: number | string }) =>
+    [row.token, Number(row.player_index)])));
+  return state;
+}
+
+export async function acquireGameMutationLock(gameId: string): Promise<PgClient> {
+  const client = await pool.connect();
+  let locked = false;
+  try {
+    await client.query(`SELECT pg_advisory_lock(7419, hashtext($1))`, [gameId]);
+    locked = true;
+    await reloadGameState(gameId, client);
+    return client;
+  } catch (error) {
+    if (locked) await client.query(`SELECT pg_advisory_unlock(7419, hashtext($1))`, [gameId]).catch(() => undefined);
+    client.release();
+    throw error;
+  }
+}
+
+export async function releaseGameMutationLock(client: PgClient, gameId: string): Promise<void> {
+  try {
+    await client.query(`SELECT pg_advisory_unlock(7419, hashtext($1))`, [gameId]);
+  } finally {
+    client.release();
+  }
+}
+
+export async function lockGameMutationInTransaction(client: PgClient, gameId: string): Promise<void> {
+  await client.query(`SELECT pg_advisory_xact_lock(7419, hashtext($1))`, [gameId]);
+}
+
+export async function withGameMutationLocks<T>(gameIds: string[], action: () => Promise<T>): Promise<T> {
+  const locked: Array<{ client: PgClient; gameId: string }> = [];
+  try {
+    for (const gameId of [...new Set(gameIds)].sort()) {
+      locked.push({ client: await acquireGameMutationLock(gameId), gameId });
+    }
+    return await action();
+  } finally {
+    for (const lock of locked.reverse()) await releaseGameMutationLock(lock.client, lock.gameId);
+  }
+}
+
+export async function isEventGameReadyToStart(gameId: string): Promise<boolean> {
+  const event = await getEventForGame(gameId);
+  if (!event) return false;
+  const state = await getGame(gameId);
+  if (!state || state.phase !== "waiting" || state.players.length < 2) return false;
+  const result = await pool.query(
+    `SELECT player_id,ready,last_seen_at FROM compost_event_seats WHERE event_id=$1 AND game_id=$2`,
+    [event.eventId, gameId],
+  );
+  const seats = result.rows as Array<{ player_id: string; ready: boolean; last_seen_at: Date | null }>;
+  const byPlayerId = new Map(seats.map((seat) => [seat.player_id, seat]));
+  return state.players.length === seats.length && state.players.every((player) => {
+    const seat = byPlayerId.get(player.id);
+    return !!seat?.ready && !!seat.last_seen_at &&
+      Date.now() - new Date(seat.last_seen_at).getTime() <= 45_000;
+  });
 }
 
 // ── Password ──────────────────────────────────────────────────────────────────
@@ -122,16 +223,42 @@ export async function getAllWaitingRooms(): Promise<Array<{
 // ── Facilitator sessions ──────────────────────────────────────────────────────
 
 export async function getGamesByFacilitator(facilitatorId: string): Promise<GameState[]> {
-  const result = await pool.query(
-    `SELECT state FROM compost_games
-     WHERE state->>'facilitatorId' = $1
-     ORDER BY updated_at DESC
-     LIMIT 50`,
-    [facilitatorId]
-  );
+  let result;
+  try {
+    result = await pool.query(
+      `SELECT state FROM compost_games
+       WHERE state->>'facilitatorId' = $1
+         AND NOT EXISTS (SELECT 1 FROM compost_event_tables et WHERE et.game_id = compost_games.game_id)
+       ORDER BY updated_at DESC
+       LIMIT 50`,
+      [facilitatorId]
+    );
+  } catch (error) {
+    if ((error as { code?: string }).code !== "42P01") throw error;
+    result = await pool.query(
+      `SELECT state FROM compost_games
+       WHERE state->>'facilitatorId' = $1 AND state->>'eventId' IS NULL
+       ORDER BY updated_at DESC LIMIT 50`,
+      [facilitatorId]
+    );
+  }
   return result.rows.map((row) =>
     typeof row.state === "string" ? JSON.parse(row.state) : row.state
   );
+}
+
+export async function getEventForGame(gameId: string): Promise<{ eventId: string; status: string } | null> {
+  try {
+    const result = await pool.query(
+      `SELECT e.id AS event_id, e.status
+         FROM compost_event_tables t JOIN compost_events e ON e.id=t.event_id
+        WHERE t.game_id=$1 LIMIT 1`, [gameId],
+    );
+    return result.rows[0] ? { eventId: result.rows[0].event_id, status: result.rows[0].status } : null;
+  } catch (error) {
+    if ((error as { code?: string }).code === "42P01") return null;
+    throw error;
+  }
 }
 
 // ── Tokens ────────────────────────────────────────────────────────────────────
@@ -269,6 +396,21 @@ export async function reorderWaitingPlayers(
         );
       }
     }
+    let eventId = state.eventId;
+    if (!eventId) {
+      const linked = await eventLookupInTransaction(client,
+        () => client.query(`SELECT event_id FROM compost_event_tables WHERE game_id=$1`, [gameId]));
+      eventId = linked?.rows[0]?.event_id;
+    }
+    if (eventId) {
+      for (let index = guestOffset; index < newPlayers.length; index++) {
+        await client.query(
+          `UPDATE compost_event_seats SET player_index=$4
+            WHERE event_id=$1 AND game_id=$2 AND player_id=$3`,
+          [eventId, gameId, newPlayers[index].id, index],
+        );
+      }
+    }
     await client.query(
       `UPDATE compost_games SET state = $2, updated_at = NOW() WHERE game_id = $1`,
       [gameId, JSON.stringify(nextState)]
@@ -325,6 +467,25 @@ export async function transferWaitingPlayer(
       await client.query("ROLLBACK");
       return null;
     }
+    let eventMembership: { eventId: string; status: string } | null = null;
+    let sourceEventId: string | null = null;
+    let targetEventId: string | null = null;
+    const eventRows = await eventLookupInTransaction(client, () => client.query(
+        `SELECT t.game_id,e.id AS event_id,e.status
+           FROM compost_event_tables t JOIN compost_events e ON e.id=t.event_id
+          WHERE t.game_id = ANY($1::text[])`, [[sourceGameId, targetGameId]],
+      ));
+    if (eventRows) {
+      for (const row of eventRows.rows) {
+        if (row.game_id === sourceGameId) sourceEventId = row.event_id;
+        if (row.game_id === targetGameId) targetEventId = row.event_id;
+        if (row.game_id === sourceGameId) eventMembership = { eventId: row.event_id, status: row.status };
+      }
+    }
+    if (sourceEventId !== targetEventId || (eventMembership && !["upcoming", "active"].includes(eventMembership.status))) {
+      await client.query("ROLLBACK");
+      return null;
+    }
     const playerIndex = source.players.findIndex((p) => p.id === playerId);
     if (playerIndex < (source.hostIsSpectator === true ? 0 : 1)) {
       await client.query("ROLLBACK");
@@ -338,6 +499,16 @@ export async function transferWaitingPlayer(
     if (!movingRow) {
       await client.query("ROLLBACK");
       return null;
+    }
+    if (eventMembership) {
+      const seat = await client.query(
+        `SELECT id FROM compost_event_seats WHERE event_id=$1 AND game_id=$2 AND player_id=$3 FOR UPDATE`,
+        [eventMembership.eventId, sourceGameId, playerId],
+      );
+      if (!seat.rows.length) {
+        await client.query("ROLLBACK");
+        return null;
+      }
     }
     let movedPlayer = source.players[playerIndex];
     if (target.players.some((p) => p.id === playerId)) {
@@ -374,6 +545,19 @@ export async function transferWaitingPlayer(
       `UPDATE compost_game_tokens SET game_id = $2, player_index = $3 WHERE game_id = $1 AND token = $4`,
       [sourceGameId, targetGameId, target.players.length, movedToken]
     );
+    if (eventMembership) {
+      await client.query(
+        `UPDATE compost_event_seats
+            SET game_id=$2,player_id=$3,player_index=$4,ready=false,last_seen_at=NULL
+          WHERE event_id=$1 AND game_id=$5 AND player_id=$6`,
+        [eventMembership.eventId, targetGameId, movedPlayer.id, target.players.length, sourceGameId, playerId],
+      );
+      await client.query(
+        `UPDATE compost_event_seats SET player_index=player_index-1
+          WHERE event_id=$1 AND game_id=$2 AND player_index>$3`,
+        [eventMembership.eventId, sourceGameId, playerIndex],
+      );
+    }
     await client.query(
       `UPDATE compost_games SET state = $2, updated_at = NOW() WHERE game_id = $1`,
       [sourceGameId, JSON.stringify(nextSource)]
@@ -469,6 +653,73 @@ export async function removePlayerTokenByIndex(
   }
 
   return removedToken;
+}
+
+export async function removeEventWaitingPlayer(
+  gameId: string,
+  playerId: string
+): Promise<{ state: GameState; removedToken: string | null } | null> {
+  const client = await pool.connect();
+  try {
+    await client.query("BEGIN");
+    const game = await client.query(`SELECT state FROM compost_games WHERE game_id=$1 FOR UPDATE`, [gameId]);
+    if (!game.rows.length) { await client.query("ROLLBACK"); return null; }
+    const state = (typeof game.rows[0].state === "string" ? JSON.parse(game.rows[0].state) : game.rows[0].state) as GameState;
+    let eventId = state.eventId;
+    if (!eventId) {
+      const linked = await eventLookupInTransaction(client,
+        () => client.query(`SELECT event_id FROM compost_event_tables WHERE game_id=$1`, [gameId]));
+      eventId = linked?.rows[0]?.event_id;
+    }
+    if (!eventId || state.phase !== "waiting") { await client.query("ROLLBACK"); return null; }
+    const removedIndex = state.players.findIndex((player) => player.id === playerId);
+    if (removedIndex < 0) { await client.query("ROLLBACK"); return null; }
+    const tokenRows = await client.query(
+      `SELECT token,player_index FROM compost_game_tokens WHERE game_id=$1 FOR UPDATE`, [gameId],
+    );
+    const tokenRow = tokenRows.rows.find((row) => Number(row.player_index) === removedIndex);
+    const nextState = { ...state, players: state.players.filter((player) => player.id !== playerId) };
+    if (tokenRow) {
+      await client.query(`DELETE FROM compost_game_tokens WHERE game_id=$1 AND token=$2`, [gameId, tokenRow.token]);
+    }
+    for (const row of tokenRows.rows) {
+      const index = Number(row.player_index);
+      if (index > removedIndex) {
+        await client.query(`UPDATE compost_game_tokens SET player_index=$3 WHERE game_id=$1 AND token=$2`,
+          [gameId, row.token, -400000 - index]);
+      }
+    }
+    for (const row of tokenRows.rows) {
+      const index = Number(row.player_index);
+      if (index > removedIndex) {
+        await client.query(`UPDATE compost_game_tokens SET player_index=$3 WHERE game_id=$1 AND token=$2`,
+          [gameId, row.token, index - 1]);
+      }
+    }
+    await client.query(
+      `DELETE FROM compost_event_seats WHERE event_id=$1 AND game_id=$2 AND player_id=$3`,
+      [eventId, gameId, playerId],
+    );
+    await client.query(
+      `UPDATE compost_event_seats SET player_index=player_index-1 WHERE event_id=$1 AND game_id=$2 AND player_index>$3`,
+      [eventId, gameId, removedIndex],
+    );
+    await client.query(`UPDATE compost_games SET state=$2,updated_at=NOW() WHERE game_id=$1`,
+      [gameId, JSON.stringify(nextState)]);
+    await client.query("COMMIT");
+    gameStateCache.set(gameId, nextState);
+    const tokenMap = tokenIndexCache.get(gameId);
+    if (tokenMap) {
+      if (tokenRow) tokenMap.delete(tokenRow.token);
+      for (const [token, index] of tokenMap) if (index > removedIndex) tokenMap.set(token, index - 1);
+    }
+    return { state: nextState, removedToken: (tokenRow?.token as string | undefined) ?? null };
+  } catch (error) {
+    await client.query("ROLLBACK");
+    throw error;
+  } finally {
+    client.release();
+  }
 }
 
 /**
@@ -576,6 +827,25 @@ export async function kickFacilitatedPlayer(
       }
     }
 
+    let eventId = state.eventId;
+    if (!eventId) {
+      const linkedEvent = await eventLookupInTransaction(client,
+        () => client.query(`SELECT event_id FROM compost_event_tables WHERE game_id=$1`, [gameId]));
+      eventId = linkedEvent?.rows[0]?.event_id;
+    }
+    if (eventId) {
+      await client.query(
+        `DELETE FROM compost_event_seats WHERE event_id=$1 AND game_id=$2 AND player_id=$3`,
+        [eventId, gameId, playerId],
+      );
+      if (!active) {
+        await client.query(
+          `UPDATE compost_event_seats SET player_index=player_index-1
+           WHERE event_id=$1 AND game_id=$2 AND player_index>$3`,
+          [eventId, gameId, removedIndex],
+        );
+      }
+    }
     await client.query(
       `UPDATE compost_games SET state = $2, updated_at = NOW() WHERE game_id = $1`,
       [gameId, JSON.stringify(nextState)]
@@ -665,6 +935,9 @@ export function broadcastToGame(
   state: GameState,
   serializeFn: (state: GameState, viewerIndex?: number) => object
 ): void {
+  for (const listener of gameBroadcastListeners) {
+    try { listener(gameId); } catch { /* a stream subscriber must not break gameplay broadcasts */ }
+  }
   const clients = sseClientsByToken.get(gameId);
   if (!clients || clients.size === 0) return;
 

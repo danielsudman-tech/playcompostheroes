@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from "react";
 import { useGameSounds } from "@/hooks/use-game-sounds";
 import { useCurrentUser } from "@/components/AppGate";
+import { forgetEventSeat, getGameEventCode, rememberedEventSeat, useEventPresence, useGuestEvent, useReadyEvent } from "@/hooks/use-events";
 import { useParams, useLocation } from "wouter";
 import { motion, AnimatePresence } from "framer-motion";
 import confetti from "canvas-confetti";
@@ -127,11 +128,24 @@ export default function FacilitatedGame() {
 
   const { claim, loading: claimLoading } = useClaimSlot(gameId || null, isFacilitated && !!storedToken);
   const localToken = claim?.token ?? storedToken;
+  const eventCode = gameId ? getGameEventCode(gameId) : null;
+  const eventSeat = eventCode ? rememberedEventSeat(eventCode) : null;
+  useEventPresence(eventCode ?? "", eventSeat, !!eventSeat && !!localToken);
+  const { data: guestEvent } = useGuestEvent(eventCode ?? "");
+  const eventReady = useReadyEvent(eventCode ?? "");
+  const eventClosing = guestEvent?.status === "ending" || guestEvent?.status === "completed";
+  const [eventMarkedReady, setEventMarkedReady] = useState(() => {
+    try { return !!gameId && localStorage.getItem(`compost_event_ready_${gameId}`) === "yes"; } catch { return false; }
+  });
+  useEffect(() => {
+    try { setEventMarkedReady(!!gameId && localStorage.getItem(`compost_event_ready_${gameId}`) === "yes"); } catch { setEventMarkedReady(false); }
+  }, [gameId]);
   const hostIsSpectator = (gameState as any)?.hostIsSpectator === true;
 
   const handleKicked = useCallback(() => {
     if (gameId) {
       try { localStorage.removeItem(`compost_token_${gameId}`); } catch {}
+       forgetEventSeat(gameId);
     }
     toast({ title: "You were removed from the room", variant: "destructive" });
     setLocation("/");
@@ -146,7 +160,7 @@ export default function FacilitatedGame() {
     localToken,
     isFacilitated && !!localToken,
     handleKicked,
-    (from) => toast({ title: "It's your turn! 🌱", description: `${from} is waiting for you to play.`, duration: 6000 }),
+     (from) => toast({ title: "It's your turn!", description: `${from} is waiting for you to play.`, duration: 6000 }),
     handleRoomTransfer
   );
 
@@ -186,7 +200,7 @@ export default function FacilitatedGame() {
       onSuccess: () => {
         setAskOpen(false);
         setAskText("");
-        toast({ title: "Question sent 🙋", description: "Your facilitator has been notified." });
+         toast({ title: "Question sent", description: "Your facilitator has been notified." });
       },
       onError: (e) => toast({ title: "Couldn't send", description: (e as Error).message, variant: "destructive" }),
     });
@@ -257,6 +271,7 @@ export default function FacilitatedGame() {
       onSuccess: () => {
         if (gameId) {
           try { localStorage.removeItem(`compost_token_${gameId}`); } catch {}
+           forgetEventSeat(gameId);
         }
         setLocation("/");
       },
@@ -301,7 +316,8 @@ export default function FacilitatedGame() {
           <div className="bg-card border-2 border-border rounded-3xl p-8 max-w-md w-full text-center shadow-xl">
             <Loader2 className="w-8 h-8 text-primary animate-spin mx-auto mb-4" />
             <h2 className="text-2xl font-display font-bold mb-2">You're at the table!</h2>
-            <p className="text-muted-foreground mb-6">Waiting for your facilitator to start the game.</p>
+             <p className="text-muted-foreground mb-6">Waiting for your facilitator to start the game.</p>
+              {eventCode && eventSeat && <div className="flex flex-col sm:flex-row gap-2 mb-4"><Button className="flex-1" variant="outline" disabled={eventClosing || eventMarkedReady || eventReady.isPending} onClick={() => { if (!eventClosing) eventReady.mutate(eventSeat, { onSuccess: () => { try { localStorage.setItem(`compost_event_ready_${eventSeat.gameId}`, "yes"); } catch {} setEventMarkedReady(true); toast({ title: "Your host knows you're ready" }); }, onError: e => toast({ title: "Couldn't mark ready", description: e.message, variant: "destructive" }) }); }} data-testid="button-table-event-ready">{eventClosing ? "Event closing" : eventMarkedReady ? "You're ready" : "I'm ready"}</Button><Button className="flex-1" variant="outline" onClick={() => setLocation(`/event/${eventCode}`)} data-testid="button-back-event-lobby">Event lobby</Button></div>}
             <div className="bg-muted rounded-2xl p-4 text-left">
               <p className="text-xs font-bold uppercase tracking-wider text-muted-foreground mb-2">Players seated</p>
               <div className="space-y-1.5">
@@ -549,7 +565,7 @@ export default function FacilitatedGame() {
                       data-testid="button-send-question"
                     >
                       {askMutation.isPending ? <Loader2 className="w-4 h-4 animate-spin" /> : (
-                        <><Send className="w-4 h-4 mr-1.5" /> {askText.trim() ? "Send question" : "Raise hand 🙋"}</>
+                         <><Send className="w-4 h-4 mr-1.5" /> {askText.trim() ? "Send question" : "Raise hand"}</>
                       )}
                     </Button>
                   </motion.div>

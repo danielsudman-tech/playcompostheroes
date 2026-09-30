@@ -5,6 +5,247 @@
  * Compost Heroes Game API
  * OpenAPI spec version: 0.1.0
  */
+export type EventInputAssignmentMode =
+  (typeof EventInputAssignmentMode)[keyof typeof EventInputAssignmentMode];
+
+export const EventInputAssignmentMode = {
+  choose: "choose",
+  auto: "auto",
+} as const;
+
+export interface EventInput {
+  userToken: string;
+  /**
+   * @minLength 1
+   * @maxLength 100
+   */
+  name: string;
+  /**
+   * @minimum 1
+   * @maximum 10
+   */
+  tableCount: number;
+  /**
+   * @minItems 1
+   * @maxItems 10
+   */
+  tableCapacities?: number[];
+  /**
+   * @minimum 30
+   * @maximum 3600
+   */
+  idleSeconds?: number;
+  assignmentMode?: EventInputAssignmentMode;
+}
+
+export type EventUpdateAssignmentMode =
+  (typeof EventUpdateAssignmentMode)[keyof typeof EventUpdateAssignmentMode];
+
+export const EventUpdateAssignmentMode = {
+  choose: "choose",
+  auto: "auto",
+} as const;
+
+export interface EventUpdate {
+  userToken: string;
+  /**
+   * @minLength 1
+   * @maxLength 100
+   */
+  name?: string;
+  /**
+   * @minimum 30
+   * @maximum 3600
+   */
+  idleSeconds?: number;
+  assignmentMode?: EventUpdateAssignmentMode;
+}
+
+export type EventControlInputAction =
+  (typeof EventControlInputAction)[keyof typeof EventControlInputAction];
+
+export const EventControlInputAction = {
+  start: "start",
+  pause_all: "pause_all",
+  resume_all: "resume_all",
+  end: "end",
+  message: "message",
+} as const;
+
+export interface EventControlInput {
+  userToken: string;
+  action: EventControlInputAction;
+  /** @maxLength 300 */
+  text?: string;
+}
+
+export type EventTableControlInputAction =
+  (typeof EventTableControlInputAction)[keyof typeof EventTableControlInputAction];
+
+export const EventTableControlInputAction = {
+  pause: "pause",
+  resume: "resume",
+  message: "message",
+} as const;
+
+export interface EventTableControlInput {
+  userToken: string;
+  action: EventTableControlInputAction;
+  /** @maxLength 300 */
+  text?: string;
+}
+
+export interface EventJoinInput {
+  /**
+   * @minLength 1
+   * @maxLength 60
+   */
+  name: string;
+  /**
+   * @minimum 1
+   * @maximum 10
+   */
+  tableNumber?: number;
+  existingToken?: string;
+}
+
+export interface EventReadyInput {
+  token: string;
+  ready: boolean;
+}
+
+export interface EventPresenceInput {
+  token: string;
+}
+
+export interface EventJoinResult {
+  gameId: string;
+  token: string;
+  playerId: string;
+  playerName: string;
+  tableNumber: number;
+}
+
+export interface SuccessResponse {
+  ok: boolean;
+}
+
+export interface EventSeatSummary {
+  playerId: string;
+  playerName: string;
+  ready: boolean;
+  connected: boolean;
+}
+
+export type EventTableSummaryQuestionsItem = { [key: string]: unknown };
+
+export interface EventTableSummary {
+  gameId: string;
+  tableNumber: number;
+  capacity: number;
+  phase: string;
+  paused: boolean;
+  players: EventSeatSummary[];
+  /**
+   * Highest count of distinct win-condition compost components among players at this table.
+   * @minimum 0
+   * @maximum 5
+   */
+  progress: number;
+  /** @nullable */
+  currentTurnPlayerName: string | null;
+  /** @nullable */
+  winner: string | null;
+  /** @nullable */
+  pendingDecisionOwner: string | null;
+  questions: EventTableSummaryQuestionsItem[];
+  /** @nullable */
+  lastMeaningfulActivityAt: number | null;
+  attention: string[];
+  /** @nullable */
+  message: string | null;
+}
+
+export type EventSummaryStatus =
+  (typeof EventSummaryStatus)[keyof typeof EventSummaryStatus];
+
+export const EventSummaryStatus = {
+  upcoming: "upcoming",
+  active: "active",
+  ending: "ending",
+  completed: "completed",
+} as const;
+
+export type EventSummaryAssignmentMode =
+  (typeof EventSummaryAssignmentMode)[keyof typeof EventSummaryAssignmentMode];
+
+export const EventSummaryAssignmentMode = {
+  choose: "choose",
+  auto: "auto",
+} as const;
+
+export interface EventSummary {
+  eventId: string;
+  code: string;
+  name: string;
+  status: EventSummaryStatus;
+  assignmentMode: EventSummaryAssignmentMode;
+  idleSeconds: number;
+  tableCount: number;
+}
+
+export type EventDetailHostTokens = { [key: string]: string };
+
+export type EventDetail = EventSummary & {
+  tables: EventTableSummary[];
+  hostTokens?: EventDetailHostTokens;
+};
+
+export type PublicEventStatus =
+  (typeof PublicEventStatus)[keyof typeof PublicEventStatus];
+
+export const PublicEventStatus = {
+  upcoming: "upcoming",
+  active: "active",
+  ending: "ending",
+  completed: "completed",
+} as const;
+
+export type PublicEventAssignmentMode =
+  (typeof PublicEventAssignmentMode)[keyof typeof PublicEventAssignmentMode];
+
+export const PublicEventAssignmentMode = {
+  choose: "choose",
+  auto: "auto",
+} as const;
+
+export type PublicEventTablesItem = {
+  tableNumber: number;
+  capacity: number;
+  occupied: number;
+};
+
+export interface PublicEvent {
+  code: string;
+  name: string;
+  status: PublicEventStatus;
+  assignmentMode: PublicEventAssignmentMode;
+  tables: PublicEventTablesItem[];
+}
+
+export interface EventTableResult {
+  gameId: string;
+  success: boolean;
+  /** @nullable */
+  error: string | null;
+}
+
+export interface EventControlResult {
+  eventId: string;
+  action: string;
+  results: EventTableResult[];
+}
+
 export type GameStateMode = (typeof GameStateMode)[keyof typeof GameStateMode];
 
 export const GameStateMode = {
@@ -147,6 +388,8 @@ export type GameStateHostMessage = {
 
 export interface GameState {
   gameId: string;
+  /** Owning event for an event table; absent for standalone games and legacy rooms. */
+  eventId?: string;
   mode: GameStateMode;
   phase: GameStatePhase;
   currentPlayerIndex: number;
@@ -357,6 +600,18 @@ export type GetGameParams = {
 };
 
 export type GetFacilitatorRoomsParams = {
+  userToken: string;
+};
+
+export type GetFacilitatorEventsParams = {
+  userToken: string;
+};
+
+export type GetFacilitatorEventParams = {
+  userToken: string;
+};
+
+export type StreamFacilitatorEventParams = {
   userToken: string;
 };
 

@@ -78,6 +78,7 @@ export type GamePhase =
 
 export interface GameState {
   gameId: string;
+  eventId?: string;
   mode: "facilitator" | "standalone" | "online" | "facilitated";
   phase: GamePhase;
   currentPlayerIndex: number;
@@ -116,6 +117,8 @@ export interface GameState {
   endedByHost?: boolean;
   /** Epoch ms when the game finished (win or manual end). */
   endedAt?: number;
+  /** Epoch ms for real game activity (player actions, start, facilitator resolve). */
+  lastMeaningfulActivityAt?: number;
 }
 
 export interface QuestionFlag {

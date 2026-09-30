@@ -1,4 +1,5 @@
 import { Router, type IRouter } from "express";
+import { pool } from "@workspace/db";
 import { logEvent } from "../lib/analyticsStore.js";
 import {
   activateOngoing,
@@ -19,6 +20,7 @@ import {
 } from "../lib/gameEngine.js";
 import {
   addSseClient,
+  acquireGameMutationLock,
   getAllWaitingRooms,
   broadcastToGame,
   checkGamePassword,
@@ -27,12 +29,15 @@ import {
   createSpectatorHostToken,
   gameHasPassword,
   getGame,
+  getEventForGame,
   getGamesByFacilitator,
   getGameIdForToken,
   getTokenForPlayerIndex,
   getPlayerIndexForToken,
   kickFacilitatedPlayer,
+  isEventGameReadyToStart,
   removePlayerTokenByIndex,
+  removeEventWaitingPlayer,
   removeSseClient,
   reorderWaitingPlayers,
   sendKickedEvent,
@@ -41,6 +46,8 @@ import {
   setGamePassword,
   storeGame,
   transferWaitingPlayer,
+  releaseGameMutationLock,
+  withGameMutationLocks,
 } from "../lib/gameStore.js";
 import { buildEffectAnnouncement, findEffectCard } from "../lib/facilitatedEffects.js";
 import { getUserByToken, isApprovedFacilitator, type CompostUser } from "../lib/userStore.js";
@@ -61,6 +68,46 @@ async function requireRegisteredUser(userToken: unknown): Promise<boolean> {
 }
 
 const router: IRouter = Router();
+
+// Serialize every mutation of an event-linked game with event joins and host
+// controls, and refresh the cache from durable state after acquiring the lock.
+router.use("/games/:gameId", (req, res, next) => {
+  if (req.method === "GET" || req.originalUrl.includes("/waiting/transfer")) return next();
+  void (async () => {
+    const gameId = req.params.gameId;
+    const initialEvent = await getEventForGame(gameId);
+    if (!initialEvent) return next();
+    const isEnd = req.originalUrl.split("?")[0].endsWith("/end");
+    const client = await acquireGameMutationLock(gameId);
+    let released = false;
+    const release = async () => {
+      if (released) return;
+      released = true;
+      await releaseGameMutationLock(client, gameId);
+    };
+    try {
+      const event = await getEventForGame(gameId);
+      if (event && ["ending", "completed"].includes(event.status) && !isEnd) {
+        await release();
+        res.status(409).json({ error: "Event is ending or has ended" });
+        return;
+      }
+      const originalEnd = res.end.bind(res);
+      (res as any).end = (...args: any[]) => {
+        const result = originalEnd(...args);
+        void release();
+        return result;
+      };
+      res.once("close", () => {
+        if (res.writableFinished) void release();
+      });
+      next();
+    } catch (error) {
+      await release();
+      throw error;
+    }
+  })().catch(next);
+});
 
 // ─── Serialization ────────────────────────────────────────────────────────────
 
@@ -253,6 +300,10 @@ router.post("/games/:gameId/claim", async (req, res) => {
     res.status(404).json({ error: "Game not found" });
     return;
   }
+  if (await getEventForGame(gameId) && !existingToken) {
+    res.status(409).json({ error: "Join this event through its event code" });
+    return;
+  }
 
   // New claims on online games require a registered account. Rejoining with
   // an existing game token stays open (the token already proves membership).
@@ -303,6 +354,11 @@ router.post("/games/:gameId/claim", async (req, res) => {
 router.post("/games/:gameId/join", async (req, res) => {
   const { gameId } = req.params as { gameId: string };
   const { name, password, userToken } = req.body as { name?: string; password?: string; userToken?: string };
+
+  if (await getEventForGame(gameId)) {
+    res.status(409).json({ error: "Join this event through its event code" });
+    return;
+  }
 
   const state = await getGame(gameId);
   if (!state) {
@@ -396,6 +452,18 @@ router.post("/games/:gameId/start", async (req, res) => {
     return;
   }
 
+  const event = await getEventForGame(gameId);
+  if (event) {
+    if (botSlots !== undefined) {
+      res.status(400).json({ error: "Event tables cannot be started with bot slots" });
+      return;
+    }
+    if (!await isEventGameReadyToStart(gameId)) {
+      res.status(409).json({ error: "Event table needs at least two seated, ready, connected guests" });
+      return;
+    }
+  }
+
   // Add bot players to fill empty slots before launching
   if (botSlots && botSlots.length > 0) {
     for (const bot of botSlots) {
@@ -418,7 +486,7 @@ router.post("/games/:gameId/start", async (req, res) => {
     return;
   }
 
-  const launchedState = runBotTurnsIfNeeded(launched.state);
+  const launchedState = { ...runBotTurnsIfNeeded(launched.state), lastMeaningfulActivityAt: Date.now() };
   await storeGame(launchedState);
   broadcastToGame(gameId, launchedState, serializeState);
 
@@ -692,7 +760,6 @@ router.post("/games/:gameId/end", async (req, res) => {
   const check = await requireHost(gameId, token, req.body?.userToken);
   if ("error" in check) { res.status(check.status).json({ error: check.error }); return; }
   if (check.state.phase === "game_over") { res.status(409).json({ error: "Game is already over" }); return; }
-
   const state: GameState = {
     ...check.state,
     phase: "game_over",
@@ -762,7 +829,7 @@ router.post("/games/:gameId/facilitator-resolve", async (req, res) => {
 
   let newState = result.state;
   newState.log = [...newState.log.slice(-49), `🛟 The facilitator stepped in and resolved ${owner?.name ?? "a player"}'s pending choice.`];
-  newState = runBotTurnsIfNeeded(newState);
+  newState = { ...runBotTurnsIfNeeded(newState), lastMeaningfulActivityAt: Date.now() };
   await storeGame(newState);
   broadcast(gameId, newState);
   logEvent("facilitator_resolve", { gameId, metadata: { decisionType: decision.type, ownerName: owner?.name } });
@@ -807,6 +874,12 @@ router.post("/games/:gameId/action", async (req, res) => {
   // reset can touch it — no further gameplay mutations.
   if (state.phase === "game_over" && type !== "reset_game") {
     res.status(409).json({ error: "The game is over" });
+    return;
+  }
+  const linkedEvent = await getEventForGame(gameId);
+  if (linkedEvent && type === "reset_game" &&
+      (linkedEvent.status === "completed" || state.phase === "game_over")) {
+    res.status(409).json({ error: "Finished event tables cannot be reset" });
     return;
   }
 
@@ -904,6 +977,7 @@ router.post("/games/:gameId/action", async (req, res) => {
         // Preserve facilitator/session metadata across resets so the room
         // stays on its creator's dashboard.
         newState.facilitatorId = state.facilitatorId;
+        newState.eventId = state.eventId;
         newState.createdAt = state.createdAt;
         newState.label = state.label;
         newState.maxPlayers = state.maxPlayers;
@@ -933,7 +1007,7 @@ router.post("/games/:gameId/action", async (req, res) => {
   // Run bot turns/decisions FIRST, then build the facilitated announcement over
   // the FULL transition (pre-action → after bots) so viewers see the completed
   // effect — not just the human's intermediate step of a bot-completed chain.
-  let stateAfterBots = runBotTurnsIfNeeded(result.state);
+  let stateAfterBots = { ...runBotTurnsIfNeeded(result.state), lastMeaningfulActivityAt: Date.now() };
 
   // Rich effect announcements were built for facilitated mode but are
   // spectator-safe (no hidden hand contents), so every mode gets them.
@@ -1025,21 +1099,27 @@ router.post("/games/:gameId/waiting/transfer", async (req, res) => {
     playerId?: string;
     targetGameId?: string;
   };
-  const check = await requireHost(gameId, token, req.body?.userToken);
-  if ("error" in check) { res.status(check.status).json({ error: check.error }); return; }
   if (!playerId || !targetGameId) {
     res.status(400).json({ error: "playerId and targetGameId are required" });
     return;
   }
-  const result = await transferWaitingPlayer(gameId, targetGameId, playerId);
-  if (!result) {
+  const outcome = await withGameMutationLocks([gameId, targetGameId], async () => {
+    const check = await requireHost(gameId, token, req.body?.userToken);
+    if ("error" in check) return { check, result: null };
+    return { check, result: await transferWaitingPlayer(gameId, targetGameId, playerId) };
+  });
+  if ("error" in outcome.check) {
+    res.status(outcome.check.status).json({ error: outcome.check.error });
+    return;
+  }
+  if (!outcome.result) {
     res.status(409).json({ error: "Player could not be transferred; verify both rooms are waiting sessions with available space" });
     return;
   }
   // Deliver the reconnect instruction before dropping the old event stream.
-  sendRoomTransferEvent(gameId, result.token, targetGameId, result.token);
-  broadcast(gameId, result.source);
-  broadcast(targetGameId, result.target);
+  sendRoomTransferEvent(gameId, outcome.result.token, targetGameId, outcome.result.token);
+  broadcast(gameId, outcome.result.source);
+  broadcast(targetGameId, outcome.result.target);
   res.json({ success: true });
 });
 
@@ -1120,6 +1200,18 @@ router.delete("/games/:gameId/players/:playerId", async (req, res) => {
     }
   } else if (!isSelf && !isHost) {
     res.status(403).json({ error: "Only the host can kick other players" });
+    return;
+  }
+
+  if (state.eventId) {
+    const result = await removeEventWaitingPlayer(gameId, playerId);
+    if (!result) {
+      res.status(409).json({ error: "Event seat changed; refresh and try again" });
+      return;
+    }
+    if (result.removedToken) sendKickedEvent(gameId, result.removedToken);
+    broadcast(gameId, result.state);
+    res.json({ success: true });
     return;
   }
 

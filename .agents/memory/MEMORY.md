@@ -4,3 +4,4 @@
 - [Facilitator approval provenance](facilitator-approval.md) — never trust legacy self-selected roles as admin approval or backfill them automatically.
 - [Account deletion scope](account-deletion.md) — deleting a user ends sign-in but deliberately retains historical games and analytics.
 - [Admin UI verification](admin-ui-verification.md) — API checks can use the workspace admin secret without logging it; browser testers cannot safely inject it.
+- [Event mutation consistency](event-mutation-consistency.md) — event joins and ordinary game actions share database locks; development event tables must be added without a destructive generic push.

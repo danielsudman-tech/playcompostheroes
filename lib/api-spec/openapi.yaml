@@ -277,6 +277,221 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
 
+  /facilitator/events:
+    get:
+      operationId: getFacilitatorEvents
+      tags: [game]
+      summary: List events owned by the approved facilitator
+      parameters:
+        - name: userToken
+          in: query
+          required: true
+          schema: { type: string }
+      responses:
+        "200":
+          description: Facilitator events
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/EventSummary" }
+        "401": { description: Sign in required, content: { application/json: { schema: { $ref: "#/components/schemas/ErrorResponse" } } } }
+        "403": { description: Approved facilitator required, content: { application/json: { schema: { $ref: "#/components/schemas/ErrorResponse" } } } }
+    post:
+      operationId: createFacilitatorEvent
+      tags: [game]
+      summary: Create an event and its facilitated game tables atomically
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/EventInput" }
+      responses:
+        "201":
+          description: Created event with host spectator tokens
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/EventDetail" }
+        "400": { description: Invalid event configuration, content: { application/json: { schema: { $ref: "#/components/schemas/ErrorResponse" } } } }
+        "401": { description: Sign in required, content: { application/json: { schema: { $ref: "#/components/schemas/ErrorResponse" } } } }
+        "403": { description: Approved facilitator required, content: { application/json: { schema: { $ref: "#/components/schemas/ErrorResponse" } } } }
+
+  /facilitator/events/{eventId}:
+    get:
+      operationId: getFacilitatorEvent
+      tags: [game]
+      summary: Get an event control-center summary
+      parameters:
+        - name: eventId
+          in: path
+          required: true
+          schema: { type: string }
+        - name: userToken
+          in: query
+          required: true
+          schema: { type: string }
+      responses:
+        "200": { description: Safe event detail, content: { application/json: { schema: { $ref: "#/components/schemas/EventDetail" } } } }
+        "401": { description: Sign in required, content: { application/json: { schema: { $ref: "#/components/schemas/ErrorResponse" } } } }
+        "403": { description: Not the approved creator, content: { application/json: { schema: { $ref: "#/components/schemas/ErrorResponse" } } } }
+        "404": { description: Event not found, content: { application/json: { schema: { $ref: "#/components/schemas/ErrorResponse" } } } }
+    patch:
+      operationId: updateFacilitatorEvent
+      tags: [game]
+      summary: Edit event name or idle threshold
+      parameters:
+        - name: eventId
+          in: path
+          required: true
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/EventUpdate" }
+      responses:
+        "200": { description: Updated event, content: { application/json: { schema: { $ref: "#/components/schemas/EventDetail" } } } }
+        "401": { description: Sign in required, content: { application/json: { schema: { $ref: "#/components/schemas/ErrorResponse" } } } }
+        "403": { description: Not the approved creator, content: { application/json: { schema: { $ref: "#/components/schemas/ErrorResponse" } } } }
+        "404": { description: Event not found, content: { application/json: { schema: { $ref: "#/components/schemas/ErrorResponse" } } } }
+
+  /facilitator/events/{eventId}/control:
+    post:
+      operationId: controlFacilitatorEvent
+      tags: [game]
+      summary: Start, pause, resume, end, or message across event tables
+      parameters:
+        - name: eventId
+          in: path
+          required: true
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/EventControlInput" }
+      responses:
+        "200": { description: Event control results, content: { application/json: { schema: { $ref: "#/components/schemas/EventControlResult" } } } }
+        "401": { description: Sign in required, content: { application/json: { schema: { $ref: "#/components/schemas/ErrorResponse" } } } }
+        "403": { description: Not the approved creator, content: { application/json: { schema: { $ref: "#/components/schemas/ErrorResponse" } } } }
+        "404": { description: Event not found, content: { application/json: { schema: { $ref: "#/components/schemas/ErrorResponse" } } } }
+
+  /facilitator/events/{eventId}/tables/{gameId}/control:
+    post:
+      operationId: controlFacilitatorEventTable
+      tags: [game]
+      summary: Control a single event table
+      parameters:
+        - name: eventId
+          in: path
+          required: true
+          schema: { type: string }
+        - name: gameId
+          in: path
+          required: true
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/EventTableControlInput" }
+      responses:
+        "200": { description: Table result, content: { application/json: { schema: { $ref: "#/components/schemas/EventTableResult" } } } }
+        "401": { description: Sign in required, content: { application/json: { schema: { $ref: "#/components/schemas/ErrorResponse" } } } }
+        "403": { description: Not the approved creator, content: { application/json: { schema: { $ref: "#/components/schemas/ErrorResponse" } } } }
+        "404": { description: Event or table not found, content: { application/json: { schema: { $ref: "#/components/schemas/ErrorResponse" } } } }
+
+  /facilitator/events/{eventId}/stream:
+    get:
+      operationId: streamFacilitatorEvent
+      tags: [game]
+      summary: SSE event detail updates, with polling as a client fallback
+      parameters:
+        - name: eventId
+          in: path
+          required: true
+          schema: { type: string }
+        - name: userToken
+          in: query
+          required: true
+          schema: { type: string }
+      responses:
+        "200": { description: Server-sent event stream of EventDetail JSON }
+        "401": { description: Sign in required }
+        "403": { description: Not the approved creator }
+        "404": { description: Event not found }
+
+  /events/{code}:
+    get:
+      operationId: getPublicEvent
+      tags: [game]
+      summary: Public event lobby with safe table and seat summary
+      parameters:
+        - name: code
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        "200": { description: Public event lobby, content: { application/json: { schema: { $ref: "#/components/schemas/PublicEvent" } } } }
+        "404": { description: Event not found, content: { application/json: { schema: { $ref: "#/components/schemas/ErrorResponse" } } } }
+  /events/{code}/join:
+    post:
+      operationId: joinEvent
+      tags: [game]
+      summary: Join an event table anonymously or resume using an existing seat token
+      parameters:
+        - name: code
+          in: path
+          required: true
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/EventJoinInput" }
+      responses:
+        "200": { description: Existing seat resumed, content: { application/json: { schema: { $ref: "#/components/schemas/EventJoinResult" } } } }
+        "201": { description: Joined event table, content: { application/json: { schema: { $ref: "#/components/schemas/EventJoinResult" } } } }
+        "400": { description: Invalid join request, content: { application/json: { schema: { $ref: "#/components/schemas/ErrorResponse" } } } }
+        "404": { description: Event not found, content: { application/json: { schema: { $ref: "#/components/schemas/ErrorResponse" } } } }
+        "409": { description: Event is not accepting joins or table is full, content: { application/json: { schema: { $ref: "#/components/schemas/ErrorResponse" } } } }
+  /events/{code}/ready:
+    post:
+      operationId: setEventReady
+      tags: [game]
+      summary: Set the authenticated event seat's ready state
+      parameters:
+        - name: code
+          in: path
+          required: true
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/EventReadyInput" }
+      responses:
+        "200": { description: Updated readiness, content: { application/json: { schema: { $ref: "#/components/schemas/SuccessResponse" } } } }
+        "403": { description: Invalid or non-event seat token, content: { application/json: { schema: { $ref: "#/components/schemas/ErrorResponse" } } } }
+  /events/{code}/presence:
+    post:
+      operationId: heartbeatEventPresence
+      tags: [game]
+      summary: Refresh event guest presence heartbeat
+      parameters:
+        - name: code
+          in: path
+          required: true
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/EventPresenceInput" }
+      responses:
+        "200": { description: Heartbeat recorded, content: { application/json: { schema: { $ref: "#/components/schemas/SuccessResponse" } } } }
+        "403": { description: Invalid or non-event seat token, content: { application/json: { schema: { $ref: "#/components/schemas/ErrorResponse" } } } }
+
   /games/{gameId}/host-token:
     post:
       operationId: recoverHostToken
@@ -647,6 +862,145 @@ paths:
 
 components:
   schemas:
+    EventInput:
+      type: object
+      properties:
+        userToken: { type: string }
+        name: { type: string, minLength: 1, maxLength: 100 }
+        tableCount: { type: integer, minimum: 1, maximum: 10 }
+        tableCapacities: { type: array, minItems: 1, maxItems: 10, items: { type: integer, minimum: 2, maximum: 4 } }
+        idleSeconds: { type: integer, minimum: 30, maximum: 3600, default: 120 }
+        assignmentMode: { type: string, enum: [choose, auto], default: auto }
+      required: [userToken, name, tableCount]
+    EventUpdate:
+      type: object
+      properties:
+        userToken: { type: string }
+        name: { type: string, minLength: 1, maxLength: 100 }
+        idleSeconds: { type: integer, minimum: 30, maximum: 3600 }
+        assignmentMode: { type: string, enum: [choose, auto] }
+      required: [userToken]
+    EventControlInput:
+      type: object
+      properties:
+        userToken: { type: string }
+        action: { type: string, enum: [start, pause_all, resume_all, end, message] }
+        text: { type: string, maxLength: 300 }
+      required: [userToken, action]
+    EventTableControlInput:
+      type: object
+      properties:
+        userToken: { type: string }
+        action: { type: string, enum: [pause, resume, message] }
+        text: { type: string, maxLength: 300 }
+      required: [userToken, action]
+    EventJoinInput:
+      type: object
+      properties:
+        name: { type: string, minLength: 1, maxLength: 60 }
+        tableNumber: { type: integer, minimum: 1, maximum: 10 }
+        existingToken: { type: string }
+      required: [name]
+    EventReadyInput:
+      type: object
+      properties:
+        token: { type: string }
+        ready: { type: boolean }
+      required: [token, ready]
+    EventPresenceInput:
+      type: object
+      properties:
+        token: { type: string }
+      required: [token]
+    EventJoinResult:
+      type: object
+      properties:
+        gameId: { type: string }
+        token: { type: string }
+        playerId: { type: string }
+        playerName: { type: string }
+        tableNumber: { type: integer }
+      required: [gameId, token, playerId, playerName, tableNumber]
+    SuccessResponse:
+      type: object
+      properties: { ok: { type: boolean } }
+      required: [ok]
+    EventSeatSummary:
+      type: object
+      properties:
+        playerId: { type: string }
+        playerName: { type: string }
+        ready: { type: boolean }
+        connected: { type: boolean }
+      required: [playerId, playerName, ready, connected]
+    EventTableSummary:
+      type: object
+      properties:
+        gameId: { type: string }
+        tableNumber: { type: integer }
+        capacity: { type: integer }
+        phase: { type: string }
+        paused: { type: boolean }
+        players: { type: array, items: { $ref: "#/components/schemas/EventSeatSummary" } }
+        progress: { type: integer, minimum: 0, maximum: 5, description: Highest count of distinct win-condition compost components among players at this table. }
+        currentTurnPlayerName: { type: ["string", "null"] }
+        winner: { type: ["string", "null"] }
+        pendingDecisionOwner: { type: ["string", "null"] }
+        questions: { type: array, items: { type: object, additionalProperties: true } }
+        lastMeaningfulActivityAt: { type: ["number", "null"] }
+        attention: { type: array, items: { type: string } }
+        message: { type: ["string", "null"] }
+      required: [gameId, tableNumber, capacity, phase, paused, players, progress, currentTurnPlayerName, winner, pendingDecisionOwner, questions, lastMeaningfulActivityAt, attention, message]
+    EventSummary:
+      type: object
+      properties:
+        eventId: { type: string }
+        code: { type: string }
+        name: { type: string }
+        status: { type: string, enum: [upcoming, active, ending, completed] }
+        assignmentMode: { type: string, enum: [choose, auto] }
+        idleSeconds: { type: integer }
+        tableCount: { type: integer }
+      required: [eventId, code, name, status, assignmentMode, idleSeconds, tableCount]
+    EventDetail:
+      allOf:
+        - $ref: "#/components/schemas/EventSummary"
+        - type: object
+          properties:
+            tables: { type: array, items: { $ref: "#/components/schemas/EventTableSummary" } }
+            hostTokens: { type: object, additionalProperties: { type: string } }
+          required: [tables]
+    PublicEvent:
+      type: object
+      properties:
+        code: { type: string }
+        name: { type: string }
+        status: { type: string, enum: [upcoming, active, ending, completed] }
+        assignmentMode: { type: string, enum: [choose, auto] }
+        tables:
+          type: array
+          items:
+            type: object
+            properties:
+              tableNumber: { type: integer }
+              capacity: { type: integer }
+              occupied: { type: integer }
+            required: [tableNumber, capacity, occupied]
+      required: [code, name, status, assignmentMode, tables]
+    EventTableResult:
+      type: object
+      properties:
+        gameId: { type: string }
+        success: { type: boolean }
+        error: { type: ["string", "null"] }
+      required: [gameId, success, error]
+    EventControlResult:
+      type: object
+      properties:
+        eventId: { type: string }
+        action: { type: string }
+        results: { type: array, items: { $ref: "#/components/schemas/EventTableResult" } }
+      required: [eventId, action, results]
     CreatedGameResponse:
       allOf:
         - $ref: "#/components/schemas/GameState"
@@ -1057,6 +1411,9 @@ components:
       properties:
         gameId:
           type: string
+        eventId:
+          type: string
+          description: Owning event for an event table; absent for standalone games and legacy rooms.
         mode:
           type: string
           enum: [facilitator, standalone, online, facilitated]

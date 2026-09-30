@@ -75,7 +75,7 @@ function PasswordInput({
 // - Pass & Play and facilitated games at /game/:id are open; online games
 //   require sign-in (checked per-game via the API below).
 function isUngatedPath(p: string): boolean {
-  return p === "/" || /^\/game\/[^/]+\/(table|host)\/?$/.test(p);
+  return p === "/" || /^\/event\/[^/]+\/?$/.test(p) || /^\/game\/[^/]+\/(table|host)\/?$/.test(p);
 }
 
 function pathGameId(p: string): string | null {
@@ -87,7 +87,7 @@ export function AppGate({ children }: { children: ReactNode }) {
   const [status, setStatus] = useState<Status>("loading");
   const [user, setUser] = useState<RegisteredUser | null>(null);
   const [mode, setMode] = useState<Mode>(() =>
-    new URLSearchParams(window.location.search).has("signin") || /\/facilitator\/?$/.test(window.location.pathname)
+    new URLSearchParams(window.location.search).has("signin") || /\/facilitator(?:\/|$)/.test(window.location.pathname)
       ? "signin"
       : "start"
   );

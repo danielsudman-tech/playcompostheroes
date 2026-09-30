@@ -21,6 +21,18 @@ import type {
   CreateGameRequest,
   CreatedGameResponse,
   ErrorResponse,
+  EventControlInput,
+  EventControlResult,
+  EventDetail,
+  EventInput,
+  EventJoinInput,
+  EventJoinResult,
+  EventPresenceInput,
+  EventReadyInput,
+  EventSummary,
+  EventTableControlInput,
+  EventTableResult,
+  EventUpdate,
   FacilitatorApproval,
   FacilitatorResolveRequest,
   FacilitatorRole,
@@ -32,6 +44,8 @@ import type {
   GameSeatClaimInput,
   GameSeatClaimResult,
   GameState,
+  GetFacilitatorEventParams,
+  GetFacilitatorEventsParams,
   GetFacilitatorRoomsParams,
   GetGameParams,
   HealthStatus,
@@ -40,7 +54,10 @@ import type {
   HostTokenRecovery,
   ParticipantQuestion,
   PauseGameRequest,
+  PublicEvent,
   RecoverHostToken200,
+  StreamFacilitatorEventParams,
+  SuccessResponse,
   WaitingRoomReorderInput,
   WaitingRoomTransferInput,
   WaitingRoomTransferResult,
@@ -773,6 +790,1048 @@ export function useGetFacilitatorRooms<
 
   return { ...query, queryKey: queryOptions.queryKey };
 }
+
+/**
+ * @summary List events owned by the approved facilitator
+ */
+export const getGetFacilitatorEventsUrl = (
+  params: GetFacilitatorEventsParams,
+) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? "null" : value.toString());
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0
+    ? `/api/facilitator/events?${stringifiedParams}`
+    : `/api/facilitator/events`;
+};
+
+export const getFacilitatorEvents = async (
+  params: GetFacilitatorEventsParams,
+  options?: RequestInit,
+): Promise<EventSummary[]> => {
+  return customFetch<EventSummary[]>(getGetFacilitatorEventsUrl(params), {
+    ...options,
+    method: "GET",
+  });
+};
+
+export const getGetFacilitatorEventsQueryKey = (
+  params?: GetFacilitatorEventsParams,
+) => {
+  return [`/api/facilitator/events`, ...(params ? [params] : [])] as const;
+};
+
+export const getGetFacilitatorEventsQueryOptions = <
+  TData = Awaited<ReturnType<typeof getFacilitatorEvents>>,
+  TError = ErrorType<ErrorResponse>,
+>(
+  params: GetFacilitatorEventsParams,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof getFacilitatorEvents>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey =
+    queryOptions?.queryKey ?? getGetFacilitatorEventsQueryKey(params);
+
+  const queryFn: QueryFunction<
+    Awaited<ReturnType<typeof getFacilitatorEvents>>
+  > = ({ signal }) =>
+    getFacilitatorEvents(params, { signal, ...requestOptions });
+
+  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof getFacilitatorEvents>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type GetFacilitatorEventsQueryResult = NonNullable<
+  Awaited<ReturnType<typeof getFacilitatorEvents>>
+>;
+export type GetFacilitatorEventsQueryError = ErrorType<ErrorResponse>;
+
+/**
+ * @summary List events owned by the approved facilitator
+ */
+
+export function useGetFacilitatorEvents<
+  TData = Awaited<ReturnType<typeof getFacilitatorEvents>>,
+  TError = ErrorType<ErrorResponse>,
+>(
+  params: GetFacilitatorEventsParams,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof getFacilitatorEvents>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getGetFacilitatorEventsQueryOptions(params, options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+/**
+ * @summary Create an event and its facilitated game tables atomically
+ */
+export const getCreateFacilitatorEventUrl = () => {
+  return `/api/facilitator/events`;
+};
+
+export const createFacilitatorEvent = async (
+  eventInput: EventInput,
+  options?: RequestInit,
+): Promise<EventDetail> => {
+  return customFetch<EventDetail>(getCreateFacilitatorEventUrl(), {
+    ...options,
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...options?.headers },
+    body: JSON.stringify(eventInput),
+  });
+};
+
+export const getCreateFacilitatorEventMutationOptions = <
+  TError = ErrorType<ErrorResponse>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof createFacilitatorEvent>>,
+    TError,
+    { data: BodyType<EventInput> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof createFacilitatorEvent>>,
+  TError,
+  { data: BodyType<EventInput> },
+  TContext
+> => {
+  const mutationKey = ["createFacilitatorEvent"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof createFacilitatorEvent>>,
+    { data: BodyType<EventInput> }
+  > = (props) => {
+    const { data } = props ?? {};
+
+    return createFacilitatorEvent(data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type CreateFacilitatorEventMutationResult = NonNullable<
+  Awaited<ReturnType<typeof createFacilitatorEvent>>
+>;
+export type CreateFacilitatorEventMutationBody = BodyType<EventInput>;
+export type CreateFacilitatorEventMutationError = ErrorType<ErrorResponse>;
+
+/**
+ * @summary Create an event and its facilitated game tables atomically
+ */
+export const useCreateFacilitatorEvent = <
+  TError = ErrorType<ErrorResponse>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof createFacilitatorEvent>>,
+    TError,
+    { data: BodyType<EventInput> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof createFacilitatorEvent>>,
+  TError,
+  { data: BodyType<EventInput> },
+  TContext
+> => {
+  return useMutation(getCreateFacilitatorEventMutationOptions(options));
+};
+
+/**
+ * @summary Get an event control-center summary
+ */
+export const getGetFacilitatorEventUrl = (
+  eventId: string,
+  params: GetFacilitatorEventParams,
+) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? "null" : value.toString());
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0
+    ? `/api/facilitator/events/${eventId}?${stringifiedParams}`
+    : `/api/facilitator/events/${eventId}`;
+};
+
+export const getFacilitatorEvent = async (
+  eventId: string,
+  params: GetFacilitatorEventParams,
+  options?: RequestInit,
+): Promise<EventDetail> => {
+  return customFetch<EventDetail>(getGetFacilitatorEventUrl(eventId, params), {
+    ...options,
+    method: "GET",
+  });
+};
+
+export const getGetFacilitatorEventQueryKey = (
+  eventId: string,
+  params?: GetFacilitatorEventParams,
+) => {
+  return [
+    `/api/facilitator/events/${eventId}`,
+    ...(params ? [params] : []),
+  ] as const;
+};
+
+export const getGetFacilitatorEventQueryOptions = <
+  TData = Awaited<ReturnType<typeof getFacilitatorEvent>>,
+  TError = ErrorType<ErrorResponse>,
+>(
+  eventId: string,
+  params: GetFacilitatorEventParams,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof getFacilitatorEvent>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey =
+    queryOptions?.queryKey ?? getGetFacilitatorEventQueryKey(eventId, params);
+
+  const queryFn: QueryFunction<
+    Awaited<ReturnType<typeof getFacilitatorEvent>>
+  > = ({ signal }) =>
+    getFacilitatorEvent(eventId, params, { signal, ...requestOptions });
+
+  return {
+    queryKey,
+    queryFn,
+    enabled: !!eventId,
+    ...queryOptions,
+  } as UseQueryOptions<
+    Awaited<ReturnType<typeof getFacilitatorEvent>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type GetFacilitatorEventQueryResult = NonNullable<
+  Awaited<ReturnType<typeof getFacilitatorEvent>>
+>;
+export type GetFacilitatorEventQueryError = ErrorType<ErrorResponse>;
+
+/**
+ * @summary Get an event control-center summary
+ */
+
+export function useGetFacilitatorEvent<
+  TData = Awaited<ReturnType<typeof getFacilitatorEvent>>,
+  TError = ErrorType<ErrorResponse>,
+>(
+  eventId: string,
+  params: GetFacilitatorEventParams,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof getFacilitatorEvent>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getGetFacilitatorEventQueryOptions(
+    eventId,
+    params,
+    options,
+  );
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+/**
+ * @summary Edit event name or idle threshold
+ */
+export const getUpdateFacilitatorEventUrl = (eventId: string) => {
+  return `/api/facilitator/events/${eventId}`;
+};
+
+export const updateFacilitatorEvent = async (
+  eventId: string,
+  eventUpdate: EventUpdate,
+  options?: RequestInit,
+): Promise<EventDetail> => {
+  return customFetch<EventDetail>(getUpdateFacilitatorEventUrl(eventId), {
+    ...options,
+    method: "PATCH",
+    headers: { "Content-Type": "application/json", ...options?.headers },
+    body: JSON.stringify(eventUpdate),
+  });
+};
+
+export const getUpdateFacilitatorEventMutationOptions = <
+  TError = ErrorType<ErrorResponse>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof updateFacilitatorEvent>>,
+    TError,
+    { eventId: string; data: BodyType<EventUpdate> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof updateFacilitatorEvent>>,
+  TError,
+  { eventId: string; data: BodyType<EventUpdate> },
+  TContext
+> => {
+  const mutationKey = ["updateFacilitatorEvent"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof updateFacilitatorEvent>>,
+    { eventId: string; data: BodyType<EventUpdate> }
+  > = (props) => {
+    const { eventId, data } = props ?? {};
+
+    return updateFacilitatorEvent(eventId, data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type UpdateFacilitatorEventMutationResult = NonNullable<
+  Awaited<ReturnType<typeof updateFacilitatorEvent>>
+>;
+export type UpdateFacilitatorEventMutationBody = BodyType<EventUpdate>;
+export type UpdateFacilitatorEventMutationError = ErrorType<ErrorResponse>;
+
+/**
+ * @summary Edit event name or idle threshold
+ */
+export const useUpdateFacilitatorEvent = <
+  TError = ErrorType<ErrorResponse>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof updateFacilitatorEvent>>,
+    TError,
+    { eventId: string; data: BodyType<EventUpdate> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof updateFacilitatorEvent>>,
+  TError,
+  { eventId: string; data: BodyType<EventUpdate> },
+  TContext
+> => {
+  return useMutation(getUpdateFacilitatorEventMutationOptions(options));
+};
+
+/**
+ * @summary Start, pause, resume, end, or message across event tables
+ */
+export const getControlFacilitatorEventUrl = (eventId: string) => {
+  return `/api/facilitator/events/${eventId}/control`;
+};
+
+export const controlFacilitatorEvent = async (
+  eventId: string,
+  eventControlInput: EventControlInput,
+  options?: RequestInit,
+): Promise<EventControlResult> => {
+  return customFetch<EventControlResult>(
+    getControlFacilitatorEventUrl(eventId),
+    {
+      ...options,
+      method: "POST",
+      headers: { "Content-Type": "application/json", ...options?.headers },
+      body: JSON.stringify(eventControlInput),
+    },
+  );
+};
+
+export const getControlFacilitatorEventMutationOptions = <
+  TError = ErrorType<ErrorResponse>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof controlFacilitatorEvent>>,
+    TError,
+    { eventId: string; data: BodyType<EventControlInput> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof controlFacilitatorEvent>>,
+  TError,
+  { eventId: string; data: BodyType<EventControlInput> },
+  TContext
+> => {
+  const mutationKey = ["controlFacilitatorEvent"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof controlFacilitatorEvent>>,
+    { eventId: string; data: BodyType<EventControlInput> }
+  > = (props) => {
+    const { eventId, data } = props ?? {};
+
+    return controlFacilitatorEvent(eventId, data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type ControlFacilitatorEventMutationResult = NonNullable<
+  Awaited<ReturnType<typeof controlFacilitatorEvent>>
+>;
+export type ControlFacilitatorEventMutationBody = BodyType<EventControlInput>;
+export type ControlFacilitatorEventMutationError = ErrorType<ErrorResponse>;
+
+/**
+ * @summary Start, pause, resume, end, or message across event tables
+ */
+export const useControlFacilitatorEvent = <
+  TError = ErrorType<ErrorResponse>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof controlFacilitatorEvent>>,
+    TError,
+    { eventId: string; data: BodyType<EventControlInput> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof controlFacilitatorEvent>>,
+  TError,
+  { eventId: string; data: BodyType<EventControlInput> },
+  TContext
+> => {
+  return useMutation(getControlFacilitatorEventMutationOptions(options));
+};
+
+/**
+ * @summary Control a single event table
+ */
+export const getControlFacilitatorEventTableUrl = (
+  eventId: string,
+  gameId: string,
+) => {
+  return `/api/facilitator/events/${eventId}/tables/${gameId}/control`;
+};
+
+export const controlFacilitatorEventTable = async (
+  eventId: string,
+  gameId: string,
+  eventTableControlInput: EventTableControlInput,
+  options?: RequestInit,
+): Promise<EventTableResult> => {
+  return customFetch<EventTableResult>(
+    getControlFacilitatorEventTableUrl(eventId, gameId),
+    {
+      ...options,
+      method: "POST",
+      headers: { "Content-Type": "application/json", ...options?.headers },
+      body: JSON.stringify(eventTableControlInput),
+    },
+  );
+};
+
+export const getControlFacilitatorEventTableMutationOptions = <
+  TError = ErrorType<ErrorResponse>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof controlFacilitatorEventTable>>,
+    TError,
+    { eventId: string; gameId: string; data: BodyType<EventTableControlInput> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof controlFacilitatorEventTable>>,
+  TError,
+  { eventId: string; gameId: string; data: BodyType<EventTableControlInput> },
+  TContext
+> => {
+  const mutationKey = ["controlFacilitatorEventTable"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof controlFacilitatorEventTable>>,
+    { eventId: string; gameId: string; data: BodyType<EventTableControlInput> }
+  > = (props) => {
+    const { eventId, gameId, data } = props ?? {};
+
+    return controlFacilitatorEventTable(eventId, gameId, data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type ControlFacilitatorEventTableMutationResult = NonNullable<
+  Awaited<ReturnType<typeof controlFacilitatorEventTable>>
+>;
+export type ControlFacilitatorEventTableMutationBody =
+  BodyType<EventTableControlInput>;
+export type ControlFacilitatorEventTableMutationError =
+  ErrorType<ErrorResponse>;
+
+/**
+ * @summary Control a single event table
+ */
+export const useControlFacilitatorEventTable = <
+  TError = ErrorType<ErrorResponse>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof controlFacilitatorEventTable>>,
+    TError,
+    { eventId: string; gameId: string; data: BodyType<EventTableControlInput> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof controlFacilitatorEventTable>>,
+  TError,
+  { eventId: string; gameId: string; data: BodyType<EventTableControlInput> },
+  TContext
+> => {
+  return useMutation(getControlFacilitatorEventTableMutationOptions(options));
+};
+
+/**
+ * @summary SSE event detail updates, with polling as a client fallback
+ */
+export const getStreamFacilitatorEventUrl = (
+  eventId: string,
+  params: StreamFacilitatorEventParams,
+) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? "null" : value.toString());
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0
+    ? `/api/facilitator/events/${eventId}/stream?${stringifiedParams}`
+    : `/api/facilitator/events/${eventId}/stream`;
+};
+
+export const streamFacilitatorEvent = async (
+  eventId: string,
+  params: StreamFacilitatorEventParams,
+  options?: RequestInit,
+): Promise<void> => {
+  return customFetch<void>(getStreamFacilitatorEventUrl(eventId, params), {
+    ...options,
+    method: "GET",
+  });
+};
+
+export const getStreamFacilitatorEventQueryKey = (
+  eventId: string,
+  params?: StreamFacilitatorEventParams,
+) => {
+  return [
+    `/api/facilitator/events/${eventId}/stream`,
+    ...(params ? [params] : []),
+  ] as const;
+};
+
+export const getStreamFacilitatorEventQueryOptions = <
+  TData = Awaited<ReturnType<typeof streamFacilitatorEvent>>,
+  TError = ErrorType<void>,
+>(
+  eventId: string,
+  params: StreamFacilitatorEventParams,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof streamFacilitatorEvent>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey =
+    queryOptions?.queryKey ??
+    getStreamFacilitatorEventQueryKey(eventId, params);
+
+  const queryFn: QueryFunction<
+    Awaited<ReturnType<typeof streamFacilitatorEvent>>
+  > = ({ signal }) =>
+    streamFacilitatorEvent(eventId, params, { signal, ...requestOptions });
+
+  return {
+    queryKey,
+    queryFn,
+    enabled: !!eventId,
+    ...queryOptions,
+  } as UseQueryOptions<
+    Awaited<ReturnType<typeof streamFacilitatorEvent>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type StreamFacilitatorEventQueryResult = NonNullable<
+  Awaited<ReturnType<typeof streamFacilitatorEvent>>
+>;
+export type StreamFacilitatorEventQueryError = ErrorType<void>;
+
+/**
+ * @summary SSE event detail updates, with polling as a client fallback
+ */
+
+export function useStreamFacilitatorEvent<
+  TData = Awaited<ReturnType<typeof streamFacilitatorEvent>>,
+  TError = ErrorType<void>,
+>(
+  eventId: string,
+  params: StreamFacilitatorEventParams,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof streamFacilitatorEvent>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getStreamFacilitatorEventQueryOptions(
+    eventId,
+    params,
+    options,
+  );
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+/**
+ * @summary Public event lobby with safe table and seat summary
+ */
+export const getGetPublicEventUrl = (code: string) => {
+  return `/api/events/${code}`;
+};
+
+export const getPublicEvent = async (
+  code: string,
+  options?: RequestInit,
+): Promise<PublicEvent> => {
+  return customFetch<PublicEvent>(getGetPublicEventUrl(code), {
+    ...options,
+    method: "GET",
+  });
+};
+
+export const getGetPublicEventQueryKey = (code: string) => {
+  return [`/api/events/${code}`] as const;
+};
+
+export const getGetPublicEventQueryOptions = <
+  TData = Awaited<ReturnType<typeof getPublicEvent>>,
+  TError = ErrorType<ErrorResponse>,
+>(
+  code: string,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof getPublicEvent>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey = queryOptions?.queryKey ?? getGetPublicEventQueryKey(code);
+
+  const queryFn: QueryFunction<Awaited<ReturnType<typeof getPublicEvent>>> = ({
+    signal,
+  }) => getPublicEvent(code, { signal, ...requestOptions });
+
+  return {
+    queryKey,
+    queryFn,
+    enabled: !!code,
+    ...queryOptions,
+  } as UseQueryOptions<
+    Awaited<ReturnType<typeof getPublicEvent>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type GetPublicEventQueryResult = NonNullable<
+  Awaited<ReturnType<typeof getPublicEvent>>
+>;
+export type GetPublicEventQueryError = ErrorType<ErrorResponse>;
+
+/**
+ * @summary Public event lobby with safe table and seat summary
+ */
+
+export function useGetPublicEvent<
+  TData = Awaited<ReturnType<typeof getPublicEvent>>,
+  TError = ErrorType<ErrorResponse>,
+>(
+  code: string,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof getPublicEvent>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getGetPublicEventQueryOptions(code, options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+/**
+ * @summary Join an event table anonymously or resume using an existing seat token
+ */
+export const getJoinEventUrl = (code: string) => {
+  return `/api/events/${code}/join`;
+};
+
+export const joinEvent = async (
+  code: string,
+  eventJoinInput: EventJoinInput,
+  options?: RequestInit,
+): Promise<EventJoinResult> => {
+  return customFetch<EventJoinResult>(getJoinEventUrl(code), {
+    ...options,
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...options?.headers },
+    body: JSON.stringify(eventJoinInput),
+  });
+};
+
+export const getJoinEventMutationOptions = <
+  TError = ErrorType<ErrorResponse>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof joinEvent>>,
+    TError,
+    { code: string; data: BodyType<EventJoinInput> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof joinEvent>>,
+  TError,
+  { code: string; data: BodyType<EventJoinInput> },
+  TContext
+> => {
+  const mutationKey = ["joinEvent"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof joinEvent>>,
+    { code: string; data: BodyType<EventJoinInput> }
+  > = (props) => {
+    const { code, data } = props ?? {};
+
+    return joinEvent(code, data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type JoinEventMutationResult = NonNullable<
+  Awaited<ReturnType<typeof joinEvent>>
+>;
+export type JoinEventMutationBody = BodyType<EventJoinInput>;
+export type JoinEventMutationError = ErrorType<ErrorResponse>;
+
+/**
+ * @summary Join an event table anonymously or resume using an existing seat token
+ */
+export const useJoinEvent = <
+  TError = ErrorType<ErrorResponse>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof joinEvent>>,
+    TError,
+    { code: string; data: BodyType<EventJoinInput> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof joinEvent>>,
+  TError,
+  { code: string; data: BodyType<EventJoinInput> },
+  TContext
+> => {
+  return useMutation(getJoinEventMutationOptions(options));
+};
+
+/**
+ * @summary Set the authenticated event seat's ready state
+ */
+export const getSetEventReadyUrl = (code: string) => {
+  return `/api/events/${code}/ready`;
+};
+
+export const setEventReady = async (
+  code: string,
+  eventReadyInput: EventReadyInput,
+  options?: RequestInit,
+): Promise<SuccessResponse> => {
+  return customFetch<SuccessResponse>(getSetEventReadyUrl(code), {
+    ...options,
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...options?.headers },
+    body: JSON.stringify(eventReadyInput),
+  });
+};
+
+export const getSetEventReadyMutationOptions = <
+  TError = ErrorType<ErrorResponse>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof setEventReady>>,
+    TError,
+    { code: string; data: BodyType<EventReadyInput> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof setEventReady>>,
+  TError,
+  { code: string; data: BodyType<EventReadyInput> },
+  TContext
+> => {
+  const mutationKey = ["setEventReady"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof setEventReady>>,
+    { code: string; data: BodyType<EventReadyInput> }
+  > = (props) => {
+    const { code, data } = props ?? {};
+
+    return setEventReady(code, data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type SetEventReadyMutationResult = NonNullable<
+  Awaited<ReturnType<typeof setEventReady>>
+>;
+export type SetEventReadyMutationBody = BodyType<EventReadyInput>;
+export type SetEventReadyMutationError = ErrorType<ErrorResponse>;
+
+/**
+ * @summary Set the authenticated event seat's ready state
+ */
+export const useSetEventReady = <
+  TError = ErrorType<ErrorResponse>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof setEventReady>>,
+    TError,
+    { code: string; data: BodyType<EventReadyInput> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof setEventReady>>,
+  TError,
+  { code: string; data: BodyType<EventReadyInput> },
+  TContext
+> => {
+  return useMutation(getSetEventReadyMutationOptions(options));
+};
+
+/**
+ * @summary Refresh event guest presence heartbeat
+ */
+export const getHeartbeatEventPresenceUrl = (code: string) => {
+  return `/api/events/${code}/presence`;
+};
+
+export const heartbeatEventPresence = async (
+  code: string,
+  eventPresenceInput: EventPresenceInput,
+  options?: RequestInit,
+): Promise<SuccessResponse> => {
+  return customFetch<SuccessResponse>(getHeartbeatEventPresenceUrl(code), {
+    ...options,
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...options?.headers },
+    body: JSON.stringify(eventPresenceInput),
+  });
+};
+
+export const getHeartbeatEventPresenceMutationOptions = <
+  TError = ErrorType<ErrorResponse>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof heartbeatEventPresence>>,
+    TError,
+    { code: string; data: BodyType<EventPresenceInput> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof heartbeatEventPresence>>,
+  TError,
+  { code: string; data: BodyType<EventPresenceInput> },
+  TContext
+> => {
+  const mutationKey = ["heartbeatEventPresence"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof heartbeatEventPresence>>,
+    { code: string; data: BodyType<EventPresenceInput> }
+  > = (props) => {
+    const { code, data } = props ?? {};
+
+    return heartbeatEventPresence(code, data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type HeartbeatEventPresenceMutationResult = NonNullable<
+  Awaited<ReturnType<typeof heartbeatEventPresence>>
+>;
+export type HeartbeatEventPresenceMutationBody = BodyType<EventPresenceInput>;
+export type HeartbeatEventPresenceMutationError = ErrorType<ErrorResponse>;
+
+/**
+ * @summary Refresh event guest presence heartbeat
+ */
+export const useHeartbeatEventPresence = <
+  TError = ErrorType<ErrorResponse>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof heartbeatEventPresence>>,
+    TError,
+    { code: string; data: BodyType<EventPresenceInput> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof heartbeatEventPresence>>,
+  TError,
+  { code: string; data: BodyType<EventPresenceInput> },
+  TContext
+> => {
+  return useMutation(getHeartbeatEventPresenceMutationOptions(options));
+};
 
 /**
  * Returns the reserved player-index -1 host token for new spectator-host rooms, or player-index 0 for legacy rooms.

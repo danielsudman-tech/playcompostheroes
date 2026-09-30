@@ -7,10 +7,12 @@ import { Input } from "@/components/ui/input";
 import { useToast } from "@/hooks/use-toast";
 import { useCurrentUser, useLogout } from "@/components/AppGate";
 import { useCreateNewGame, getStoredToken, storeToken } from "@/hooks/use-game";
+import { eventId, useCreateEvent, useEvents } from "@/hooks/use-events";
 import compostHeroesLogo from "@assets/Compost_Heroes_Logo_no_background_1773537933517.png";
 import {
   Users, PlusCircle, Copy, Check, Loader2, LogOut, User, ArrowLeft,
   MonitorPlay, Lock, Tag, HelpCircle, PauseCircle, Trophy, Clock,
+  ArrowRight, CalendarDays, LayoutGrid,
 } from "lucide-react";
 
 interface FacilitatorRoom {
@@ -101,6 +103,14 @@ export default function FacilitatorHome() {
   const currentUser = useCurrentUser();
   const logout = useLogout();
   const createGame = useCreateNewGame();
+  const events = useEvents();
+  const createEvent = useCreateEvent();
+  const [eventName, setEventName] = useState("");
+  const [tableCount, setTableCount] = useState(3);
+  const [playersPerTable, setPlayersPerTable] = useState(4);
+  const [assignmentMode, setAssignmentMode] = useState<"choose" | "auto">("choose");
+  const [idleThresholdMinutes, setIdleThresholdMinutes] = useState(2);
+  const [showEventForm, setShowEventForm] = useState(false);
 
   const [label, setLabel] = useState("");
   const [maxPlayers, setMaxPlayers] = useState(4);
@@ -162,6 +172,13 @@ export default function FacilitatorHome() {
 
   const activeRooms = (rooms ?? []).filter((r) => r.mode === "facilitated" && r.phase !== "game_over");
   const pastRooms = (rooms ?? []).filter((r) => r.mode === "facilitated" && r.phase === "game_over").slice(0, 5);
+  const handleCreateEvent = (e: React.FormEvent) => {
+    e.preventDefault();
+    createEvent.mutate({ name: eventName.trim(), tableCount, playersPerTable, assignmentMode, idleThresholdMinutes }, {
+      onSuccess: (created) => setLocation(`/facilitator/events/${eventId(created)}`),
+      onError: (err) => toast({ title: "Couldn't create event", description: err.message, variant: "destructive" }),
+    });
+  };
 
   if (currentUser?.role !== "facilitator") {
     return (
@@ -206,20 +223,44 @@ export default function FacilitatorHome() {
         </div>
 
         <div className="text-center">
-          <img src={compostHeroesLogo} alt="Compost Heroes" className="w-48 mx-auto mb-1 drop-shadow-xl" draggable={false} />
-          <h1 className="text-xl font-extrabold text-foreground">Facilitator Dashboard</h1>
-          <p className="text-sm text-muted-foreground">Create sessions, share codes, and guide your groups.</p>
+          <img src={compostHeroesLogo} alt="Compost Heroes" className="w-40 mx-auto mb-1 drop-shadow-xl" draggable={false} />
+          <p className="event-kicker">Facilitator desk</p>
+          <h1 className="text-3xl font-display text-foreground">Make room for everyone.</h1>
+          <p className="text-sm text-muted-foreground">One table or a whole gathering — you've got this.</p>
         </div>
+
+        <section className="event-panel p-5 sm:p-7 space-y-5" data-testid="section-facilitator-events">
+          <div className="flex flex-wrap justify-between items-start gap-3">
+            <div><p className="event-kicker">For groups, camps & gatherings</p><h2 className="font-display text-3xl mt-1">Events</h2><p className="text-sm text-muted-foreground mt-1">Up to ten tables. One shared guest code. A clear view of every game.</p></div>
+            <button className="event-button event-button-primary" data-testid="button-new-event" onClick={() => setShowEventForm(!showEventForm)}><PlusCircle size={16} /> {showEventForm ? "Close setup" : "Create Event"}</button>
+          </div>
+          {showEventForm && <form className="rounded-2xl bg-[#f1f2e8] p-4 sm:p-5 space-y-4" onSubmit={handleCreateEvent} data-testid="form-create-event">
+            <div><label htmlFor="event-name" className="event-kicker block mb-1">Name this gathering</label><input id="event-name" className="event-input" required maxLength={80} value={eventName} onChange={e => setEventName(e.target.value)} placeholder="Saturday soil workshop" data-testid="input-event-name" /></div>
+            <div className="grid sm:grid-cols-2 gap-4">
+              <label className="text-xs font-extrabold space-y-1">Number of tables <select className="event-input" value={tableCount} onChange={e => setTableCount(Number(e.target.value))} data-testid="select-event-table-count">{Array.from({ length: 10 }, (_, i) => i + 1).map(n => <option key={n} value={n}>{n} table{n > 1 ? "s" : ""}</option>)}</select></label>
+              <label className="text-xs font-extrabold space-y-1">Guests per table <select className="event-input" value={playersPerTable} onChange={e => setPlayersPerTable(Number(e.target.value))} data-testid="select-event-players-per-table">{[2, 3, 4].map(n => <option key={n} value={n}>{n} guests</option>)}</select></label>
+            </div>
+            <fieldset><legend className="text-xs font-extrabold mb-2">How should guests find a table?</legend><div className="flex gap-2">{(["choose", "auto"] as const).map(mode => <button type="button" key={mode} onClick={() => setAssignmentMode(mode)} data-testid={`button-event-assignment-${mode}`} className={`event-button flex-1 ${assignmentMode === mode ? "event-button-primary" : "event-button-outline"}`}>{mode === "choose" ? "Choose a table" : "Auto-assign"}</button>)}</div></fieldset>
+            <label className="text-xs font-extrabold block space-y-1">Flag quiet tables after <select className="event-input" value={idleThresholdMinutes} onChange={e => setIdleThresholdMinutes(Number(e.target.value))} data-testid="select-event-idle-threshold">{[2, 3, 5, 10, 15].map(n => <option key={n} value={n}>{n} minutes</option>)}</select></label>
+            <button type="submit" className="event-button event-button-primary w-full" disabled={createEvent.isPending || !eventName.trim()} data-testid="button-create-event">{createEvent.isPending ? "Setting up tables…" : "Create event & open control center"} <ArrowRight size={16} /></button>
+          </form>}
+          <div className="space-y-4">
+            {events.isLoading ? <div className="space-y-2"><div className="event-skeleton h-16" /><div className="event-skeleton h-16" /></div>
+              : events.isError ? <div className="text-sm text-destructive p-4 rounded-xl bg-destructive/10">Events couldn't be loaded. <button className="underline font-bold" onClick={() => events.refetch()}>Try again</button></div>
+              : (["active", "ending", "upcoming", "completed"] as const).map(status => { const list = (events.data ?? []).filter(e => e.status === status); if (!list.length) return null; return <div key={status}><p className="event-kicker mb-2">{status === "active" ? "In progress" : status === "ending" ? "Ending" : status === "upcoming" ? "Coming up" : "Completed"}</p><div className="space-y-2">{list.map(ev => <button key={eventId(ev)} className="w-full text-left flex items-center gap-3 p-3.5 rounded-xl border border-[#dce2d1] bg-[#fafaf2] hover:border-[#729270] transition-colors" onClick={() => setLocation(`/facilitator/events/${eventId(ev)}`)} data-testid={`button-open-event-${eventId(ev)}`}><div className="w-10 h-10 shrink-0 rounded-xl bg-[#e4ebda] flex items-center justify-center text-[#56775c]"><LayoutGrid size={18} /></div><div className="flex-1 min-w-0"><p className="font-extrabold text-sm truncate">{ev.name}</p><p className="text-xs text-muted-foreground">{ev.tableCount ?? ev.tables?.length ?? 0} tables · {ev.code.toUpperCase()}</p></div><ArrowRight size={16} className="text-[#648069]" /></button>)}</div></div>; })}
+            {!events.isLoading && !events.isError && !events.data?.length && <div className="border border-dashed border-[#b9c8b5] rounded-xl px-5 py-6 text-center"><CalendarDays className="mx-auto text-[#779374] mb-2" size={22} /><p className="font-bold text-sm">Your first event starts here.</p><p className="text-xs text-muted-foreground">Set up tables above, then share one code with the whole group.</p></div>}
+          </div>
+        </section>
 
         {/* Create session */}
         <div className="bg-card/80 backdrop-blur-xl rounded-3xl shadow-xl border border-border p-6 space-y-4">
           <h2 className="text-sm font-bold text-muted-foreground uppercase tracking-wider flex items-center gap-2">
-            <PlusCircle className="w-4 h-4" /> New Session
+            <PlusCircle className="w-4 h-4" /> Quick Game · One table
           </h2>
           <div className="relative">
             <Tag className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground/60 pointer-events-none" />
             <Input
-              placeholder="Session label (e.g. Acme Corp — Team A)"
+               placeholder="Session label (e.g. Garden club)"
               value={label}
               onChange={(e) => setLabel(e.target.value)}
               maxLength={60}

@@ -38,6 +38,7 @@ import {
 } from "@/components/ui/alert-dialog";
 import { useToast } from "@/hooks/use-toast";
 import { useCurrentUser } from "@/components/AppGate";
+import { getGameEventId } from "@/hooks/use-events";
 import { cn } from "@/lib/utils";
 import {
   Loader2,
@@ -293,6 +294,11 @@ export default function FacilitatorDashboard() {
         >
           <ArrowLeft className="w-3.5 h-3.5 mr-1" /> <span className="hidden sm:inline">Lobby</span>
         </Button>
+        {gameId && ((gameState as typeof gameState & { eventId?: string }).eventId || getGameEventId(gameId)) && (
+          <Button size="sm" variant="outline" className="h-8 rounded-full text-xs font-bold shrink-0" onClick={() => setLocation(`/facilitator/events/${(gameState as typeof gameState & { eventId?: string }).eventId || getGameEventId(gameId)}`)} data-testid="button-back-to-event">
+            <ArrowLeft className="w-3.5 h-3.5 mr-1" /> Back to Event
+          </Button>
+        )}
         <div
           className={cn(
             "flex items-center gap-1 px-2 py-1 rounded-full text-[10px] font-bold border shrink-0",
