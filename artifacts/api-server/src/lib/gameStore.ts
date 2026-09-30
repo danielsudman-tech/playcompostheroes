@@ -1,5 +1,5 @@
 import { pool } from "@workspace/db";
-import { GameState } from "./gameEngine.js";
+import { GameState, runBotTurnsIfNeeded, takeOverPlayerAsBot } from "./gameEngine.js";
 import type { Response } from "express";
 
 // ── In-memory only: live SSE connections (can't persist HTTP streams) ──────────
@@ -157,6 +157,10 @@ export async function claimSlot(
     // different available seat when that credential is invalid here.
     return null;
   }
+
+  // A newly issued credential must never reclaim a seat that is occupied by a
+  // bot takeover during an in-progress game.
+  if (game.phase !== "waiting") return null;
 
   // Find next unclaimed player index
   const takenResult = await pool.query(
@@ -465,6 +469,136 @@ export async function removePlayerTokenByIndex(
   }
 
   return removedToken;
+}
+
+/**
+ * Facilitator player removal/takeover. The room state and its seat credential
+ * are changed under one row-locked transaction so a kicked token cannot be
+ * used to rejoin between the state update and token revocation.
+ */
+export async function kickFacilitatedPlayer(
+  gameId: string,
+  playerId: string,
+  hostToken: string,
+  facilitatorId: string
+): Promise<{ state: GameState; removedToken: string | null; active: boolean } | null> {
+  const client = await pool.connect();
+  try {
+    await client.query("BEGIN");
+    const gameResult = await client.query(
+      `SELECT state FROM compost_games WHERE game_id = $1 FOR UPDATE`,
+      [gameId]
+    );
+    if (!gameResult.rows.length) {
+      await client.query("ROLLBACK");
+      return null;
+    }
+    const state = (typeof gameResult.rows[0].state === "string"
+      ? JSON.parse(gameResult.rows[0].state)
+      : gameResult.rows[0].state) as GameState;
+    if (state.mode !== "facilitated" || state.facilitatorId !== facilitatorId ||
+        state.phase === "game_over") {
+      await client.query("ROLLBACK");
+      return null;
+    }
+
+    const tokenRows = await client.query(
+      `SELECT token, player_index FROM compost_game_tokens WHERE game_id = $1 FOR UPDATE`,
+      [gameId]
+    );
+    const hostIndex = state.hostIsSpectator === true ? -1 : 0;
+    const hostRow = tokenRows.rows.find((row) =>
+      row.token === hostToken && Number(row.player_index) === hostIndex
+    );
+    if (!hostRow) {
+      await client.query("ROLLBACK");
+      return null;
+    }
+
+    const removedIndex = state.players.findIndex((player) => player.id === playerId);
+    const protectedHostIndex = state.hostIsSpectator === true ? -1 : 0;
+    const target = state.players[removedIndex];
+    if (!target || removedIndex === protectedHostIndex || target.isBot) {
+      await client.query("ROLLBACK");
+      return null;
+    }
+
+    const removedTokenRow = tokenRows.rows.find((row) =>
+      Number(row.player_index) === removedIndex
+    );
+    const removedToken = (removedTokenRow?.token as string | undefined) ?? null;
+    let nextState: GameState;
+    const active = state.phase !== "waiting";
+
+    if (!active) {
+      nextState = {
+        ...state,
+        players: state.players.filter((player) => player.id !== playerId),
+      };
+      if (removedTokenRow) {
+        await client.query(
+          `DELETE FROM compost_game_tokens WHERE game_id = $1 AND token = $2`,
+          [gameId, removedTokenRow.token]
+        );
+      }
+      // Temporarily move higher seats to avoid a uniqueness collision while
+      // shifting them down into the vacated index.
+      for (const row of tokenRows.rows) {
+        const index = Number(row.player_index);
+        if (index > removedIndex) {
+          await client.query(
+            `UPDATE compost_game_tokens SET player_index = $3 WHERE game_id = $1 AND token = $2`,
+            [gameId, row.token, -300000 - index]
+          );
+        }
+      }
+      for (const row of tokenRows.rows) {
+        const index = Number(row.player_index);
+        if (index > removedIndex) {
+          await client.query(
+            `UPDATE compost_game_tokens SET player_index = $3 WHERE game_id = $1 AND token = $2`,
+            [gameId, row.token, index - 1]
+          );
+        }
+      }
+    } else {
+      // Only actual in-progress game phases can be converted to bots.
+      if (!["draw", "play", "effect_resolution", "end_turn"].includes(state.phase)) {
+        await client.query("ROLLBACK");
+        return null;
+      }
+      nextState = runBotTurnsIfNeeded(takeOverPlayerAsBot(state, playerId));
+      if (removedTokenRow) {
+        await client.query(
+          `DELETE FROM compost_game_tokens WHERE game_id = $1 AND token = $2`,
+          [gameId, removedTokenRow.token]
+        );
+      }
+    }
+
+    await client.query(
+      `UPDATE compost_games SET state = $2, updated_at = NOW() WHERE game_id = $1`,
+      [gameId, JSON.stringify(nextState)]
+    );
+    await client.query("COMMIT");
+
+    gameStateCache.set(gameId, nextState);
+    const tokenMap = tokenIndexCache.get(gameId);
+    if (tokenMap) {
+      if (removedToken) tokenMap.delete(removedToken);
+      if (!active) {
+        for (const [token, index] of tokenMap) {
+          if (index > removedIndex) tokenMap.set(token, index - 1);
+        }
+      }
+    }
+    return { state: nextState, removedToken, active };
+  } catch (error) {
+    await client.query("ROLLBACK");
+    throw error;
+  } finally {
+    client.release();
+  }
 }
 
 // ── SSE (in-memory only) ──────────────────────────────────────────────────────

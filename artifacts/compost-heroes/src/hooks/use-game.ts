@@ -136,6 +136,8 @@ export function useGameSse(
   const queryClient = useQueryClient();
   const onNudgeRef = useRef(onNudge);
   onNudgeRef.current = onNudge;
+  const onKickedRef = useRef(onKicked);
+  onKickedRef.current = onKicked;
   const onRoomTransferRef = useRef(onRoomTransfer);
   onRoomTransferRef.current = onRoomTransfer;
   const recoveryInProgress = useRef(false);
@@ -161,7 +163,7 @@ export function useGameSse(
 
     source.addEventListener("kicked", () => {
       source.close();
-      onKicked?.();
+      onKickedRef.current?.();
     });
 
     source.addEventListener("nudge", (e) => {
@@ -194,6 +196,11 @@ export function useGameSse(
         })
           .then(async (r) => {
             const data = await r.json().catch(() => ({}));
+            if (r.status === 403 && data.error === "Invalid game token") {
+              source.close();
+              onKickedRef.current?.();
+              return true;
+            }
             return r.status === 409 && followMovedRoom(gameId, data);
           })
           .catch(() => false)
@@ -212,26 +219,40 @@ export function useGameSse(
       source.close();
       setSseConnected(false);
     };
-  }, [gameId, token, isOnline, queryClient, onKicked]);
+  }, [gameId, token, isOnline, queryClient]);
 
   return { sseConnected };
 }
 
-// ── Leave or kick a player from a waiting room ────────────────────────────────
+// ── Leave or remove a player ──────────────────────────────────────────────────
+
+async function removePlayer(gameId: string | null, token: string | null, playerId: string) {
+  if (!gameId || !token) throw new Error("Room access is missing");
+  const r = await fetch(`/api/games/${gameId}/players/${encodeURIComponent(playerId)}`, {
+    method: "DELETE",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ token, userToken: getUserToken() }),
+  });
+  if (!r.ok) {
+    const err = await r.json().catch(() => ({}));
+    throw new Error((err as any).error ?? "Failed to remove player");
+  }
+  return r.json() as Promise<{ success: true }>;
+}
 
 export function useLeaveRoom(gameId: string | null, token: string | null) {
   return useMutation({
-    mutationFn: async (playerId: string) => {
-      const r = await fetch(`/api/games/${gameId}/players/${playerId}`, {
-        method: "DELETE",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ token, userToken: getUserToken() }),
-      });
-      if (!r.ok) {
-        const err = await r.json().catch(() => ({}));
-        throw new Error((err as any).error ?? "Failed to leave room");
-      }
-      return r.json().catch(() => ({ success: true }));
+    mutationFn: (playerId: string) => removePlayer(gameId, token, playerId),
+  });
+}
+
+export function useKickPlayer(gameId: string | null, token: string | null) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (playerId: string) => removePlayer(gameId, token, playerId),
+    onSuccess: () => {
+      if (gameId) queryClient.invalidateQueries({ queryKey: getGetGameQueryKey(gameId) });
+      queryClient.invalidateQueries({ queryKey: ["facilitator-rooms"] });
     },
   });
 }

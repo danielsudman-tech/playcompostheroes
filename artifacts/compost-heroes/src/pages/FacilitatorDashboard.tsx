@@ -7,6 +7,7 @@ import {
   useGameSse,
   useClaimSlot,
   useNudgePlayer,
+  useKickPlayer,
   usePauseGame,
   useFacilitatorResolve,
   useSendHostMessage,
@@ -25,6 +26,16 @@ import {
   collectedCategoryCount,
 } from "@/components/facilitated/OpponentSummary";
 import { Button } from "@/components/ui/button";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { useToast } from "@/hooks/use-toast";
 import { useCurrentUser } from "@/components/AppGate";
 import { cn } from "@/lib/utils";
@@ -32,6 +43,7 @@ import {
   Loader2,
   AlertCircle,
   Bell,
+  UserX,
   Pause,
   Play,
   LifeBuoy,
@@ -98,6 +110,7 @@ export default function FacilitatorDashboard() {
   const { sseConnected } = useGameSse(gameId || null, token, isFacilitated && !!token);
 
   const nudgeMutation = useNudgePlayer(gameId || null, token);
+  const kickMutation = useKickPlayer(gameId || null, token);
   const pauseMutation = usePauseGame(gameId || null, token);
   const resolveMutation = useFacilitatorResolve(gameId || null, token);
   const messageMutation = useSendHostMessage(gameId || null, token);
@@ -110,6 +123,7 @@ export default function FacilitatorDashboard() {
 
   const [broadcastText, setBroadcastText] = useState("");
   const [confirmEnd, setConfirmEnd] = useState(false);
+  const [kickTarget, setKickTarget] = useState<{ id: string; name: string } | null>(null);
   const [codeCopied, setCodeCopied] = useState(false);
 
   const handleSendBroadcast = () => {
@@ -196,6 +210,21 @@ export default function FacilitatorDashboard() {
     nudgeMutation.mutate(playerIndex, {
       onSuccess: () => toast({ title: `Nudged ${name}`, description: "They'll see a friendly reminder." }),
       onError: (e) => toast({ title: "Nudge failed", description: (e as Error).message, variant: "destructive" }),
+    });
+  };
+
+  const handleKick = () => {
+    if (!kickTarget) return;
+    const { id, name } = kickTarget;
+    kickMutation.mutate(id, {
+      onSuccess: () => {
+        setKickTarget(null);
+        toast({
+          title: `${name} removed`,
+          description: isWaitingRoom ? "Their seat is now open." : "A bot has taken over their seat so the game can continue.",
+        });
+      },
+      onError: (e) => toast({ title: "Could not remove player", description: (e as Error).message, variant: "destructive" }),
     });
   };
 
@@ -471,6 +500,17 @@ export default function FacilitatorDashboard() {
                               ><MoveRight className="w-3.5 h-3.5 mr-1" /> Transfer</Button>
                             </div>
                           )}
+                          {!(player as any).isBot && (
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              className="h-8 rounded-lg text-destructive border-destructive/30 hover:bg-destructive/10"
+                              onClick={() => setKickTarget({ id: player.id, name: player.name })}
+                              data-testid={`button-remove-player-${player.id}`}
+                            >
+                              <UserX className="w-3.5 h-3.5 mr-1" /> Remove
+                            </Button>
+                          )}
                         </>
                       )}
                     </div>
@@ -619,18 +659,29 @@ export default function FacilitatorDashboard() {
                     </div>
                   )}
 
-                  {/* Nudge */}
+                  {/* Active-session participant controls */}
                   {(hostIsSpectator || idx !== 0) && !(player as any).isBot && !isWaitingRoom && gameState.phase !== "game_over" && (
-                    <Button
-                      size="sm"
-                      variant="secondary"
-                      className="font-bold rounded-xl self-start h-7 text-xs"
-                      disabled={nudgeMutation.isPending}
-                      onClick={() => handleNudge(idx, player.name)}
-                      data-testid={`button-nudge-${player.id}`}
-                    >
-                      <Bell className="w-3.5 h-3.5 mr-1" /> Nudge
-                    </Button>
+                    <div className="flex flex-wrap gap-2">
+                      <Button
+                        size="sm"
+                        variant="secondary"
+                        className="font-bold rounded-xl h-7 text-xs"
+                        disabled={nudgeMutation.isPending}
+                        onClick={() => handleNudge(idx, player.name)}
+                        data-testid={`button-nudge-${player.id}`}
+                      >
+                        <Bell className="w-3.5 h-3.5 mr-1" /> Nudge
+                      </Button>
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        className="font-bold rounded-xl h-7 text-xs text-destructive border-destructive/30 hover:bg-destructive/10"
+                        onClick={() => setKickTarget({ id: player.id, name: player.name })}
+                        data-testid={`button-remove-player-${player.id}`}
+                      >
+                        <UserX className="w-3.5 h-3.5 mr-1" /> Remove
+                      </Button>
+                    </div>
                   )}
                 </motion.div>
               );
@@ -673,6 +724,29 @@ export default function FacilitatorDashboard() {
           </div>
         </div>
       </div>
+      <AlertDialog open={!!kickTarget} onOpenChange={(open) => { if (!open && !kickMutation.isPending) setKickTarget(null); }}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Remove {kickTarget?.name} from this table?</AlertDialogTitle>
+            <AlertDialogDescription>
+              {isWaitingRoom
+                ? "They will lose access to this room and their seat will be available for someone else."
+                : "They will immediately lose access to this game. A bot will take over their seat and keep their cards and pile so the game can continue."}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={kickMutation.isPending}>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+              disabled={kickMutation.isPending}
+              onClick={(e) => { e.preventDefault(); handleKick(); }}
+              data-testid="button-confirm-remove-player"
+            >
+              {kickMutation.isPending ? "Removing…" : "Remove player"}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }

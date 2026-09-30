@@ -12,7 +12,9 @@
     "test:bot-worm-party": "tsx ./src/tests/bot-worm-party.test.ts",
     "test:route-worm-party": "tsx ./src/tests/route-worm-party.test.ts",
     "test:route-soggy-pile": "tsx ./src/tests/route-soggy-pile.test.ts",
-    "test:decision-coverage": "tsx ./src/tests/decision-coverage.test.ts"
+    "test:decision-coverage": "tsx ./src/tests/decision-coverage.test.ts",
+    "test:bot-takeover": "tsx ./src/tests/bot-takeover.test.ts",
+    "test:route-facilitated-kick": "tsx ./src/tests/route-facilitated-kick.test.ts"
   },
   "dependencies": {
     "@octokit/rest": "^22.0.1",

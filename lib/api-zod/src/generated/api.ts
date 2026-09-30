@@ -261,6 +261,33 @@ export const GetGameResponse = zod.object({
 });
 
 /**
+ * Online rooms retain their existing waiting-room leave/kick behavior. In facilitated rooms, a participant may leave only while waiting; the approved creator must provide both their host seat token and user token to remove a participant. During active play the participant is converted to a bot in the same seat, with their game state preserved. Facilitator credentials cannot remove the legacy host, bots, or players from ended sessions.
+ * @summary Leave a waiting room or remove a participant
+ */
+export const RemoveGamePlayerParams = zod.object({
+  gameId: zod.coerce.string(),
+  playerId: zod.coerce.string(),
+});
+
+export const RemoveGamePlayerBody = zod.object({
+  token: zod
+    .string()
+    .describe(
+      "Requester's seat token. Facilitated hosts use the reserved -1 token in new rooms or index 0 in legacy rooms.",
+    ),
+  userToken: zod
+    .string()
+    .optional()
+    .describe(
+      "Required with the host seat token when a facilitator removes a player; optional for existing online leave\/kick requests.",
+    ),
+});
+
+export const RemoveGamePlayerResponse = zod.object({
+  success: zod.literal(true),
+});
+
+/**
  * An existing token only resumes the seat it already owns. Invalid tokens never claim another seat. If an existing token was transferred to another room, returns HTTP 409 with redirectGameId and targetToken.
  * @summary Claim or recover a game seat
  */

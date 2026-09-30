@@ -227,6 +227,17 @@ export interface WaitingRoomTransferResult {
   success: boolean;
 }
 
+export interface GamePlayerRemovalInput {
+  /** Requester's seat token. Facilitated hosts use the reserved -1 token in new rooms or index 0 in legacy rooms. */
+  token: string;
+  /** Required with the host seat token when a facilitator removes a player; optional for existing online leave/kick requests. */
+  userToken?: string;
+}
+
+export interface GamePlayerRemovalResult {
+  success: boolean;
+}
+
 export interface HostTokenRecovery {
   userToken: string;
 }

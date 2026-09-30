@@ -26,6 +26,8 @@ import type {
   FacilitatorRole,
   FacilitatorRoomSummary,
   GameAction,
+  GamePlayerRemovalInput,
+  GamePlayerRemovalResult,
   GameSeatClaimConflict,
   GameSeatClaimInput,
   GameSeatClaimResult,
@@ -478,6 +480,106 @@ export function useGetGame<
 
   return { ...query, queryKey: queryOptions.queryKey };
 }
+
+/**
+ * Online rooms retain their existing waiting-room leave/kick behavior. In facilitated rooms, a participant may leave only while waiting; the approved creator must provide both their host seat token and user token to remove a participant. During active play the participant is converted to a bot in the same seat, with their game state preserved. Facilitator credentials cannot remove the legacy host, bots, or players from ended sessions.
+ * @summary Leave a waiting room or remove a participant
+ */
+export const getRemoveGamePlayerUrl = (gameId: string, playerId: string) => {
+  return `/api/games/${gameId}/players/${playerId}`;
+};
+
+export const removeGamePlayer = async (
+  gameId: string,
+  playerId: string,
+  gamePlayerRemovalInput: GamePlayerRemovalInput,
+  options?: RequestInit,
+): Promise<GamePlayerRemovalResult> => {
+  return customFetch<GamePlayerRemovalResult>(
+    getRemoveGamePlayerUrl(gameId, playerId),
+    {
+      ...options,
+      method: "DELETE",
+      headers: { "Content-Type": "application/json", ...options?.headers },
+      body: JSON.stringify(gamePlayerRemovalInput),
+    },
+  );
+};
+
+export const getRemoveGamePlayerMutationOptions = <
+  TError = ErrorType<ErrorResponse>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof removeGamePlayer>>,
+    TError,
+    {
+      gameId: string;
+      playerId: string;
+      data: BodyType<GamePlayerRemovalInput>;
+    },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof removeGamePlayer>>,
+  TError,
+  { gameId: string; playerId: string; data: BodyType<GamePlayerRemovalInput> },
+  TContext
+> => {
+  const mutationKey = ["removeGamePlayer"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof removeGamePlayer>>,
+    { gameId: string; playerId: string; data: BodyType<GamePlayerRemovalInput> }
+  > = (props) => {
+    const { gameId, playerId, data } = props ?? {};
+
+    return removeGamePlayer(gameId, playerId, data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type RemoveGamePlayerMutationResult = NonNullable<
+  Awaited<ReturnType<typeof removeGamePlayer>>
+>;
+export type RemoveGamePlayerMutationBody = BodyType<GamePlayerRemovalInput>;
+export type RemoveGamePlayerMutationError = ErrorType<ErrorResponse>;
+
+/**
+ * @summary Leave a waiting room or remove a participant
+ */
+export const useRemoveGamePlayer = <
+  TError = ErrorType<ErrorResponse>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof removeGamePlayer>>,
+    TError,
+    {
+      gameId: string;
+      playerId: string;
+      data: BodyType<GamePlayerRemovalInput>;
+    },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof removeGamePlayer>>,
+  TError,
+  { gameId: string; playerId: string; data: BodyType<GamePlayerRemovalInput> },
+  TContext
+> => {
+  return useMutation(getRemoveGamePlayerMutationOptions(options));
+};
 
 /**
  * An existing token only resumes the seat it already owns. Invalid tokens never claim another seat. If an existing token was transferred to another room, returns HTTP 409 with redirectGameId and targetToken.

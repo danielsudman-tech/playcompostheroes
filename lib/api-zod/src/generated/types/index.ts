@@ -25,6 +25,8 @@ export * from "./facilitatorRoomSummary";
 export * from "./gameAction";
 export * from "./gameActionDecisionData";
 export * from "./gameActionType";
+export * from "./gamePlayerRemovalInput";
+export * from "./gamePlayerRemovalResult";
 export * from "./gameSeatClaimConflict";
 export * from "./gameSeatClaimInput";
 export * from "./gameSeatClaimResult";

@@ -31,6 +31,7 @@ import {
   getGameIdForToken,
   getTokenForPlayerIndex,
   getPlayerIndexForToken,
+  kickFacilitatedPlayer,
   removePlayerTokenByIndex,
   removeSseClient,
   reorderWaitingPlayers,
@@ -440,7 +441,12 @@ router.get("/games/:gameId/events", async (req, res) => {
     return;
   }
 
-  const viewerIndex = await getPlayerIndexForToken(gameId, token) ?? undefined;
+  const tokenIndex = await getPlayerIndexForToken(gameId, token);
+  if (tokenIndex === null) {
+    res.status(403).json({ error: "Invalid token" });
+    return;
+  }
+  const viewerIndex = tokenIndex;
 
   res.setHeader("Content-Type", "text/event-stream");
   res.setHeader("Cache-Control", "no-cache");
@@ -1040,7 +1046,7 @@ router.post("/games/:gameId/waiting/transfer", async (req, res) => {
 // DELETE /api/games/:gameId/players/:playerId — leave or kick
 router.delete("/games/:gameId/players/:playerId", async (req, res) => {
   const { gameId, playerId } = req.params as { gameId: string; playerId: string };
-  const { token } = req.body as { token?: string };
+  const { token, userToken } = req.body as { token?: string; userToken?: string };
 
   if (!token) {
     res.status(401).json({ error: "Token required" });
@@ -1073,21 +1079,48 @@ router.delete("/games/:gameId/players/:playerId", async (req, res) => {
     : 0;
   const isHost = requesterIndex === hostIndex;
 
-  if (state.mode === "facilitated" && isHost && isSelf) {
-    res.status(403).json({ error: "The facilitator cannot leave through the player endpoint" });
-    return;
-  }
+  if (state.mode === "facilitated") {
+    if (isHost) {
+      if (isSelf) {
+        res.status(403).json({ error: "The facilitator cannot leave through the player endpoint" });
+        return;
+      }
+      const user = await getRegisteredUser(userToken);
+      if (!user || !isApprovedFacilitator(user) || user.id !== state.facilitatorId) {
+        res.status(403).json({ error: "Facilitator approval is required" });
+        return;
+      }
+      if (state.phase === "game_over") {
+        res.status(409).json({ error: "Cannot kick players from an ended session" });
+        return;
+      }
+      if (target.isBot) {
+        res.status(400).json({ error: "Bots cannot be kicked" });
+        return;
+      }
 
-  if (!isSelf && !isHost) {
-    res.status(403).json({ error: "Only the host can kick other players" });
-    return;
-  }
-  if (state.mode === "facilitated" && isHost) {
-    const user = await getRegisteredUser(req.body?.userToken);
-    if (!isApprovedFacilitator(user) || user?.id !== state.facilitatorId) {
-      res.status(403).json({ error: "Facilitator approval is required" });
+      const result = await kickFacilitatedPlayer(gameId, playerId, token, user.id);
+      if (!result) {
+        res.status(409).json({ error: "The room or host seat changed; refresh and try again" });
+        return;
+      }
+      if (result.removedToken) sendKickedEvent(gameId, result.removedToken);
+      broadcastToGame(gameId, result.state, serializeState);
+      res.json({ success: true });
       return;
     }
+
+    if (!isSelf) {
+      res.status(403).json({ error: "Only the host can kick other players" });
+      return;
+    }
+    if (state.phase !== "waiting") {
+      res.status(409).json({ error: "Players can only leave during the waiting phase" });
+      return;
+    }
+  } else if (!isSelf && !isHost) {
+    res.status(403).json({ error: "Only the host can kick other players" });
+    return;
   }
 
   const result = removePlayerFromRoom(state, playerId);

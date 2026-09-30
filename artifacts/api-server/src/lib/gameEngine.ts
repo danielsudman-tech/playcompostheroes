@@ -2569,6 +2569,27 @@ export function removePlayerFromRoom(
   };
 }
 
+export function takeOverPlayerAsBot(
+  state: GameState,
+  playerId: string
+): GameState {
+  const playerIndex = state.players.findIndex((player) => player.id === playerId);
+  if (playerIndex === -1) return state;
+  const player = state.players[playerIndex];
+  if (player.isBot) return state;
+  const players = [...state.players];
+  players[playerIndex] = {
+    ...player,
+    isBot: true,
+    botSkillLevel: player.botSkillLevel ?? "medium",
+  };
+  return {
+    ...state,
+    players,
+    log: [...state.log, `${player.name} was taken over by a bot.`],
+  };
+}
+
 export function addBotToRoom(
   state: GameState,
   botName: string,
@@ -3266,16 +3287,19 @@ function botActivateOngoing(state: GameState, playerId: string): GameState {
  *   medium — also plays low-risk action cards that draw cards / give extra turns
  *   hard   — full strategic play including aggressive action cards
  */
-function botTakeTurn(state: GameState): GameState {
+function botTakeTurn(state: GameState, alreadyDrew = false): GameState {
   const player = state.players[state.currentPlayerIndex];
   if (!player.isBot) return state;
 
   const level: BotSkillLevel = player.botSkillLevel ?? "medium";
 
-  // 1. Draw card
-  let s = drawCard(state, player);
-  s = { ...s, phase: "play" };
-  addLog(s, `${player.name} (Bot) drew a card.`);
+  // A takeover in the middle of a turn must continue without drawing twice.
+  let s = state;
+  if (!alreadyDrew) {
+    s = drawCard(state, player);
+    s = { ...s, phase: "play" };
+    addLog(s, `${player.name} (Bot) drew a card.`);
+  }
 
   // 2. Activate ongoing benefit early (hot_pile_bonus draws an extra card)
   s = botActivateOngoing(s, player.id);
@@ -3384,14 +3408,17 @@ export function runBotTurnsIfNeeded(state: GameState): GameState {
   // created by a human player's action card)
   let s = drainBotDecisions(state);
 
-  // Then: run full bot turns while it's a bot's draw phase
+  // Run bot turns in draw phase, and finish an already-started turn when the
+  // current player was taken over during play.
   let iterations = 0;
   while (
-    s.phase === "draw" &&
+    !s.pendingDecision &&
+    (s.phase === "draw" || s.phase === "play" ||
+      s.phase === "effect_resolution" || s.phase === "end_turn") &&
     s.players[s.currentPlayerIndex]?.isBot &&
     iterations < 20
   ) {
-    s = botTakeTurn(s);
+    s = botTakeTurn(s, s.phase !== "draw");
     // After each bot turn, drain any victim decisions targeting other bots
     s = drainBotDecisions(s);
     iterations++;
