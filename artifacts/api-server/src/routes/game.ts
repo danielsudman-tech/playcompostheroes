@@ -50,7 +50,7 @@ import {
   withGameMutationLocks,
 } from "../lib/gameStore.js";
 import { buildEffectAnnouncement, findEffectCard, serializeEffectAnnouncement } from "../lib/facilitatedEffects.js";
-import { getUserByToken, isApprovedFacilitator, type CompostUser } from "../lib/userStore.js";
+import { extractBearerToken, getUserByToken, isApprovedFacilitator, type CompostUser } from "../lib/userStore.js";
 
 // Registration rules: online games (and facilitated hosting) require a
 // registered account. Facilitated participants and Pass & Play never do.
@@ -631,7 +631,7 @@ router.post("/games/:gameId/pause", async (req, res) => {
 
 // GET /api/facilitator/rooms — sessions created by the signed-in facilitator
 router.get("/facilitator/rooms", async (req, res) => {
-  const user = await getRegisteredUser(req.query.userToken);
+  const user = await getRegisteredUser(extractBearerToken(req.get("authorization")));
   if (!user) {
     res.status(401).json({ error: "Sign in required" });
     return;

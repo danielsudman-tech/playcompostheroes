@@ -1,6 +1,7 @@
 import { pool } from "@workspace/db";
 import { GameState, runBotTurnsIfNeeded, takeOverPlayerAsBot } from "./gameEngine.js";
 import type { Response } from "express";
+import { randomBytes } from "node:crypto";
 
 // ── In-memory only: live SSE connections (can't persist HTTP streams) ──────────
 const sseClientsByToken = new Map<string, Map<string, Response>>();
@@ -21,7 +22,7 @@ function generateId(): string {
 }
 
 function generateToken(): string {
-  return generateId() + generateId() + generateId();
+  return randomBytes(32).toString("hex");
 }
 
 export function createGameId(): string {

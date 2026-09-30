@@ -330,10 +330,6 @@ export const ClaimGameSeatResponse = zod.object({
 /**
  * @summary List sessions created by the signed-in facilitator
  */
-export const GetFacilitatorRoomsQueryParams = zod.object({
-  userToken: zod.coerce.string(),
-});
-
 export const GetFacilitatorRoomsResponseItem = zod.object({
   gameId: zod.string(),
   mode: zod.string(),
@@ -354,10 +350,6 @@ export const GetFacilitatorRoomsResponse = zod.array(
 /**
  * @summary List events owned by the approved facilitator
  */
-export const GetFacilitatorEventsQueryParams = zod.object({
-  userToken: zod.coerce.string(),
-});
-
 export const GetFacilitatorEventsResponseItem = zod.object({
   eventId: zod.string(),
   code: zod.string(),
@@ -418,10 +410,6 @@ export const CreateFacilitatorEventBody = zod.object({
  */
 export const GetFacilitatorEventParams = zod.object({
   eventId: zod.coerce.string(),
-});
-
-export const GetFacilitatorEventQueryParams = zod.object({
-  userToken: zod.coerce.string(),
 });
 
 export const getFacilitatorEventResponseTwoTablesItemProgressMin = 0;
@@ -609,14 +597,29 @@ export const ControlFacilitatorEventTableResponse = zod.object({
 });
 
 /**
- * @summary SSE event detail updates, with polling as a client fallback
+ * @summary Create a short-lived, single-use ticket for the facilitator event stream
+ */
+export const CreateFacilitatorEventStreamTicketParams = zod.object({
+  eventId: zod.coerce.string(),
+});
+
+export const CreateFacilitatorEventStreamTicketBody = zod.object({
+  userToken: zod.string(),
+});
+
+export const CreateFacilitatorEventStreamTicketResponse = zod.object({
+  ticket: zod.string(),
+});
+
+/**
+ * @summary SSE event detail updates using a short-lived, single-use ticket
  */
 export const StreamFacilitatorEventParams = zod.object({
   eventId: zod.coerce.string(),
 });
 
 export const StreamFacilitatorEventQueryParams = zod.object({
-  userToken: zod.coerce.string(),
+  ticket: zod.coerce.string(),
 });
 
 /**

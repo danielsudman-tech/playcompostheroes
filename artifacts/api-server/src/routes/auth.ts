@@ -1,14 +1,17 @@
 import { Router, type IRouter } from "express";
 import { registerUser, loginUser, getUserByToken } from "../lib/userStore.js";
 import { logEvent } from "../lib/analyticsStore.js";
+import { createAuthRateLimiter } from "../lib/authRateLimit.js";
 
 const router: IRouter = Router();
+const registerRateLimit = createAuthRateLimiter(5, 60 * 60 * 1000);
+const loginRateLimit = createAuthRateLimiter(10, 15 * 60 * 1000);
 
 router.get("/auth/config", (_req, res) => {
   res.json({ requiresRegistration: true });
 });
 
-router.post("/auth/register", async (req, res) => {
+router.post("/auth/register", registerRateLimit, async (req, res) => {
   const { email, name, password, organization } = req.body as {
     email?: string;
     name?: string;
@@ -44,7 +47,7 @@ router.post("/auth/register", async (req, res) => {
   }
 });
 
-router.post("/auth/login", async (req, res) => {
+router.post("/auth/login", loginRateLimit, async (req, res) => {
   const { email, password } = req.body as {
     email?: string;
     password?: string;
@@ -71,7 +74,8 @@ router.post("/auth/login", async (req, res) => {
 });
 
 router.get("/auth/me", async (req, res) => {
-  const token = req.query.token as string | undefined;
+  const authorization = req.headers.authorization;
+  const token = authorization?.startsWith("Bearer ") ? authorization.slice(7) : undefined;
   if (!token) {
     res.status(401).json({ error: "No token provided" });
     return;

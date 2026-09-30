@@ -1,5 +1,6 @@
 import { pool } from "@workspace/db";
 import bcrypt from "bcryptjs";
+import { randomBytes } from "node:crypto";
 
 export interface CompostUser {
   id: string;
@@ -14,12 +15,13 @@ export function isApprovedFacilitator(user: CompostUser | null): boolean {
   return user?.role === "facilitator";
 }
 
+export function extractBearerToken(authorization: string | undefined): string | null {
+  const match = authorization?.match(/^Bearer\s+([^\s]+)$/i);
+  return match?.[1] ?? null;
+}
+
 function generateToken(): string {
-  return (
-    Math.random().toString(36).substring(2) +
-    Math.random().toString(36).substring(2) +
-    Math.random().toString(36).substring(2)
-  );
+  return randomBytes(32).toString("hex");
 }
 
 async function createSession(userId: string): Promise<string> {
@@ -160,7 +162,8 @@ export async function getUserByToken(token: string): Promise<CompostUser | null>
             u.created_at
      FROM compost_users u
      JOIN compost_user_sessions s ON s.user_id = u.id
-     WHERE s.token = $1`,
+      WHERE s.token = $1
+        AND s.created_at > NOW() - INTERVAL '30 days'`,
     [token]
   );
   if (result.rows.length === 0) return null;

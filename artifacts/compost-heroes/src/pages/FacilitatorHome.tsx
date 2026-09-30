@@ -120,7 +120,9 @@ export default function FacilitatorHome() {
     queryKey: ["facilitator-rooms"],
     queryFn: async () => {
       const token = getUserToken();
-      const r = await fetch(`/api/facilitator/rooms?userToken=${encodeURIComponent(token ?? "")}`);
+      const r = await fetch("/api/facilitator/rooms", {
+        headers: { Authorization: `Bearer ${token ?? ""}` },
+      });
       if (!r.ok) throw new Error("Failed to load sessions");
       return r.json();
     },

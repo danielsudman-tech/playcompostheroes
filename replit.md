@@ -104,10 +104,17 @@ A browser-based digital card game for 2–4 players. Players collect hero cards 
 ### Game Architecture
 
 - **Frontend**: React + Vite, with React Query for polling (1.5s) and mutations
-- **Backend**: In-memory game state in `artifacts/api-server/src/lib/gameStore.ts`
+- **Backend**: Live game state and player seat tokens are persisted in PostgreSQL. The API server caches active games and keeps live server-sent event (SSE) connections in memory, so production must run as a single, always-on **Reserved VM**, not Autoscale. A database backup does not capture live SSE connections.
 - **Game Engine**: `artifacts/api-server/src/lib/gameEngine.ts` — complete card/turn logic
 - **Cards**: 51 cards defined in `artifacts/api-server/src/lib/cards.ts` (34 hero + 17 action)
 - **API**: POST /api/games, GET /api/games/:id, POST /api/games/:id/action
+
+### Persistence and access
+
+- Admin-set card copy counts and image override keys live in PostgreSQL (`compost_card_settings`), not writable JSON. The API initializes this table and imports the checked-in legacy `cardCopies.json` and `imageKeys.json` only for missing rows, without overwriting later database edits.
+- Uploaded card images are stored in Replit Object Storage. Existing local PNG/JPEG/WebP assets are copied there in the background under their existing keys, with retries and without deleting the originals; `/api/assets/*` serves stored images, with local assets as a migration/outage fallback. New admin uploads go through private staging, are validated as PNG, JPEG, or WebP, then promoted to a separate public key so the signed upload URL cannot replace a verified image.
+- Game state, game seat tokens, user accounts, and user sign-in sessions are persisted in PostgreSQL. New sign-in and game seat tokens use cryptographic randomness; user sessions expire 30 days after creation. Existing game seat tokens remain valid. Pass & Play and facilitated guests do not need an account; Online requires sign-in, and hosting requires facilitator approval.
+- Admin requests require the `x-admin-key` header, including database and GitHub backup routes. Never put an admin key or user sign-in token in a URL; facilitator Event streams use short-lived, single-use tickets instead of account tokens in their connection URLs. Login, registration, and admin routes have per-client rate limits.
 
 ### Key Game Rules
 

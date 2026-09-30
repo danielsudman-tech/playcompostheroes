@@ -18,6 +18,9 @@ async function request(path: string, init?: RequestInit) {
   const response = await fetch(`${base}${path}`, init);
   return { status: response.status, json: await response.json() as any };
 }
+async function getAsHost(path: string, token = userToken) {
+  return request(path, { headers: { Authorization: `Bearer ${token}` } });
+}
 function post(body: unknown): RequestInit {
   return { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) };
 }
@@ -42,6 +45,23 @@ try {
   const code = (created.json.code as string).toLowerCase();
   eventIds.push(eventId);
   gameIds.push(gameId);
+  assert.equal((await request(`/facilitator/events/${eventId}?userToken=${userToken}`)).status, 401,
+    "facilitator event GET does not accept account tokens in query parameters");
+  assert.equal((await getAsHost(`/facilitator/events/${eventId}`)).status, 200,
+    "facilitator event GET accepts the account token in Authorization");
+  assert.equal((await request(`/facilitator/rooms?userToken=${userToken}`)).status, 401,
+    "facilitator room GET does not accept account tokens in query parameters");
+  assert.equal((await request("/facilitator/rooms", {
+    headers: { Authorization: `Bearer ${userToken}` },
+  })).status, 200, "facilitator room GET accepts the account token in Authorization");
+
+  const ticketResponse = await request(`/facilitator/events/${eventId}/stream-ticket`, post({ userToken }));
+  assert.equal(ticketResponse.status, 200);
+  const streamTicket = ticketResponse.json.ticket as string;
+  assert.ok(streamTicket && streamTicket !== userToken, "event stream ticket is distinct from the account token");
+  assert.equal((await request(`/facilitator/events/${eventId}/stream?userToken=${userToken}`)).status, 401,
+    "event stream does not accept an account token in the URL");
+
   assert.equal(created.json.assignmentMode, "auto");
   assert.ok(created.json.hostTokens[gameId], "creation returns reserved host spectator token");
   const publicWaiting = await request(`/events/${code}`);
@@ -75,7 +95,9 @@ try {
   const started = await request(`/facilitator/events/${eventId}/control`, post({ userToken, action: "start" }));
   assert.equal(started.json.results[0].success, true, "fully ready and connected tables start");
 
-  const denied = await request(`/facilitator/events/${eventId}?userToken=${otherToken}`);
+  const legacyQueryDenied = await request(`/facilitator/events/${eventId}?userToken=${otherToken}`);
+  assert.equal(legacyQueryDenied.status, 401, "legacy account-token query parameter is ignored");
+  const denied = await getAsHost(`/facilitator/events/${eventId}`, otherToken);
   assert.equal(denied.status, 403, "another approved facilitator cannot access this event");
   const state = await getGame(gameId);
   assert.ok(state);
@@ -92,7 +114,7 @@ try {
     text: "Need a hand?", ts: Date.now(), resolved: false,
   }];
   await storeGame(state!);
-  const detail = await request(`/facilitator/events/${eventId}?userToken=${userToken}`);
+  const detail = await getAsHost(`/facilitator/events/${eventId}`);
   assert.equal(detail.status, 200);
   assert.equal(detail.json.tables[0].pendingDecisionOwner, state!.players[0].name);
   assert.equal(detail.json.tables[0].questions[0].text, "Need a hand?");
@@ -108,7 +130,7 @@ try {
     assert.equal(JSON.stringify(publicActive.json).includes(forbidden), false, `public event response omits ${forbidden}`);
   }
   await pool.query(`UPDATE compost_event_seats SET last_seen_at=NULL WHERE event_id=$1 AND player_id=$2`, [eventId, state!.players[0].id]);
-  const neverSeenDetail = await request(`/facilitator/events/${eventId}?userToken=${userToken}`);
+  const neverSeenDetail = await getAsHost(`/facilitator/events/${eventId}`);
   assert.equal(neverSeenDetail.json.tables[0].players.find((p: any) => p.playerId === state!.players[0].id).lastSeenAt, null,
     "host detail distinguishes a guest who has never been seen");
 
@@ -191,7 +213,7 @@ try {
     remaining: remainingSeats.rows, leftPlayer: directChoice.json.playerId, kickedPlayer: replacement.json.playerId,
     fallbackPlayer: fallbackJoin.json.playerId,
   })}`);
-  assert.equal((await request(`/facilitator/events/${chooseId}?userToken=${userToken}`)).json.tables[1].players.length, 0,
+  assert.equal((await getAsHost(`/facilitator/events/${chooseId}`)).json.tables[1].players.length, 0,
     "event guest state and membership stay synchronized after leave/kick");
 
   const transferEvent = await request("/facilitator/events", post({
@@ -211,7 +233,7 @@ try {
     playerId: transferGuest.json.playerId, targetGameId: targetId,
   }));
   assert.equal(moved.status, 200, "guest can transfer between tables in one event");
-  const transferDetail = await request(`/facilitator/events/${transferEventId}?userToken=${userToken}`);
+  const transferDetail = await getAsHost(`/facilitator/events/${transferEventId}`);
   assert.equal(transferDetail.json.tables[0].players.length, 0);
   assert.equal(transferDetail.json.tables[1].players[0].playerId, transferGuest.json.playerId);
   assert.equal(transferDetail.json.tables[1].players[0].ready, false, "moved guest must ready again");
@@ -235,7 +257,7 @@ try {
     token: perTableEndEvent.json.hostTokens[endedTableId], userToken,
   }));
   assert.equal(endOneTable.status, 200);
-  assert.equal((await request(`/facilitator/events/${perTableEndId}?userToken=${userToken}`)).json.status, "upcoming",
+  assert.equal((await getAsHost(`/facilitator/events/${perTableEndId}`)).json.status, "upcoming",
     "ending one table does not close the whole event");
   const unrelatedJoin = await request(`/events/${perTableEndCode}/join`, post({ name: "Unrelated Waiting Table", tableNumber: 2 }));
   assert.equal(unrelatedJoin.status, 201, "ending one table leaves joins open at other waiting tables");
@@ -262,7 +284,7 @@ try {
   ]);
   assert.equal(raceJoin.status, 201);
   assert.equal(raceStart.json.results[0].success, false, "race cannot make an unready table launch");
-  assert.equal((await request(`/facilitator/events/${raceId}?userToken=${userToken}`)).json.status, "upcoming",
+  assert.equal((await getAsHost(`/facilitator/events/${raceId}`)).json.status, "upcoming",
     "event stays upcoming when no table starts");
   assert.equal((await getGame(raceGameId))?.phase, "waiting", "racing start cannot launch before the new seat is ready");
   const botStart = await request(`/games/${raceGameId}/start`, post({ token: raceHostToken, userToken, botSlots: [{ name: "Bot" }] }));

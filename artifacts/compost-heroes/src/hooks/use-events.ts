@@ -3,6 +3,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { getStoredToken, storeToken } from "@/hooks/use-game";
 import {
   getFacilitatorEvents, createFacilitatorEvent, getFacilitatorEvent, updateFacilitatorEvent,
+  createFacilitatorEventStreamTicket,
   controlFacilitatorEvent, controlFacilitatorEventTable, getPublicEvent, joinEvent, setEventReady,
   heartbeatEventPresence,
   getGetFacilitatorEventsQueryKey, getGetFacilitatorEventQueryKey, getGetPublicEventQueryKey,
@@ -26,9 +27,17 @@ export interface GuestEvent { code: string; name: string; status: string; assign
 export interface EventJoin { gameId: string; token: string; playerId?: string; playerName?: string; tableNumber?: number }
 
 export const eventId = (event: EventRecord) => event.eventId ?? event.id ?? "";
-export const eventKey = (id: string) => getGetFacilitatorEventQueryKey(id, { userToken: userToken() });
 export const guestEventKey = (code: string) => getGetPublicEventQueryKey(code);
 export const userToken = () => { try { return localStorage.getItem("compost_user_token") ?? ""; } catch { return ""; } };
+const eventAuthCacheScope = () => {
+  let hash = 0xcbf29ce484222325n;
+  for (const character of userToken()) {
+    hash = BigInt.asUintN(64, (hash ^ BigInt(character.charCodeAt(0))) * 0x100000001b3n);
+  }
+  return hash.toString(16);
+};
+const facilitatorEventsKey = () => [...getGetFacilitatorEventsQueryKey(), eventAuthCacheScope()] as const;
+export const eventKey = (id: string) => [...getGetFacilitatorEventQueryKey(id), eventAuthCacheScope()] as const;
 export const rememberedEventSeat = (code: string): EventJoin | null => {
   try { const value = localStorage.getItem(`compost_event_${code.toLowerCase()}`); return value ? JSON.parse(value) as EventJoin : null; } catch { return null; }
 };
@@ -138,10 +147,10 @@ const normalizeGuest = (event: PublicEvent): GuestEvent => ({
   tables: event.tables.map(t => ({ ...t, gameId: `table-${t.tableNumber}`, maxPlayers: t.capacity, playerCount: t.occupied })),
 });
 export function useEvents() {
-  return useQuery({ queryKey: getGetFacilitatorEventsQueryKey({ userToken: userToken() }), queryFn: async () => (await getFacilitatorEvents({ userToken: userToken() })).map(normalizeSummary), refetchInterval: 10000 });
+  return useQuery({ queryKey: facilitatorEventsKey(), queryFn: async () => (await getFacilitatorEvents({ headers: { Authorization: `Bearer ${userToken()}` } })).map(normalizeSummary), refetchInterval: 10000 });
 }
 export function useEvent(id: string) {
-  return useQuery({ queryKey: eventKey(id), queryFn: async () => rememberHostEvent(normalizeEvent(await getFacilitatorEvent(id, { userToken: userToken() }))), enabled: !!id, refetchInterval: 10000 });
+  return useQuery({ queryKey: eventKey(id), queryFn: async () => rememberHostEvent(normalizeEvent(await getFacilitatorEvent(id, { headers: { Authorization: `Bearer ${userToken()}` } }))), enabled: !!id, refetchInterval: 10000 });
 }
 export function useGuestEvent(code: string) {
   return useQuery({ queryKey: guestEventKey(code), queryFn: async () => normalizeGuest(await getPublicEvent(code)), enabled: !!code, refetchInterval: 5000 });
@@ -151,16 +160,16 @@ export function useCreateEvent() {
   return useMutation({ mutationFn: async (data: { name: string; tableCount: number; playersPerTable: number; assignmentMode: "choose" | "auto"; idleThresholdMinutes: number }) => {
     const payload: EventInput & { assignmentMode: "choose" | "auto" } = { name: data.name, tableCount: data.tableCount, tableCapacities: Array(data.tableCount).fill(data.playersPerTable), idleSeconds: data.idleThresholdMinutes * 60, assignmentMode: data.assignmentMode, userToken: userToken() };
     return rememberHostEvent(normalizeEvent(await createFacilitatorEvent(payload)));
-  }, onSuccess: (event) => { qc.invalidateQueries({ queryKey: getGetFacilitatorEventsQueryKey({ userToken: userToken() }) }); if (event.eventId) qc.setQueryData(eventKey(event.eventId), event); } });
+  }, onSuccess: (event) => { qc.invalidateQueries({ queryKey: facilitatorEventsKey() }); if (event.eventId) qc.setQueryData(eventKey(event.eventId), event); } });
 }
 export function useUpdateEvent(id: string) {
   const qc = useQueryClient();
-  return useMutation({ mutationFn: async (data: { name?: string; idleThresholdMinutes?: number }) => normalizeEvent(await updateFacilitatorEvent(id, { name: data.name, idleSeconds: data.idleThresholdMinutes ? data.idleThresholdMinutes * 60 : undefined, userToken: userToken() })), onSuccess: (event) => { qc.setQueryData(eventKey(id), event); qc.invalidateQueries({ queryKey: getGetFacilitatorEventsQueryKey({ userToken: userToken() }) }); } });
+  return useMutation({ mutationFn: async (data: { name?: string; idleThresholdMinutes?: number }) => normalizeEvent(await updateFacilitatorEvent(id, { name: data.name, idleSeconds: data.idleThresholdMinutes ? data.idleThresholdMinutes * 60 : undefined, userToken: userToken() })), onSuccess: (event) => { qc.setQueryData(eventKey(id), event); qc.invalidateQueries({ queryKey: facilitatorEventsKey() }); } });
 }
 export interface ControlResult { results: EventTableResult[] }
 export function useEventControl(id: string) {
   const qc = useQueryClient();
-  return useMutation({ mutationFn: (data: { action: "start" | "message" | "pause" | "resume" | "end"; text?: string }): Promise<EventControlResult> => controlFacilitatorEvent(id, { action: data.action === "pause" ? "pause_all" : data.action === "resume" ? "resume_all" : data.action, text: data.text, userToken: userToken() }), onSuccess: () => { qc.invalidateQueries({ queryKey: eventKey(id) }); qc.invalidateQueries({ queryKey: getGetFacilitatorEventsQueryKey({ userToken: userToken() }) }); } });
+  return useMutation({ mutationFn: (data: { action: "start" | "message" | "pause" | "resume" | "end"; text?: string }): Promise<EventControlResult> => controlFacilitatorEvent(id, { action: data.action === "pause" ? "pause_all" : data.action === "resume" ? "resume_all" : data.action, text: data.text, userToken: userToken() }), onSuccess: () => { qc.invalidateQueries({ queryKey: eventKey(id) }); qc.invalidateQueries({ queryKey: facilitatorEventsKey() }); } });
 }
 export function useTableControl(id: string) {
   const qc = useQueryClient();
@@ -192,11 +201,39 @@ export function useEventStream(id: string) {
   const [connected, setConnected] = useState(false);
   useEffect(() => {
     if (!id || !userToken()) return;
-    const source = new EventSource(`/api/facilitator/events/${encodeURIComponent(id)}/stream?userToken=${encodeURIComponent(userToken())}`);
-    source.onopen = () => setConnected(true);
-    source.onmessage = () => { qc.invalidateQueries({ queryKey: eventKey(id) }); };
-    source.onerror = () => { setConnected(false); qc.invalidateQueries({ queryKey: eventKey(id) }); };
-    return () => { source.close(); setConnected(false); };
+    let stopped = false;
+    let source: EventSource | null = null;
+    let retryTimer: number | undefined;
+    const reconnect = async () => {
+      try {
+        const issued = await createFacilitatorEventStreamTicket(id, { userToken: userToken() });
+        if (stopped) return;
+        const nextSource = new EventSource(
+          `/api/facilitator/events/${encodeURIComponent(id)}/stream?ticket=${encodeURIComponent(issued.ticket)}`,
+        );
+        source = nextSource;
+        nextSource.onopen = () => setConnected(true);
+        nextSource.onmessage = () => { qc.invalidateQueries({ queryKey: eventKey(id) }); };
+        nextSource.onerror = () => {
+          nextSource.close();
+          if (source === nextSource) source = null;
+          setConnected(false);
+          qc.invalidateQueries({ queryKey: eventKey(id) });
+          if (!stopped) retryTimer = window.setTimeout(() => { void reconnect(); }, 3000);
+        };
+      } catch {
+        setConnected(false);
+        qc.invalidateQueries({ queryKey: eventKey(id) });
+        if (!stopped) retryTimer = window.setTimeout(() => { void reconnect(); }, 3000);
+      }
+    };
+    void reconnect();
+    return () => {
+      stopped = true;
+      if (retryTimer !== undefined) window.clearTimeout(retryTimer);
+      source?.close();
+      setConnected(false);
+    };
   }, [id, qc]);
   return connected;
 }

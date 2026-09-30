@@ -7,5 +7,5 @@
  */
 
 export type StreamFacilitatorEventParams = {
-  userToken: string;
+  ticket: string;
 };

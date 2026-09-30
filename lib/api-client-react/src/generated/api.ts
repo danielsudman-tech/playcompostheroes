@@ -29,6 +29,8 @@ import type {
   EventJoinResult,
   EventPresenceInput,
   EventReadyInput,
+  EventStreamTicket,
+  EventStreamTicketInput,
   EventSummary,
   EventTableControlInput,
   EventTableResult,
@@ -44,9 +46,6 @@ import type {
   GameSeatClaimInput,
   GameSeatClaimResult,
   GameState,
-  GetFacilitatorEventParams,
-  GetFacilitatorEventsParams,
-  GetFacilitatorRoomsParams,
   GetGameParams,
   HealthStatus,
   HostBroadcast,
@@ -691,66 +690,41 @@ export const useClaimGameSeat = <
 /**
  * @summary List sessions created by the signed-in facilitator
  */
-export const getGetFacilitatorRoomsUrl = (
-  params: GetFacilitatorRoomsParams,
-) => {
-  const normalizedParams = new URLSearchParams();
-
-  Object.entries(params || {}).forEach(([key, value]) => {
-    if (value !== undefined) {
-      normalizedParams.append(key, value === null ? "null" : value.toString());
-    }
-  });
-
-  const stringifiedParams = normalizedParams.toString();
-
-  return stringifiedParams.length > 0
-    ? `/api/facilitator/rooms?${stringifiedParams}`
-    : `/api/facilitator/rooms`;
+export const getGetFacilitatorRoomsUrl = () => {
+  return `/api/facilitator/rooms`;
 };
 
 export const getFacilitatorRooms = async (
-  params: GetFacilitatorRoomsParams,
   options?: RequestInit,
 ): Promise<FacilitatorRoomSummary[]> => {
-  return customFetch<FacilitatorRoomSummary[]>(
-    getGetFacilitatorRoomsUrl(params),
-    {
-      ...options,
-      method: "GET",
-    },
-  );
+  return customFetch<FacilitatorRoomSummary[]>(getGetFacilitatorRoomsUrl(), {
+    ...options,
+    method: "GET",
+  });
 };
 
-export const getGetFacilitatorRoomsQueryKey = (
-  params?: GetFacilitatorRoomsParams,
-) => {
-  return [`/api/facilitator/rooms`, ...(params ? [params] : [])] as const;
+export const getGetFacilitatorRoomsQueryKey = () => {
+  return [`/api/facilitator/rooms`] as const;
 };
 
 export const getGetFacilitatorRoomsQueryOptions = <
   TData = Awaited<ReturnType<typeof getFacilitatorRooms>>,
   TError = ErrorType<ErrorResponse>,
->(
-  params: GetFacilitatorRoomsParams,
-  options?: {
-    query?: UseQueryOptions<
-      Awaited<ReturnType<typeof getFacilitatorRooms>>,
-      TError,
-      TData
-    >;
-    request?: SecondParameter<typeof customFetch>;
-  },
-) => {
+>(options?: {
+  query?: UseQueryOptions<
+    Awaited<ReturnType<typeof getFacilitatorRooms>>,
+    TError,
+    TData
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}) => {
   const { query: queryOptions, request: requestOptions } = options ?? {};
 
-  const queryKey =
-    queryOptions?.queryKey ?? getGetFacilitatorRoomsQueryKey(params);
+  const queryKey = queryOptions?.queryKey ?? getGetFacilitatorRoomsQueryKey();
 
   const queryFn: QueryFunction<
     Awaited<ReturnType<typeof getFacilitatorRooms>>
-  > = ({ signal }) =>
-    getFacilitatorRooms(params, { signal, ...requestOptions });
+  > = ({ signal }) => getFacilitatorRooms({ signal, ...requestOptions });
 
   return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
     Awaited<ReturnType<typeof getFacilitatorRooms>>,
@@ -771,18 +745,15 @@ export type GetFacilitatorRoomsQueryError = ErrorType<ErrorResponse>;
 export function useGetFacilitatorRooms<
   TData = Awaited<ReturnType<typeof getFacilitatorRooms>>,
   TError = ErrorType<ErrorResponse>,
->(
-  params: GetFacilitatorRoomsParams,
-  options?: {
-    query?: UseQueryOptions<
-      Awaited<ReturnType<typeof getFacilitatorRooms>>,
-      TError,
-      TData
-    >;
-    request?: SecondParameter<typeof customFetch>;
-  },
-): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
-  const queryOptions = getGetFacilitatorRoomsQueryOptions(params, options);
+>(options?: {
+  query?: UseQueryOptions<
+    Awaited<ReturnType<typeof getFacilitatorRooms>>,
+    TError,
+    TData
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getGetFacilitatorRoomsQueryOptions(options);
 
   const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
     queryKey: QueryKey;
@@ -794,63 +765,41 @@ export function useGetFacilitatorRooms<
 /**
  * @summary List events owned by the approved facilitator
  */
-export const getGetFacilitatorEventsUrl = (
-  params: GetFacilitatorEventsParams,
-) => {
-  const normalizedParams = new URLSearchParams();
-
-  Object.entries(params || {}).forEach(([key, value]) => {
-    if (value !== undefined) {
-      normalizedParams.append(key, value === null ? "null" : value.toString());
-    }
-  });
-
-  const stringifiedParams = normalizedParams.toString();
-
-  return stringifiedParams.length > 0
-    ? `/api/facilitator/events?${stringifiedParams}`
-    : `/api/facilitator/events`;
+export const getGetFacilitatorEventsUrl = () => {
+  return `/api/facilitator/events`;
 };
 
 export const getFacilitatorEvents = async (
-  params: GetFacilitatorEventsParams,
   options?: RequestInit,
 ): Promise<EventSummary[]> => {
-  return customFetch<EventSummary[]>(getGetFacilitatorEventsUrl(params), {
+  return customFetch<EventSummary[]>(getGetFacilitatorEventsUrl(), {
     ...options,
     method: "GET",
   });
 };
 
-export const getGetFacilitatorEventsQueryKey = (
-  params?: GetFacilitatorEventsParams,
-) => {
-  return [`/api/facilitator/events`, ...(params ? [params] : [])] as const;
+export const getGetFacilitatorEventsQueryKey = () => {
+  return [`/api/facilitator/events`] as const;
 };
 
 export const getGetFacilitatorEventsQueryOptions = <
   TData = Awaited<ReturnType<typeof getFacilitatorEvents>>,
   TError = ErrorType<ErrorResponse>,
->(
-  params: GetFacilitatorEventsParams,
-  options?: {
-    query?: UseQueryOptions<
-      Awaited<ReturnType<typeof getFacilitatorEvents>>,
-      TError,
-      TData
-    >;
-    request?: SecondParameter<typeof customFetch>;
-  },
-) => {
+>(options?: {
+  query?: UseQueryOptions<
+    Awaited<ReturnType<typeof getFacilitatorEvents>>,
+    TError,
+    TData
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}) => {
   const { query: queryOptions, request: requestOptions } = options ?? {};
 
-  const queryKey =
-    queryOptions?.queryKey ?? getGetFacilitatorEventsQueryKey(params);
+  const queryKey = queryOptions?.queryKey ?? getGetFacilitatorEventsQueryKey();
 
   const queryFn: QueryFunction<
     Awaited<ReturnType<typeof getFacilitatorEvents>>
-  > = ({ signal }) =>
-    getFacilitatorEvents(params, { signal, ...requestOptions });
+  > = ({ signal }) => getFacilitatorEvents({ signal, ...requestOptions });
 
   return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
     Awaited<ReturnType<typeof getFacilitatorEvents>>,
@@ -871,18 +820,15 @@ export type GetFacilitatorEventsQueryError = ErrorType<ErrorResponse>;
 export function useGetFacilitatorEvents<
   TData = Awaited<ReturnType<typeof getFacilitatorEvents>>,
   TError = ErrorType<ErrorResponse>,
->(
-  params: GetFacilitatorEventsParams,
-  options?: {
-    query?: UseQueryOptions<
-      Awaited<ReturnType<typeof getFacilitatorEvents>>,
-      TError,
-      TData
-    >;
-    request?: SecondParameter<typeof customFetch>;
-  },
-): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
-  const queryOptions = getGetFacilitatorEventsQueryOptions(params, options);
+>(options?: {
+  query?: UseQueryOptions<
+    Awaited<ReturnType<typeof getFacilitatorEvents>>,
+    TError,
+    TData
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getGetFacilitatorEventsQueryOptions(options);
 
   const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
     queryKey: QueryKey;
@@ -980,44 +926,22 @@ export const useCreateFacilitatorEvent = <
 /**
  * @summary Get an event control-center summary
  */
-export const getGetFacilitatorEventUrl = (
-  eventId: string,
-  params: GetFacilitatorEventParams,
-) => {
-  const normalizedParams = new URLSearchParams();
-
-  Object.entries(params || {}).forEach(([key, value]) => {
-    if (value !== undefined) {
-      normalizedParams.append(key, value === null ? "null" : value.toString());
-    }
-  });
-
-  const stringifiedParams = normalizedParams.toString();
-
-  return stringifiedParams.length > 0
-    ? `/api/facilitator/events/${eventId}?${stringifiedParams}`
-    : `/api/facilitator/events/${eventId}`;
+export const getGetFacilitatorEventUrl = (eventId: string) => {
+  return `/api/facilitator/events/${eventId}`;
 };
 
 export const getFacilitatorEvent = async (
   eventId: string,
-  params: GetFacilitatorEventParams,
   options?: RequestInit,
 ): Promise<EventDetail> => {
-  return customFetch<EventDetail>(getGetFacilitatorEventUrl(eventId, params), {
+  return customFetch<EventDetail>(getGetFacilitatorEventUrl(eventId), {
     ...options,
     method: "GET",
   });
 };
 
-export const getGetFacilitatorEventQueryKey = (
-  eventId: string,
-  params?: GetFacilitatorEventParams,
-) => {
-  return [
-    `/api/facilitator/events/${eventId}`,
-    ...(params ? [params] : []),
-  ] as const;
+export const getGetFacilitatorEventQueryKey = (eventId: string) => {
+  return [`/api/facilitator/events/${eventId}`] as const;
 };
 
 export const getGetFacilitatorEventQueryOptions = <
@@ -1025,7 +949,6 @@ export const getGetFacilitatorEventQueryOptions = <
   TError = ErrorType<ErrorResponse>,
 >(
   eventId: string,
-  params: GetFacilitatorEventParams,
   options?: {
     query?: UseQueryOptions<
       Awaited<ReturnType<typeof getFacilitatorEvent>>,
@@ -1038,12 +961,12 @@ export const getGetFacilitatorEventQueryOptions = <
   const { query: queryOptions, request: requestOptions } = options ?? {};
 
   const queryKey =
-    queryOptions?.queryKey ?? getGetFacilitatorEventQueryKey(eventId, params);
+    queryOptions?.queryKey ?? getGetFacilitatorEventQueryKey(eventId);
 
   const queryFn: QueryFunction<
     Awaited<ReturnType<typeof getFacilitatorEvent>>
   > = ({ signal }) =>
-    getFacilitatorEvent(eventId, params, { signal, ...requestOptions });
+    getFacilitatorEvent(eventId, { signal, ...requestOptions });
 
   return {
     queryKey,
@@ -1071,7 +994,6 @@ export function useGetFacilitatorEvent<
   TError = ErrorType<ErrorResponse>,
 >(
   eventId: string,
-  params: GetFacilitatorEventParams,
   options?: {
     query?: UseQueryOptions<
       Awaited<ReturnType<typeof getFacilitatorEvent>>,
@@ -1081,11 +1003,7 @@ export function useGetFacilitatorEvent<
     request?: SecondParameter<typeof customFetch>;
   },
 ): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
-  const queryOptions = getGetFacilitatorEventQueryOptions(
-    eventId,
-    params,
-    options,
-  );
+  const queryOptions = getGetFacilitatorEventQueryOptions(eventId, options);
 
   const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
     queryKey: QueryKey;
@@ -1368,7 +1286,100 @@ export const useControlFacilitatorEventTable = <
 };
 
 /**
- * @summary SSE event detail updates, with polling as a client fallback
+ * @summary Create a short-lived, single-use ticket for the facilitator event stream
+ */
+export const getCreateFacilitatorEventStreamTicketUrl = (eventId: string) => {
+  return `/api/facilitator/events/${eventId}/stream-ticket`;
+};
+
+export const createFacilitatorEventStreamTicket = async (
+  eventId: string,
+  eventStreamTicketInput: EventStreamTicketInput,
+  options?: RequestInit,
+): Promise<EventStreamTicket> => {
+  return customFetch<EventStreamTicket>(
+    getCreateFacilitatorEventStreamTicketUrl(eventId),
+    {
+      ...options,
+      method: "POST",
+      headers: { "Content-Type": "application/json", ...options?.headers },
+      body: JSON.stringify(eventStreamTicketInput),
+    },
+  );
+};
+
+export const getCreateFacilitatorEventStreamTicketMutationOptions = <
+  TError = ErrorType<void>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof createFacilitatorEventStreamTicket>>,
+    TError,
+    { eventId: string; data: BodyType<EventStreamTicketInput> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof createFacilitatorEventStreamTicket>>,
+  TError,
+  { eventId: string; data: BodyType<EventStreamTicketInput> },
+  TContext
+> => {
+  const mutationKey = ["createFacilitatorEventStreamTicket"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof createFacilitatorEventStreamTicket>>,
+    { eventId: string; data: BodyType<EventStreamTicketInput> }
+  > = (props) => {
+    const { eventId, data } = props ?? {};
+
+    return createFacilitatorEventStreamTicket(eventId, data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type CreateFacilitatorEventStreamTicketMutationResult = NonNullable<
+  Awaited<ReturnType<typeof createFacilitatorEventStreamTicket>>
+>;
+export type CreateFacilitatorEventStreamTicketMutationBody =
+  BodyType<EventStreamTicketInput>;
+export type CreateFacilitatorEventStreamTicketMutationError = ErrorType<void>;
+
+/**
+ * @summary Create a short-lived, single-use ticket for the facilitator event stream
+ */
+export const useCreateFacilitatorEventStreamTicket = <
+  TError = ErrorType<void>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof createFacilitatorEventStreamTicket>>,
+    TError,
+    { eventId: string; data: BodyType<EventStreamTicketInput> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof createFacilitatorEventStreamTicket>>,
+  TError,
+  { eventId: string; data: BodyType<EventStreamTicketInput> },
+  TContext
+> => {
+  return useMutation(
+    getCreateFacilitatorEventStreamTicketMutationOptions(options),
+  );
+};
+
+/**
+ * @summary SSE event detail updates using a short-lived, single-use ticket
  */
 export const getStreamFacilitatorEventUrl = (
   eventId: string,
@@ -1454,7 +1465,7 @@ export type StreamFacilitatorEventQueryResult = NonNullable<
 export type StreamFacilitatorEventQueryError = ErrorType<void>;
 
 /**
- * @summary SSE event detail updates, with polling as a client fallback
+ * @summary SSE event detail updates using a short-lived, single-use ticket
  */
 
 export function useStreamFacilitatorEvent<

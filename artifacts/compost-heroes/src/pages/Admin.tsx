@@ -193,20 +193,33 @@ function CardAdminRow({ card, adminKey }: { card: AdminCard; adminKey: string })
     if (!file) return;
     setUploading(true);
     try {
-      const reader = new FileReader();
-      const base64 = await new Promise<string>((resolve, reject) => {
-        reader.onload = () => resolve((reader.result as string).split(",")[1]);
-        reader.onerror = reject;
-        reader.readAsDataURL(file);
-      });
-      const r = await fetch(`/api/admin/cards/${card.id}/image`, {
+      const prepareResponse = await fetch(`/api/admin/cards/${card.id}/image/upload-url`, {
         method: "POST",
         headers: adminHeaders(adminKey),
-        body: JSON.stringify({ imageData: base64, mimeType: file.type, filename: file.name }),
+        body: JSON.stringify({ filename: file.name, mimeType: file.type, size: file.size }),
       });
-      if (!r.ok) {
-        const err = await r.json().catch(() => ({}));
-        throw new Error((err as { error?: string }).error || "Upload failed");
+      const prepare = await prepareResponse.json().catch(() => ({})) as {
+        stagingKey?: string;
+        uploadURL?: string;
+        error?: string;
+      };
+      if (!prepareResponse.ok || !prepare.stagingKey || !prepare.uploadURL) {
+        throw new Error(prepare.error || "Could not prepare image upload");
+      }
+      const uploadResponse = await fetch(prepare.uploadURL, {
+        method: "PUT",
+        headers: { "Content-Type": file.type },
+        body: file,
+      });
+      if (!uploadResponse.ok) throw new Error(`Object Storage upload failed (${uploadResponse.status})`);
+      const finalizeResponse = await fetch(`/api/admin/cards/${card.id}/image`, {
+        method: "POST",
+        headers: adminHeaders(adminKey),
+        body: JSON.stringify({ stagingKey: prepare.stagingKey, mimeType: file.type }),
+      });
+      if (!finalizeResponse.ok) {
+        const err = await finalizeResponse.json().catch(() => ({}));
+        throw new Error((err as { error?: string }).error || "Image verification failed");
       }
       await queryClient.invalidateQueries({ queryKey: ["admin-cards"] });
       toast({ title: "Image uploaded!", description: card.name });
@@ -250,7 +263,7 @@ function CardAdminRow({ card, adminKey }: { card: AdminCard; adminKey: string })
         </div>
       </div>
       <div className="shrink-0 flex flex-col items-stretch gap-1.5">
-        <input ref={fileRef} type="file" accept="image/*" className="hidden" onChange={handleFileChange} />
+        <input ref={fileRef} type="file" accept="image/png,image/jpeg,image/webp" className="hidden" onChange={handleFileChange} />
         <Button size="sm" variant="outline" onClick={() => fileRef.current?.click()} disabled={uploading} className="text-xs font-bold h-7 px-2">
           {uploading ? <><Loader2 className="w-3 h-3 mr-1 animate-spin" />Uploading…</> : <><Upload className="w-3 h-3 mr-1" />{card.imageKey ? "Replace" : "Upload"}</>}
         </Button>
@@ -517,15 +530,32 @@ function BackupsTab({ adminKey }: { adminKey: string }) {
     refetchInterval: 30_000,
   });
 
-  const handleDbDownload = () => {
-    // Use ?adminKey= since anchor clicks can't set custom headers
-    const a = document.createElement("a");
-    a.href = `/api/admin/backup/db?adminKey=${encodeURIComponent(adminKey)}`;
-    a.download = "";
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-    toast({ title: "Database backup downloading…" });
+  const handleDbDownload = async () => {
+    try {
+      const res = await fetch("/api/admin/backup/db", { headers });
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        throw new Error((data as { error?: string }).error || "Backup download failed");
+      }
+      const blob = await res.blob();
+      const disposition = res.headers.get("Content-Disposition") ?? "";
+      const filename = disposition.match(/filename="([^"]+)"/i)?.[1] ?? "compost-heroes-db.sql";
+      const objectUrl = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = objectUrl;
+      a.download = filename;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      window.setTimeout(() => URL.revokeObjectURL(objectUrl), 1_000);
+      toast({ title: "Database backup downloading…" });
+    } catch (err) {
+      toast({
+        title: "Backup download failed",
+        description: err instanceof Error ? err.message : "Unknown error",
+        variant: "destructive",
+      });
+    }
   };
 
   const handleGithubPush = async () => {

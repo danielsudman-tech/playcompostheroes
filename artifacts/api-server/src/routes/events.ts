@@ -8,6 +8,7 @@ import {
   ControlFacilitatorEventTableResponse, GetPublicEventResponse, JoinEventBody,
   JoinEventResponse, SetEventReadyBody, SetEventReadyResponse,
   HeartbeatEventPresenceBody, HeartbeatEventPresenceResponse,
+  CreateFacilitatorEventStreamTicketBody, CreateFacilitatorEventStreamTicketResponse,
 } from "@workspace/api-zod";
 import {
   addPlayerToRoom, createWaitingRoom, launchGame, type GameState,
@@ -18,7 +19,8 @@ import {
   isEventGameReadyToStart, lockGameMutationInTransaction,
   onGameBroadcast, updateGameStateCache, withGameMutationLocks,
 } from "../lib/gameStore.js";
-import { getUserByToken, isApprovedFacilitator } from "../lib/userStore.js";
+import { extractBearerToken, getUserByToken, isApprovedFacilitator } from "../lib/userStore.js";
+import { consumeEventStreamTicket, issueEventStreamTicket } from "../lib/eventStreamTickets.js";
 import { serializeState } from "./game.js";
 
 const router: IRouter = Router();
@@ -149,7 +151,8 @@ onGameBroadcast((gameId) => {
 });
 
 router.get("/facilitator/events", async (req, res): Promise<void> => {
-  const user = typeof req.query.userToken === "string" ? await getUserByToken(req.query.userToken) : null;
+  const userToken = extractBearerToken(req.get("authorization"));
+  const user = userToken ? await getUserByToken(userToken) : null;
   if (!user) { res.status(401).json({ error: "Sign in required" }); return; }
   if (!isApprovedFacilitator(user)) { res.status(403).json({ error: "Facilitator approval is required" }); return; }
   const rows = (await pool.query(
@@ -223,7 +226,7 @@ router.post("/facilitator/events", async (req, res): Promise<void> => {
 });
 
 router.get("/facilitator/events/:eventId", async (req, res): Promise<void> => {
-  const check = await requireHost(req.params.eventId, req.query.userToken);
+  const check = await requireHost(req.params.eventId, extractBearerToken(req.get("authorization")));
   if ("failure" in check) { res.status(Number(check.failure)).json({ error: check.error }); return; }
   res.json(GetFacilitatorEventResponse.parse(await buildDetail(req.params.eventId, true)));
 });
@@ -337,8 +340,27 @@ router.post("/facilitator/events/:eventId/tables/:gameId/control", async (req, r
   res.json(ControlFacilitatorEventTableResponse.parse(result));
 });
 
+router.post("/facilitator/events/:eventId/stream-ticket", async (req, res): Promise<void> => {
+  const parsedBody = CreateFacilitatorEventStreamTicketBody.safeParse(req.body);
+  if (!parsedBody.success) {
+    res.status(400).json({ error: parsedBody.error.message });
+    return;
+  }
+  const check = await requireHost(req.params.eventId, parsedBody.data.userToken);
+  if ("failure" in check) { res.status(Number(check.failure)).json({ error: check.error }); return; }
+  const ticket = issueEventStreamTicket(req.params.eventId, parsedBody.data.userToken);
+  res.setHeader("Cache-Control", "no-store");
+  res.json(CreateFacilitatorEventStreamTicketResponse.parse({ ticket }));
+});
+
 router.get("/facilitator/events/:eventId/stream", async (req, res): Promise<void> => {
-  const check = await requireHost(req.params.eventId, req.query.userToken);
+  const ticket = typeof req.query.ticket === "string" ? req.query.ticket : "";
+  const grant = consumeEventStreamTicket(ticket, req.params.eventId);
+  if (!grant) {
+    res.status(401).json({ error: "Invalid or expired event stream ticket" });
+    return;
+  }
+  const check = await requireHost(req.params.eventId, grant.userToken);
   if ("failure" in check) { res.status(Number(check.failure)).json({ error: check.error }); return; }
   res.setHeader("Content-Type", "text/event-stream");
   res.setHeader("Cache-Control", "no-cache");

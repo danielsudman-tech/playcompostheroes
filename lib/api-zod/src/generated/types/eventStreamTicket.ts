@@ -6,6 +6,6 @@
  * OpenAPI spec version: 0.1.0
  */
 
-export type GetFacilitatorRoomsParams = {
-  userToken: string;
-};
+export interface EventStreamTicket {
+  ticket: string;
+}

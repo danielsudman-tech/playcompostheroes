@@ -534,7 +534,9 @@ export function useFacilitatorRooms(enabled = true) {
     queryKey: ["facilitator-rooms"],
     queryFn: async (): Promise<FacilitatorRoomInfo[]> => {
       const userToken = getUserToken();
-      const r = await fetch(`/api/facilitator/rooms?userToken=${encodeURIComponent(userToken ?? "")}`);
+      const r = await fetch("/api/facilitator/rooms", {
+        headers: { Authorization: `Bearer ${userToken ?? ""}` },
+      });
       if (!r.ok) {
         const err = await r.json().catch(() => ({}));
         throw new Error((err as any).error ?? "Failed to load facilitator rooms");

@@ -64,3 +64,16 @@ export const compostEventSeats = pgTable("compost_event_seats", {
   seatUnique: uniqueIndex("compost_event_seat_player_uq").on(table.gameId, table.playerId),
 }));
 
+export const compostCardSettings = pgTable("compost_card_settings", {
+  cardId: text("card_id").primaryKey(),
+  imageKey: text("image_key"),
+  copies: integer("copies"),
+});
+
+export const compostCardAssetUploads = pgTable("compost_card_asset_uploads", {
+  stagingKey: text("staging_key").primaryKey(),
+  cardId: text("card_id").notNull(),
+  finalKey: text("final_key").notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+});
+

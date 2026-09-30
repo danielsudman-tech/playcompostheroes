@@ -1,23 +1,48 @@
 import { Router, type Request, type Response, type NextFunction } from "express";
-import { writeFileSync, existsSync, mkdirSync } from "fs";
-import { join } from "path";
-import { spawn, execFile } from "child_process";
+import { createHash, timingSafeEqual } from "crypto";
+import { execFile } from "child_process";
 import { promisify } from "util";
 const execFileAsync = promisify(execFile);
+import { createDatabaseDump } from "../lib/databaseBackup.js";
 import { getAllCards } from "../lib/cards.js";
-import { getAllOverrides, setImageKeyOverride, removeImageKeyOverride } from "../lib/imageKeyStore.js";
-import { getAllCopies, getCardCopies, setCardCopies } from "../lib/cardCopiesStore.js";
-import { WORKSPACE_ROOT } from "../lib/workspaceRoot.js";
+import { getAllOverrides, removeImageKeyOverride } from "../lib/imageKeyStore.js";
+import { getAllCopies, setCardCopies } from "../lib/cardCopiesStore.js";
+import {
+  createCardAssetUploadUrl,
+  deleteStagedCardAsset,
+  getCardStagingKey,
+  isCardStagingKey,
+  promoteVerifiedStagedCardAsset,
+} from "../lib/cardAssetStorage.js";
+import { finalizeCardImageOverride } from "../lib/cardSettingsStore.js";
 import { pool } from "@workspace/db";
 import { resetUserPassword } from "../lib/userStore.js";
-
-// Resolve path to the frontend public/assets directory using workspace root
-// Works correctly in both dev (tsx) and prod (bundled dist/index.cjs)
-export const ASSETS_DIR = join(WORKSPACE_ROOT, "artifacts/compost-heroes/public/assets");
 
 const router = Router();
 
 // ── Admin auth middleware ──────────────────────────────────────────────────────
+
+const adminAttempts = new Map<string, { startedAt: number; count: number }>();
+function adminRateLimit(req: Request, res: Response, next: NextFunction) {
+  const now = Date.now();
+  const ip = req.ip || req.socket.remoteAddress || "unknown";
+  const previous = adminAttempts.get(ip);
+  const bucket = !previous || now - previous.startedAt >= 60_000
+    ? { startedAt: now, count: 0 }
+    : previous;
+  bucket.count += 1;
+  adminAttempts.set(ip, bucket);
+  while (adminAttempts.size > 10_000) {
+    const oldestAddress = adminAttempts.keys().next().value;
+    if (!oldestAddress) break;
+    adminAttempts.delete(oldestAddress);
+  }
+  if (bucket.count > 60) {
+    res.status(429).json({ error: "Too many admin requests. Try again shortly." });
+    return;
+  }
+  next();
+}
 
 function requireAdmin(req: Request, res: Response, next: NextFunction) {
   const adminPassword = process.env.APP_PASSWORD;
@@ -25,17 +50,20 @@ function requireAdmin(req: Request, res: Response, next: NextFunction) {
     res.status(503).json({ error: "Admin access is not configured" });
     return;
   }
-  const supplied =
-    (req.headers["x-admin-key"] as string | undefined) ??
-    (req.query.adminKey as string | undefined);
-  if (!supplied || supplied !== adminPassword) {
+  const suppliedHeader = req.headers["x-admin-key"];
+  const supplied = typeof suppliedHeader === "string" ? suppliedHeader : "";
+  // Hash both inputs to equal length before comparing, including wrong-length
+  // guesses. Never accept the secret from a query string.
+  const suppliedDigest = createHash("sha256").update(supplied).digest();
+  const expectedDigest = createHash("sha256").update(adminPassword).digest();
+  if (!timingSafeEqual(suppliedDigest, expectedDigest)) {
     res.status(401).json({ error: "Unauthorized" });
     return;
   }
   next();
 }
 
-router.use("/admin", requireAdmin);
+router.use("/admin", adminRateLimit, requireAdmin);
 
 // GET /api/admin/cards — list all cards with current image keys and copy counts
 router.get("/admin/cards", (_req, res) => {
@@ -56,8 +84,8 @@ router.get("/admin/cards", (_req, res) => {
 });
 
 // PUT /api/admin/cards/:cardId/copies — set the number of copies in the deck
-router.put("/admin/cards/:cardId/copies", (req, res) => {
-  const { cardId } = req.params;
+router.put("/admin/cards/:cardId/copies", async (req, res) => {
+  const cardId = String(req.params.cardId);
   const { copies } = req.body as { copies: number };
 
   if (typeof copies !== "number" || !Number.isInteger(copies) || copies < 0) {
@@ -71,45 +99,77 @@ router.put("/admin/cards/:cardId/copies", (req, res) => {
     return;
   }
 
-  setCardCopies(cardId, copies);
-  res.json({ success: true, cardId, copies });
+  try {
+    await setCardCopies(cardId, copies);
+    res.json({ success: true, cardId, copies });
+  } catch (err) {
+    console.error("[admin card copies]", err);
+    res.status(500).json({ error: "Failed to update copies" });
+  }
 });
 
-// POST /api/admin/cards/:cardId/image — upload image as base64
-router.post("/admin/cards/:cardId/image", (req, res) => {
-  const { cardId } = req.params;
-  const { imageData, mimeType, filename } = req.body as {
-    imageData: string;
-    mimeType: string;
-    filename: string;
-  };
-
-  if (!imageData || !mimeType || !filename) {
-    res.status(400).json({ error: "Missing imageData, mimeType, or filename" });
+// Request direct-to-Object-Storage upload URL (bytes do not pass through API).
+router.post("/admin/cards/:cardId/image/upload-url", async (req, res) => {
+  const cardId = String(req.params.cardId);
+  const { mimeType, filename, size } = req.body as { mimeType?: unknown; filename?: unknown; size?: unknown };
+  if (typeof mimeType !== "string" || typeof filename !== "string" ||
+      typeof size !== "number" || !Number.isInteger(size) || size < 1 || size > 10 * 1024 * 1024) {
+    res.status(400).json({ error: "Provide a filename, supported image MIME type, and size up to 10 MB" });
     return;
   }
-
   const cards = getAllCards();
   if (!cards.find((c) => c.id === cardId)) {
     res.status(404).json({ error: "Card not found" });
     return;
   }
-
+  const extensionByType: Record<string, "png" | "jpg" | "webp"> = {
+    "image/png": "png",
+    "image/jpeg": "jpg",
+    "image/webp": "webp",
+  };
+  const extension = extensionByType[mimeType];
+  if (!extension) {
+    res.status(400).json({ error: "Only PNG, JPEG, and WebP uploads are supported" });
+    return;
+  }
   try {
-    if (!existsSync(ASSETS_DIR)) {
-      mkdirSync(ASSETS_DIR, { recursive: true });
+    const stagingKey = getCardStagingKey(cardId, extension);
+    const uploadURL = await createCardAssetUploadUrl(stagingKey);
+    res.json({ success: true, stagingKey, uploadURL });
+  } catch (err) {
+    console.error("Image upload URL error:", err);
+    res.status(500).json({ error: "Failed to prepare image upload" });
+  }
+});
+
+// Verify the bytes stored in Object Storage before making the object an active override.
+router.post("/admin/cards/:cardId/image", async (req, res) => {
+  const cardId = String(req.params.cardId);
+  const { stagingKey, mimeType } = req.body as { stagingKey?: unknown; mimeType?: unknown };
+  if (typeof stagingKey !== "string" || typeof mimeType !== "string") {
+    res.status(400).json({ error: "Missing stagingKey or mimeType" });
+    return;
+  }
+  const cards = getAllCards();
+  if (!cards.find((card) => card.id === cardId)) {
+    res.status(404).json({ error: "Card not found" });
+    return;
+  }
+  if (!isCardStagingKey(cardId, stagingKey)) {
+    res.status(400).json({ error: "Invalid staging key" });
+    return;
+  }
+  try {
+    const imageKey = await finalizeCardImageOverride(
+      cardId,
+      stagingKey,
+      () => promoteVerifiedStagedCardAsset(stagingKey, mimeType),
+      () => deleteStagedCardAsset(stagingKey),
+    );
+    if (!imageKey) {
+      res.status(409).json({ error: "Upload is missing, invalid, or has already been finalized" });
+      return;
     }
-
-    const ext = filename.split(".").pop()?.toLowerCase() || "jpg";
-    const safeCardId = cardId.replace(/[^a-z0-9_]/gi, "_");
-    const imageKey = `${safeCardId}_${Date.now()}.${ext}`;
-    const destPath = join(ASSETS_DIR, imageKey);
-
-    const buffer = Buffer.from(imageData, "base64");
-    writeFileSync(destPath, buffer);
-
-    setImageKeyOverride(cardId, imageKey);
-
     res.json({ success: true, imageKey });
   } catch (err) {
     console.error("Image upload error:", err);
@@ -118,10 +178,15 @@ router.post("/admin/cards/:cardId/image", (req, res) => {
 });
 
 // DELETE /api/admin/cards/:cardId/image — remove override image assignment
-router.delete("/admin/cards/:cardId/image", (req, res) => {
-  const { cardId } = req.params;
-  removeImageKeyOverride(cardId);
-  res.json({ success: true });
+router.delete("/admin/cards/:cardId/image", async (req, res) => {
+  const cardId = String(req.params.cardId);
+  try {
+    await removeImageKeyOverride(cardId);
+    res.json({ success: true });
+  } catch (err) {
+    console.error("[admin remove card image]", err);
+    res.status(500).json({ error: "Failed to remove image override" });
+  }
 });
 
 // GET /api/admin/games — list all games with state summary
@@ -431,7 +496,7 @@ router.delete("/admin/users/:userId", async (req: Request, res: Response) => {
 
 // ── User password reset ───────────────────────────────────────────────────────
 
-router.patch("/admin/users/:userId/reset-password", requireAdmin, async (req: Request, res: Response) => {
+router.patch("/admin/users/:userId/reset-password", async (req: Request, res: Response) => {
   const { userId } = req.params;
   const { newPassword } = req.body as { newPassword?: string };
   if (!newPassword || newPassword.length < 6) {
@@ -453,7 +518,8 @@ router.patch("/admin/users/:userId/reset-password", requireAdmin, async (req: Re
 
 // ── Backup: database ──────────────────────────────────────────────────────────
 
-// GET /api/admin/backup/db — stream a pg_dump SQL file to the client
+// Finish pg_dump to a temporary file before starting the download. Otherwise a
+// failed dump can send a truncated SQL stream with HTTP 200 already committed.
 router.get("/admin/backup/db", async (req, res) => {
   const dbUrl = process.env.DATABASE_URL;
   if (!dbUrl) {
@@ -462,19 +528,19 @@ router.get("/admin/backup/db", async (req, res) => {
   }
   const ts = new Date().toISOString().replace(/[:.]/g, "-").slice(0, 19);
   const filename = `compost-heroes-db-${ts}.sql`;
-  res.setHeader("Content-Type", "application/octet-stream");
-  res.setHeader("Content-Disposition", `attachment; filename="${filename}"`);
-
-  const child = spawn("pg_dump", ["--no-password", dbUrl], { stdio: ["ignore", "pipe", "pipe"] });
-  child.stdout.pipe(res);
-  child.stderr.on("data", (d: Buffer) => console.error("[backup/db]", d.toString()));
-  child.on("error", (err) => {
-    console.error("[backup/db] spawn error", err);
-    if (!res.headersSent) res.status(500).end("pg_dump failed");
-  });
-  child.on("close", (code) => {
-    if (code !== 0) console.error(`[backup/db] pg_dump exited with code ${code}`);
-  });
+  let dump: Awaited<ReturnType<typeof createDatabaseDump>> | undefined;
+  try {
+    dump = await createDatabaseDump(dbUrl);
+    await new Promise<void>((resolve, reject) => {
+      res.download(dump!.path, filename, (error) => error ? reject(error) : resolve());
+    });
+  } catch (err) {
+    console.error("[backup/db] pg_dump or download failed", err);
+    if (!res.headersSent) res.status(500).json({ error: "Database backup failed; no dump was downloaded" });
+    else res.destroy(err instanceof Error ? err : undefined);
+  } finally {
+    await dump?.cleanup().catch(() => {});
+  }
 });
 
 // ── Backup: GitHub ────────────────────────────────────────────────────────────

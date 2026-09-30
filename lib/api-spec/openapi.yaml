@@ -249,12 +249,8 @@ paths:
       operationId: getFacilitatorRooms
       tags: [game]
       summary: List sessions created by the signed-in facilitator
-      parameters:
-        - name: userToken
-          in: query
-          required: true
-          schema:
-            type: string
+      security:
+        - bearerAuth: []
       responses:
         "200":
           description: Sessions
@@ -282,11 +278,8 @@ paths:
       operationId: getFacilitatorEvents
       tags: [game]
       summary: List events owned by the approved facilitator
-      parameters:
-        - name: userToken
-          in: query
-          required: true
-          schema: { type: string }
+      security:
+        - bearerAuth: []
       responses:
         "200":
           description: Facilitator events
@@ -326,10 +319,8 @@ paths:
           in: path
           required: true
           schema: { type: string }
-        - name: userToken
-          in: query
-          required: true
-          schema: { type: string }
+      security:
+        - bearerAuth: []
       responses:
         "200": { description: Safe event detail, content: { application/json: { schema: { $ref: "#/components/schemas/EventDetail" } } } }
         "401": { description: Sign in required, content: { application/json: { schema: { $ref: "#/components/schemas/ErrorResponse" } } } }
@@ -401,17 +392,44 @@ paths:
         "403": { description: Not the approved creator, content: { application/json: { schema: { $ref: "#/components/schemas/ErrorResponse" } } } }
         "404": { description: Event or table not found, content: { application/json: { schema: { $ref: "#/components/schemas/ErrorResponse" } } } }
 
-  /facilitator/events/{eventId}/stream:
-    get:
-      operationId: streamFacilitatorEvent
+  /facilitator/events/{eventId}/stream-ticket:
+    post:
+      operationId: createFacilitatorEventStreamTicket
       tags: [game]
-      summary: SSE event detail updates, with polling as a client fallback
+      summary: Create a short-lived, single-use ticket for the facilitator event stream
       parameters:
         - name: eventId
           in: path
           required: true
           schema: { type: string }
-        - name: userToken
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/EventStreamTicketInput"
+      responses:
+        "200":
+          description: One-time event stream ticket
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/EventStreamTicket"
+        "401": { description: Sign in required }
+        "403": { description: Not the approved creator }
+        "404": { description: Event not found }
+
+  /facilitator/events/{eventId}/stream:
+    get:
+      operationId: streamFacilitatorEvent
+      tags: [game]
+      summary: SSE event detail updates using a short-lived, single-use ticket
+      parameters:
+        - name: eventId
+          in: path
+          required: true
+          schema: { type: string }
+        - name: ticket
           in: query
           required: true
           schema: { type: string }
@@ -861,7 +879,21 @@ paths:
                 $ref: "#/components/schemas/ErrorResponse"
 
 components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
   schemas:
+    EventStreamTicketInput:
+      type: object
+      properties:
+        userToken: { type: string }
+      required: [userToken]
+    EventStreamTicket:
+      type: object
+      properties:
+        ticket: { type: string }
+      required: [ticket]
     EventInput:
       type: object
       properties:

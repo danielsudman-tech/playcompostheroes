@@ -1,5 +1,5 @@
 - [Compost Heroes conventions](compost-heroes-conventions.md) — facilitated mode reuses the online flow (tokens/SSE/hidden hands, token must match acting player); API contract is spec-first via lib/api-spec + orval codegen.
-- [Facilitated table testing](facilitated-table-testing.md) — screenshot game routes with `?token=` + `?ut=` (app gate); board must fit 4 players at 900px with my row pinned above the hand.
+- [Facilitated table testing](facilitated-table-testing.md) — seat token links can open guest tables; never use account tokens in URLs; board must fit 4 players at 900px.
 - [Sound UX](sound-system.md) — keep short, meaningful cues and a mute switch; do not restore a continuous ambient hum.
 - [Facilitator approval provenance](facilitator-approval.md) — never trust legacy self-selected roles as admin approval or backfill them automatically.
 - [Account deletion scope](account-deletion.md) — deleting a user ends sign-in but deliberately retains historical games and analytics.

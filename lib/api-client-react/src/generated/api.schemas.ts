@@ -5,6 +5,14 @@
  * Compost Heroes Game API
  * OpenAPI spec version: 0.1.0
  */
+export interface EventStreamTicketInput {
+  userToken: string;
+}
+
+export interface EventStreamTicket {
+  ticket: string;
+}
+
 export type EventInputAssignmentMode =
   (typeof EventInputAssignmentMode)[keyof typeof EventInputAssignmentMode];
 
@@ -633,20 +641,8 @@ export type GetGameParams = {
   token?: string;
 };
 
-export type GetFacilitatorRoomsParams = {
-  userToken: string;
-};
-
-export type GetFacilitatorEventsParams = {
-  userToken: string;
-};
-
-export type GetFacilitatorEventParams = {
-  userToken: string;
-};
-
 export type StreamFacilitatorEventParams = {
-  userToken: string;
+  ticket: string;
 };
 
 export type RecoverHostToken200 = {

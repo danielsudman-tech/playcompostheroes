@@ -1,40 +1,25 @@
-import { readFileSync, writeFileSync } from "fs";
-import { join } from "path";
-import { WORKSPACE_ROOT } from "./workspaceRoot.js";
+import type { CardSettingsStore } from "./cardSettingsStore.js";
 
-const JSON_PATH = join(WORKSPACE_ROOT, "artifacts/api-server/src/lib/imageKeys.json");
+let store: CardSettingsStore | null = null;
 
-let overrides: Record<string, string> = {};
-
-function loadOverrides() {
-  try {
-    const raw = readFileSync(JSON_PATH, "utf-8");
-    overrides = JSON.parse(raw);
-  } catch {
-    overrides = {};
-  }
+export function attachImageKeyStore(settingsStore: CardSettingsStore): void {
+  store = settingsStore;
 }
-
-function saveOverrides() {
-  writeFileSync(JSON_PATH, JSON.stringify(overrides, null, 2), "utf-8");
-}
-
-loadOverrides();
 
 export function getImageKeyOverride(cardId: string): string | null {
-  return overrides[cardId] ?? null;
+  return store?.getAllOverrides()[cardId] ?? null;
 }
 
-export function setImageKeyOverride(cardId: string, imageKey: string): void {
-  overrides[cardId] = imageKey;
-  saveOverrides();
+export async function setImageKeyOverride(cardId: string, imageKey: string): Promise<void> {
+  if (!store) throw new Error("Card settings store has not been initialized");
+  await store.setImageKey(cardId, imageKey);
 }
 
-export function removeImageKeyOverride(cardId: string): void {
-  delete overrides[cardId];
-  saveOverrides();
+export async function removeImageKeyOverride(cardId: string): Promise<void> {
+  if (!store) throw new Error("Card settings store has not been initialized");
+  await store.setImageKey(cardId, null);
 }
 
 export function getAllOverrides(): Record<string, string> {
-  return { ...overrides };
+  return store?.getAllOverrides() ?? {};
 }
