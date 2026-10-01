@@ -1,6 +1,7 @@
 import { pool } from "@workspace/db";
 import bcrypt from "bcryptjs";
 import { randomBytes } from "node:crypto";
+import type { PgQueryable } from "./gameStore.js";
 
 export interface CompostUser {
   id: string;
@@ -148,15 +149,8 @@ export async function resetUserPassword(userId: string, newPassword: string): Pr
   await pool.query(`DELETE FROM compost_user_sessions WHERE user_id = $1`, [userId]);
 }
 
-export async function getUserByToken(token: string): Promise<CompostUser | null> {
-  const result = await pool.query<{
-    id: string;
-    email: string;
-    name: string;
-    organization: string | null;
-    role: string | null;
-    created_at: string;
-  }>(
+export async function getUserByToken(token: string, client: PgQueryable = pool): Promise<CompostUser | null> {
+  const result = await client.query(
     `SELECT u.id, u.email, u.name, u.organization,
             CASE WHEN u.role = 'facilitator' AND u.role_approved_at IS NOT NULL THEN 'facilitator' ELSE NULL END AS role,
             u.created_at

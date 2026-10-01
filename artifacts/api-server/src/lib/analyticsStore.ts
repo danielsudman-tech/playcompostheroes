@@ -1,4 +1,5 @@
 import { pool } from "@workspace/db";
+import type { PgQueryable } from "./gameStore.js";
 
 export type AnalyticsEventType =
   | "register"
@@ -18,10 +19,11 @@ interface LogEventOptions {
 
 export async function logEvent(
   eventType: AnalyticsEventType,
-  opts: LogEventOptions = {}
+  opts: LogEventOptions = {},
+  client: PgQueryable = pool,
 ): Promise<void> {
   try {
-    await pool.query(
+    await client.query(
       `INSERT INTO compost_analytics_events (event_type, user_id, game_id, int_value, metadata)
        VALUES ($1, $2, $3, $4, $5)`,
       [

@@ -16,8 +16,9 @@ import {
 import { WIN_FUNCTIONS } from "../lib/cards.js";
 import {
   broadcastToGame, createGameId, getEventForGame, getGame,
-  isEventGameReadyToStart, lockGameMutationInTransaction,
+  isEventGameReadyToStart,
   onGameBroadcast, updateGameStateCache, withGameMutationLocks,
+  type PgClient, type PgQueryable,
 } from "../lib/gameStore.js";
 import { extractBearerToken, getUserByToken, isApprovedFacilitator } from "../lib/userStore.js";
 import { consumeEventStreamTicket, issueEventStreamTicket } from "../lib/eventStreamTickets.js";
@@ -34,25 +35,25 @@ const createCode = () => randomBytes(6).toString("base64url").toUpperCase();
 const normalizeCode = (code: string) => code.toUpperCase();
 const parseState = (value: unknown) => (typeof value === "string" ? JSON.parse(value) : value) as GameState;
 
-async function eventRecord(eventId: string) {
-  const result = await pool.query(
+async function eventRecord(eventId: string, client: PgQueryable = pool) {
+  const result = await client.query(
     `SELECT id, code, facilitator_id, name, status, assignment_mode, idle_seconds,
             EXTRACT(EPOCH FROM last_meaningful_activity_at) * 1000 AS last_activity
        FROM compost_events WHERE id = $1`, [eventId],
   );
   return result.rows[0] as any;
 }
-async function tableRecords(eventId: string) {
-  return (await pool.query(
+async function tableRecords(eventId: string, client: PgQueryable = pool) {
+  return (await client.query(
     `SELECT game_id, table_number, capacity FROM compost_event_tables
      WHERE event_id = $1 ORDER BY table_number`, [eventId],
   )).rows as Array<{ game_id: string; table_number: number; capacity: number }>;
 }
-async function requireHost(eventId: string, userToken: unknown) {
-  const user = typeof userToken === "string" ? await getUserByToken(userToken) : null;
+async function requireHost(eventId: string, userToken: unknown, client?: PgQueryable) {
+  const user = typeof userToken === "string" ? await getUserByToken(userToken, client) : null;
   if (!user) return { failure: 401, error: "Sign in required" } as const;
   if (!isApprovedFacilitator(user)) return { failure: 403, error: "Facilitator approval is required" } as const;
-  const event = await eventRecord(eventId);
+  const event = await eventRecord(eventId, client);
   if (!event) return { failure: 404, error: "Event not found" } as const;
   if (event.facilitator_id !== user.id) return { failure: 403, error: "You are not the approved creator of this event" } as const;
   return { event, user } as const;
@@ -288,46 +289,46 @@ router.patch("/facilitator/events/:eventId", async (req, res): Promise<void> => 
   res.json(UpdateFacilitatorEventResponse.parse(detail));
 });
 
-async function changeTable(gameId: string, action: string, text?: string) {
+type TableControlResult = { gameId: string; success: boolean; error: string | null; nextState?: GameState };
+
+async function changeTable(client: PgClient, gameId: string, action: string, text?: string): Promise<TableControlResult> {
   try {
-    return await withGameMutationLocks([gameId], async () => {
-      const event = await getEventForGame(gameId);
-      if (event && action !== "end" && ["ending", "completed"].includes(event.status)) {
-        return { gameId, success: false, error: "Event is ending or has ended" };
+    const event = await getEventForGame(gameId, client);
+    if (event && action !== "end" && ["ending", "completed"].includes(event.status)) {
+      return { gameId, success: false, error: "Event is ending or has ended" };
+    }
+    const state = await getGame(gameId, client);
+    if (!state) return { gameId, success: false, error: "Game not found" };
+    let next = state;
+    if (action === "start") {
+      if (state.phase === "game_over") return { gameId, success: true, error: null };
+      if (event && !await isEventGameReadyToStart(gameId, client)) {
+        return { gameId, success: false, error: "Table needs at least two seated, ready, connected guests" };
       }
-      const state = await getGame(gameId);
-      if (!state) return { gameId, success: false, error: "Game not found" };
-      let next = state;
-      if (action === "start") {
-        if (state.phase === "game_over") return { gameId, success: true, error: null };
-        if (event && !await isEventGameReadyToStart(gameId)) {
-          return { gameId, success: false, error: "Table needs at least two seated, ready, connected guests" };
-        }
-        const launched = launchGame(state);
-        if (launched.error) return { gameId, success: false, error: launched.error };
-        next = { ...launched.state, lastMeaningfulActivityAt: Date.now() } as GameState;
-      } else if (action === "pause" || action === "pause_all") {
-        if (state.phase === "game_over") return { gameId, success: true, error: null };
-        next = { ...state, paused: true };
-      } else if (action === "resume" || action === "resume_all") {
-        if (state.phase === "game_over") return { gameId, success: true, error: null };
-        next = { ...state, paused: false };
-      } else if (action === "end") {
-        if (state.phase === "game_over") return { gameId, success: true, error: null };
-        next = { ...state, phase: "game_over", endedByHost: true, endedAt: Date.now(), paused: false, pendingDecision: null };
-      } else if (action === "message") {
-        if (state.phase === "game_over") return { gameId, success: true, error: null };
-        const message = text?.trim();
-        if (!message) return { gameId, success: false, error: "Message text is required" };
-        next = { ...state, hostMessage: { id: uuid(), text: message.slice(0, 300), ts: Date.now() } };
-      }
-      if (next !== state) {
-        await pool.query(`UPDATE compost_games SET state = $2, updated_at = NOW() WHERE game_id = $1`, [gameId, JSON.stringify(next)]);
-        updateGameStateCache(next);
-        broadcastToGame(gameId, next, serializeState);
-      }
-      return { gameId, success: true, error: null };
-    });
+      const launched = launchGame(state);
+      if (launched.error) return { gameId, success: false, error: launched.error };
+      next = { ...launched.state, lastMeaningfulActivityAt: Date.now() } as GameState;
+    } else if (action === "pause" || action === "pause_all") {
+      if (state.phase === "game_over") return { gameId, success: true, error: null };
+      next = { ...state, paused: true };
+    } else if (action === "resume" || action === "resume_all") {
+      if (state.phase === "game_over") return { gameId, success: true, error: null };
+      next = { ...state, paused: false };
+    } else if (action === "end") {
+      if (state.phase === "game_over") return { gameId, success: true, error: null };
+      next = { ...state, phase: "game_over", endedByHost: true, endedAt: Date.now(), paused: false, pendingDecision: null };
+    } else if (action === "message") {
+      if (state.phase === "game_over") return { gameId, success: true, error: null };
+      const message = text?.trim();
+      if (!message) return { gameId, success: false, error: "Message text is required" };
+      next = { ...state, hostMessage: { id: uuid(), text: message.slice(0, 300), ts: Date.now() } };
+    }
+    if (next !== state) {
+      await client.query(`UPDATE compost_games SET state = $2, updated_at = NOW() WHERE game_id = $1`, [gameId, JSON.stringify(next)]);
+      updateGameStateCache(next);
+      return { gameId, success: true, error: null, nextState: next };
+    }
+    return { gameId, success: true, error: null };
   } catch (error) {
     return { gameId, success: false, error: error instanceof Error ? error.message : "Control failed" };
   }
@@ -337,49 +338,73 @@ router.post("/facilitator/events/:eventId/control", async (req, res): Promise<vo
   const body = req.body as { userToken?: string; action?: string; text?: string };
   const parsedBody = ControlFacilitatorEventBody.safeParse(body);
   if (!parsedBody.success) { res.status(400).json({ error: parsedBody.error.message }); return; }
-  const check = await requireHost(req.params.eventId, body.userToken);
-  if ("failure" in check) { res.status(Number(check.failure)).json({ error: check.error }); return; }
-  if (["ending", "completed"].includes(check.event.status) && body.action !== "end") { res.status(409).json({ error: "Event is ending or has ended" }); return; }
   const action = body.action ?? "";
   if (!["start", "pause_all", "resume_all", "end", "message"].includes(action)) { res.status(400).json({ error: "Invalid event action" }); return; }
   if (action === "message" && !body.text?.trim()) { res.status(400).json({ error: "Message text is required" }); return; }
-  if (action === "end" && check.event.status !== "completed") {
-    await pool.query(`UPDATE compost_events SET status='ending' WHERE id=$1 AND status <> 'completed'`, [req.params.eventId]);
-  }
-  const tables = await tableRecords(req.params.eventId);
-  const results = [];
-  for (const table of tables) {
-    results.push(await changeTable(table.game_id, action, body.text));
-  }
-  if (action === "start") {
-    const states = await Promise.all(tables.map((table) => getGame(table.game_id)));
-    const startedAny = states.some((state) => !!state && state.phase !== "waiting" && state.phase !== "game_over");
-    if (startedAny) {
-      await pool.query(`UPDATE compost_events SET status='active' WHERE id=$1 AND status IN ('upcoming','active')`, [req.params.eventId]);
-      await pool.query(`UPDATE compost_events SET last_meaningful_activity_at=NOW() WHERE id=$1`, [req.params.eventId]);
+  const eventId = req.params.eventId;
+  const initialTables = await tableRecords(eventId);
+  const outcome = await withGameMutationLocks(initialTables.map((table) => table.game_id), async (client) => {
+    const check = await requireHost(eventId, body.userToken, client);
+    if ("failure" in check) return { failure: Number(check.failure), error: check.error };
+    const tables = await tableRecords(eventId, client);
+    if (tables.length !== initialTables.length ||
+        tables.some((table, index) => table.game_id !== initialTables[index]?.game_id)) {
+      return { failure: 409, error: "Event tables changed; refresh and retry" };
     }
-  }
-  if (action === "end" && results.every((r) => r.success)) {
-    await pool.query(`UPDATE compost_events SET status='completed' WHERE id=$1`, [req.params.eventId]);
-  }
-  pushEvent(req.params.eventId, await buildDetail(req.params.eventId));
-  res.json(ControlFacilitatorEventResponse.parse({ eventId: req.params.eventId, action, results }));
+    if (["ending", "completed"].includes(check.event.status) && action !== "end") {
+      return { failure: 409, error: "Event is ending or has ended" };
+    }
+    if (action === "end" && check.event.status !== "completed") {
+      await client.query(`UPDATE compost_events SET status='ending' WHERE id=$1 AND status <> 'completed'`, [eventId]);
+    }
+    const results: TableControlResult[] = [];
+    for (const table of tables) results.push(await changeTable(client, table.game_id, action, body.text));
+    let startedAny = false;
+    if (action === "start") {
+      for (const table of tables) {
+        const state = await getGame(table.game_id, client);
+        if (state && state.phase !== "waiting" && state.phase !== "game_over") startedAny = true;
+      }
+    }
+    if (startedAny) {
+      await client.query(`UPDATE compost_events SET status='active' WHERE id=$1 AND status IN ('upcoming','active')`, [eventId]);
+      await client.query(`UPDATE compost_events SET last_meaningful_activity_at=NOW() WHERE id=$1`, [eventId]);
+    }
+    if (action === "end" && results.every((result) => result.success)) {
+      await client.query(`UPDATE compost_events SET status='completed' WHERE id=$1`, [eventId]);
+    }
+    return {
+      results: results.map(({ gameId, success, error }) => ({ gameId, success, error })),
+      changed: results.flatMap((result) => result.nextState ? [result.nextState] : []),
+    };
+  });
+  if (typeof outcome.failure === "number") { res.status(outcome.failure).json({ error: outcome.error }); return; }
+  for (const state of outcome.changed) broadcastToGame(state.gameId, state, serializeState);
+  pushEvent(eventId, await buildDetail(eventId));
+  res.json(ControlFacilitatorEventResponse.parse({ eventId, action, results: outcome.results }));
 });
 
 router.post("/facilitator/events/:eventId/tables/:gameId/control", async (req, res): Promise<void> => {
   const body = req.body as { userToken?: string; action?: string; text?: string };
   const parsedBody = ControlFacilitatorEventTableBody.safeParse(body);
   if (!parsedBody.success) { res.status(400).json({ error: parsedBody.error.message }); return; }
-  const check = await requireHost(req.params.eventId, body.userToken);
-  if ("failure" in check) { res.status(Number(check.failure)).json({ error: check.error }); return; }
-  if (["ending", "completed"].includes(check.event.status)) { res.status(409).json({ error: "Event is ending or has ended" }); return; }
-  const table = (await tableRecords(req.params.eventId)).find((t) => t.game_id === req.params.gameId);
-  if (!table) { res.status(404).json({ error: "Table not found" }); return; }
   if (!["pause", "resume", "message"].includes(body.action ?? "")) { res.status(400).json({ error: "Invalid table action" }); return; }
   if (body.action === "message" && !body.text?.trim()) { res.status(400).json({ error: "Message text is required" }); return; }
-  const result = await changeTable(req.params.gameId, body.action!, body.text);
-  pushEvent(req.params.eventId, await buildDetail(req.params.eventId));
-  res.json(ControlFacilitatorEventTableResponse.parse(result));
+  const eventId = req.params.eventId;
+  const gameId = req.params.gameId;
+  const outcome = await withGameMutationLocks([gameId], async (client) => {
+    const check = await requireHost(eventId, body.userToken, client);
+    if ("failure" in check) return { failure: Number(check.failure), error: check.error };
+    if (["ending", "completed"].includes(check.event.status)) return { failure: 409, error: "Event is ending or has ended" };
+    const table = (await tableRecords(eventId, client)).find((candidate) => candidate.game_id === gameId);
+    if (!table) return { failure: 404, error: "Table not found" };
+    return { result: await changeTable(client, gameId, body.action!, body.text) };
+  });
+  if (typeof outcome.failure === "number") { res.status(outcome.failure).json({ error: outcome.error }); return; }
+  if (outcome.result.nextState) broadcastToGame(gameId, outcome.result.nextState, serializeState);
+  const { success, error } = outcome.result;
+  pushEvent(eventId, await buildDetail(eventId));
+  res.json(ControlFacilitatorEventTableResponse.parse({ gameId, success, error }));
 });
 
 router.post("/facilitator/events/:eventId/stream-ticket", async (req, res): Promise<void> => {
@@ -476,9 +501,13 @@ router.post("/events/:code/join", async (req, res): Promise<void> => {
   const client = await pool.connect();
   try {
     await client.query("BEGIN");
-    for (const gameId of tables.map((table) => table.game_id).sort()) {
-      await lockGameMutationInTransaction(client, gameId);
-    }
+    const lockGameIds = tables.map((table) => table.game_id).sort();
+    await client.query(
+      `SELECT pg_advisory_xact_lock(7419, hashtext(game_id))
+         FROM unnest($1::text[]) AS lock_targets(game_id)
+        ORDER BY game_id`,
+      [lockGameIds],
+    );
     const lockedEvent = await client.query(`SELECT status,assignment_mode FROM compost_events WHERE id=$1 FOR UPDATE`, [event.id]);
     if (!lockedEvent.rows.length || !["upcoming", "active"].includes(lockedEvent.rows[0].status)) {
       await client.query("ROLLBACK"); res.status(409).json({ error: "Event is not accepting new joins" }); return;
@@ -517,35 +546,41 @@ router.post("/events/:code/join", async (req, res): Promise<void> => {
        VALUES($1,$2,$3,$4,$5,false,NOW())`,
       [uuid(), event.id, table.game_id, player.id, joined.state.players.length - 1],
     );
-    await client.query("COMMIT");
     updateGameStateCache(joined.state);
     broadcastToGame(table.game_id, joined.state, serializeState);
     pushEvent(event.id, await buildDetail(event.id));
     res.status(201).json(JoinEventResponse.parse({ gameId: table.game_id, token, playerId: player.id, playerName: player.name, tableNumber: table.table_number }));
+    await client.query("COMMIT");
   } catch (error) {
     await client.query("ROLLBACK");
     throw error;
-  } finally { client.release(); }
+  } finally {
+    client.release();
+  }
 });
 
-async function resolveEventSeat(code: string, token: unknown) {
+async function resolveEventSeat(code: string, token: unknown, client: PgQueryable = pool) {
   if (typeof token !== "string" || !token) return null;
-  const row = (await pool.query(
+  const row = (await client.query(
     `SELECT e.id AS event_id,e.status AS event_status,t.game_id,t.table_number,tok.player_index
        FROM compost_events e JOIN compost_event_tables t ON t.event_id=e.id
        JOIN compost_game_tokens tok ON tok.game_id=t.game_id
        WHERE e.code=$1 AND tok.token=$2`, [normalizeCode(code), token],
   )).rows[0];
   if (!row || Number(row.player_index) < 0) return null;
-  const state = await getGame(row.game_id);
+  const state = await getGame(row.game_id, client);
   const player = state?.players[Number(row.player_index)];
   if (!player) return null;
-  const seat = await pool.query(
+  const seat = await client.query(
     `SELECT 1 FROM compost_event_seats WHERE game_id=$1 AND player_id=$2`, [row.game_id, player.id],
   );
   if (!seat.rows.length) return null;
   return { ...row, player_id: player.id, token, playerIndex: Number(row.player_index) };
 }
+
+type EventReadyResult =
+  | { status: 200; eventId: string }
+  | { status: 403 | 409; error: string };
 
 router.post("/events/:code/ready", async (req, res): Promise<void> => {
   const body = req.body as { token?: string; ready?: boolean };
@@ -553,16 +588,16 @@ router.post("/events/:code/ready", async (req, res): Promise<void> => {
   if (!parsedBody.success) { res.status(400).json({ error: parsedBody.error.message }); return; }
   const seat = await resolveEventSeat(req.params.code, body.token);
   if (!seat) { res.status(403).json({ error: "Invalid event seat token" }); return; }
-  const result = await withGameMutationLocks([seat.game_id], async () => {
-    const refreshed = await resolveEventSeat(req.params.code, body.token);
+  const result = await withGameMutationLocks<EventReadyResult>([seat.game_id], async (client) => {
+    const refreshed = await resolveEventSeat(req.params.code, body.token, client);
     if (!refreshed) return { status: 403, error: "Invalid event seat token" };
     if (["ending", "completed"].includes(refreshed.event_status)) return { status: 409, error: "Event is ending or has ended" };
-    await pool.query(`UPDATE compost_event_seats SET ready=$3 WHERE game_id=$1 AND player_id=$2`,
+    await client.query(`UPDATE compost_event_seats SET ready=$3 WHERE game_id=$1 AND player_id=$2`,
       [refreshed.game_id, refreshed.player_id, body.ready === true]);
-    pushEvent(refreshed.event_id, await buildDetail(refreshed.event_id));
-    return { status: 200 };
+    return { status: 200, eventId: refreshed.event_id };
   });
   if (result.status !== 200) { res.status(result.status).json({ error: result.error }); return; }
+  pushEvent(result.eventId, await buildDetail(result.eventId));
   res.json(SetEventReadyResponse.parse({ ok: true }));
 });
 

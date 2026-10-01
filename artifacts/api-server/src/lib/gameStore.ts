@@ -3,6 +3,10 @@ import { GameState, runBotTurnsIfNeeded, takeOverPlayerAsBot } from "./gameEngin
 import type { Response } from "express";
 import { randomBytes } from "node:crypto";
 
+export type PgQueryResult = { rows: any[]; rowCount?: number | null };
+export type PgQueryable = { query: (...args: any[]) => Promise<PgQueryResult> };
+export type PgClient = PgQueryable & { release(error?: Error | boolean): void };
+
 // ── In-memory only: live SSE connections (can't persist HTTP streams) ──────────
 const sseClientsByToken = new Map<string, Map<string, Response>>();
 
@@ -14,6 +18,7 @@ const gameStateCache = new Map<string, GameState>();
 // Eliminates a DB query on every SSE broadcast.
 const tokenIndexCache = new Map<string, Map<string, number>>();
 const gameBroadcastListeners = new Set<(gameId: string) => void>();
+const deferredBroadcastsByClient = new WeakMap<PgClient, Set<string>>();
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -31,14 +36,14 @@ export function createGameId(): string {
 
 // ── Game state ────────────────────────────────────────────────────────────────
 
-export async function storeGame(state: GameState): Promise<void> {
+export async function storeGame(state: GameState, client: PgQueryable = pool): Promise<void> {
   // Stamp the finish time once, regardless of how the game ended (win or
   // manual end), so post-session summaries can show duration.
   if (state.phase === "game_over" && !state.endedAt) {
     state.endedAt = Date.now();
   }
   gameStateCache.set(state.gameId, state);
-  await pool.query(
+  await client.query(
     `INSERT INTO compost_games (game_id, state, updated_at)
      VALUES ($1, $2, NOW())
      ON CONFLICT (game_id) DO UPDATE
@@ -58,9 +63,9 @@ export function onGameBroadcast(listener: (gameId: string) => void): () => void 
   return () => gameBroadcastListeners.delete(listener);
 }
 
-export async function getGame(gameId: string): Promise<GameState | undefined> {
-  if (gameStateCache.has(gameId)) return gameStateCache.get(gameId);
-  const result = await pool.query(
+export async function getGame(gameId: string, client?: PgQueryable): Promise<GameState | undefined> {
+  if (!client && gameStateCache.has(gameId)) return gameStateCache.get(gameId);
+  const result = await (client ?? pool).query(
     `SELECT state FROM compost_games WHERE game_id = $1`,
     [gameId]
   );
@@ -70,9 +75,6 @@ export async function getGame(gameId: string): Promise<GameState | undefined> {
   gameStateCache.set(gameId, state);
   return state;
 }
-
-type PgQueryable = { query: (...args: any[]) => Promise<any> };
-type PgClient = PgQueryable & { release: () => void };
 
 async function eventLookupInTransaction<T>(client: PgClient, query: () => Promise<T>): Promise<T | null> {
   await client.query("SAVEPOINT event_table_lookup");
@@ -124,6 +126,18 @@ export async function releaseGameMutationLock(client: PgClient, gameId: string):
     await client.query(`SELECT pg_advisory_unlock(7419, hashtext($1))`, [gameId]);
   } finally {
     client.release();
+    flushDeferredBroadcasts(client);
+  }
+}
+
+function flushDeferredBroadcasts(client: PgClient): void {
+  const gameIds = deferredBroadcastsByClient.get(client);
+  if (!gameIds) return;
+  deferredBroadcastsByClient.delete(client);
+  for (const gameId of gameIds) {
+    for (const listener of gameBroadcastListeners) {
+      try { listener(gameId); } catch { /* a stream subscriber must not break gameplay broadcasts */ }
+    }
   }
 }
 
@@ -131,24 +145,42 @@ export async function lockGameMutationInTransaction(client: PgClient, gameId: st
   await client.query(`SELECT pg_advisory_xact_lock(7419, hashtext($1))`, [gameId]);
 }
 
-export async function withGameMutationLocks<T>(gameIds: string[], action: () => Promise<T>): Promise<T> {
-  const locked: Array<{ client: PgClient; gameId: string }> = [];
+export async function withGameMutationLocks<T>(
+  gameIds: string[],
+  action: (client: PgClient) => Promise<T>,
+): Promise<T> {
+  const client = await pool.connect();
+  const sortedGameIds = [...new Set(gameIds)].sort();
   try {
-    for (const gameId of [...new Set(gameIds)].sort()) {
-      locked.push({ client: await acquireGameMutationLock(gameId), gameId });
+    if (sortedGameIds.length) {
+      await client.query(
+        `SELECT pg_advisory_lock(7419, hashtext(lock_targets.game_id))
+           FROM (SELECT unnest($1::text[]) AS game_id ORDER BY game_id) AS lock_targets`,
+        [sortedGameIds],
+      );
     }
-    return await action();
+    for (const gameId of sortedGameIds) {
+      await reloadGameState(gameId, client);
+    }
+    return await action(client);
   } finally {
-    for (const lock of locked.reverse()) await releaseGameMutationLock(lock.client, lock.gameId);
+    try {
+      for (const gameId of [...sortedGameIds].reverse()) {
+        await client.query(`SELECT pg_advisory_unlock(7419, hashtext($1))`, [gameId]);
+      }
+    } finally {
+      client.release();
+      flushDeferredBroadcasts(client);
+    }
   }
 }
 
-export async function isEventGameReadyToStart(gameId: string): Promise<boolean> {
-  const event = await getEventForGame(gameId);
+export async function isEventGameReadyToStart(gameId: string, client?: PgQueryable): Promise<boolean> {
+  const event = await getEventForGame(gameId, client);
   if (!event) return false;
-  const state = await getGame(gameId);
+  const state = await getGame(gameId, client);
   if (!state || state.phase !== "waiting" || state.players.length < 2) return false;
-  const result = await pool.query(
+  const result = await (client ?? pool).query(
     `SELECT player_id,ready,last_seen_at FROM compost_event_seats WHERE event_id=$1 AND game_id=$2`,
     [event.eventId, gameId],
   );
@@ -163,15 +195,15 @@ export async function isEventGameReadyToStart(gameId: string): Promise<boolean> 
 
 // ── Password ──────────────────────────────────────────────────────────────────
 
-export async function setGamePassword(gameId: string, password: string): Promise<void> {
-  await pool.query(
+export async function setGamePassword(gameId: string, password: string, client: PgQueryable = pool): Promise<void> {
+  await client.query(
     `UPDATE compost_games SET password = $2 WHERE game_id = $1`,
     [gameId, password]
   );
 }
 
-export async function gameHasPassword(gameId: string): Promise<boolean> {
-  const result = await pool.query(
+export async function gameHasPassword(gameId: string, client: PgQueryable = pool): Promise<boolean> {
+  const result = await client.query(
     `SELECT password FROM compost_games WHERE game_id = $1`,
     [gameId]
   );
@@ -179,8 +211,8 @@ export async function gameHasPassword(gameId: string): Promise<boolean> {
   return result.rows[0].password != null;
 }
 
-export async function checkGamePassword(gameId: string, password: string): Promise<boolean> {
-  const result = await pool.query(
+export async function checkGamePassword(gameId: string, password: string, client: PgQueryable = pool): Promise<boolean> {
+  const result = await client.query(
     `SELECT password FROM compost_games WHERE game_id = $1`,
     [gameId]
   );
@@ -248,9 +280,9 @@ export async function getGamesByFacilitator(facilitatorId: string): Promise<Game
   );
 }
 
-export async function getEventForGame(gameId: string): Promise<{ eventId: string; status: string } | null> {
+export async function getEventForGame(gameId: string, client: PgQueryable = pool): Promise<{ eventId: string; status: string } | null> {
   try {
-    const result = await pool.query(
+    const result = await client.query(
       `SELECT e.id AS event_id, e.status
          FROM compost_event_tables t JOIN compost_events e ON e.id=t.event_id
         WHERE t.game_id=$1 LIMIT 1`, [gameId],
@@ -266,14 +298,16 @@ export async function getEventForGame(gameId: string): Promise<{ eventId: string
 
 export async function claimSlot(
   gameId: string,
-  existingToken?: string
+  existingToken?: string,
+  client?: PgQueryable,
 ): Promise<{ token: string; playerIndex: number } | null> {
-  const game = await getGame(gameId);
+  const queryable = client ?? pool;
+  const game = await getGame(gameId, client);
   if (!game) return null;
 
   // Check if existing token is valid
   if (existingToken) {
-    const check = await pool.query(
+    const check = await queryable.query(
       `SELECT player_index FROM compost_game_tokens
        WHERE game_id = $1 AND token = $2`,
       [gameId, existingToken]
@@ -291,7 +325,7 @@ export async function claimSlot(
   if (game.phase !== "waiting") return null;
 
   // Find next unclaimed player index
-  const takenResult = await pool.query(
+  const takenResult = await queryable.query(
     `SELECT player_index FROM compost_game_tokens WHERE game_id = $1`,
     [gameId]
   );
@@ -307,7 +341,7 @@ export async function claimSlot(
   if (nextIndex === -1) return null;
 
   const token = generateToken();
-  await pool.query(
+  await queryable.query(
     `INSERT INTO compost_game_tokens (game_id, token, player_index)
      VALUES ($1, $2, $3)`,
     [gameId, token, nextIndex]
@@ -318,8 +352,8 @@ export async function claimSlot(
 }
 
 /** Find the room currently owning a credential, for durable transfer recovery. */
-export async function getGameIdForToken(token: string): Promise<string | null> {
-  const result = await pool.query(
+export async function getGameIdForToken(token: string, client: PgQueryable = pool): Promise<string | null> {
+  const result = await client.query(
     `SELECT game_id FROM compost_game_tokens WHERE token = $1 LIMIT 1`,
     [token]
   );
@@ -327,9 +361,9 @@ export async function getGameIdForToken(token: string): Promise<string | null> {
 }
 
 /** Mint the reserved, non-player token used by a new spectator-host session. */
-export async function createSpectatorHostToken(gameId: string): Promise<string> {
+export async function createSpectatorHostToken(gameId: string, client: PgQueryable = pool): Promise<string> {
   const token = generateToken();
-  await pool.query(
+  await client.query(
     `INSERT INTO compost_game_tokens (game_id, token, player_index) VALUES ($1, $2, -1)`,
     [gameId, token]
   );
@@ -344,9 +378,11 @@ export async function createSpectatorHostToken(gameId: string): Promise<string> 
  */
 export async function reorderWaitingPlayers(
   gameId: string,
-  playerIds: string[]
+  playerIds: string[],
+  heldClient?: PgClient,
 ): Promise<GameState | null> {
-  const client = await pool.connect();
+  const ownsClient = !heldClient;
+  const client = heldClient ?? await pool.connect();
   try {
     await client.query("BEGIN");
     const locked = await client.query(
@@ -436,16 +472,18 @@ export async function reorderWaitingPlayers(
     await client.query("ROLLBACK");
     throw error;
   } finally {
-    client.release();
+    if (ownsClient) client.release();
   }
 }
 
 export async function transferWaitingPlayer(
   sourceGameId: string,
   targetGameId: string,
-  playerId: string
+  playerId: string,
+  heldClient?: PgClient,
 ): Promise<{ source: GameState; target: GameState; token: string } | null> {
-  const client = await pool.connect();
+  const ownsClient = !heldClient;
+  const client = heldClient ?? await pool.connect();
   try {
     await client.query("BEGIN");
     const ids = [sourceGameId, targetGameId].sort();
@@ -582,16 +620,17 @@ export async function transferWaitingPlayer(
     await client.query("ROLLBACK");
     throw error;
   } finally {
-    client.release();
+    if (ownsClient) client.release();
   }
 }
 
 /** Look up the seat token for a given player index (host recovery). */
 export async function getTokenForPlayerIndex(
   gameId: string,
-  playerIndex: number
+  playerIndex: number,
+  client: PgQueryable = pool,
 ): Promise<string | null> {
-  const result = await pool.query(
+  const result = await client.query(
     `SELECT token FROM compost_game_tokens
      WHERE game_id = $1 AND player_index = $2`,
     [gameId, playerIndex]
@@ -601,11 +640,12 @@ export async function getTokenForPlayerIndex(
 
 export async function getPlayerIndexForToken(
   gameId: string,
-  token: string
+  token: string,
+  client?: PgQueryable,
 ): Promise<number | null> {
   const cached = tokenIndexCache.get(gameId)?.get(token);
-  if (cached !== undefined) return cached;
-  const result = await pool.query(
+  if (!client && cached !== undefined) return cached;
+  const result = await (client ?? pool).query(
     `SELECT player_index FROM compost_game_tokens
      WHERE game_id = $1 AND token = $2`,
     [gameId, token]
@@ -619,10 +659,11 @@ export async function getPlayerIndexForToken(
 
 export async function removePlayerTokenByIndex(
   gameId: string,
-  removedIndex: number
+  removedIndex: number,
+  client: PgQueryable = pool,
 ): Promise<string | null> {
   // Get the token being removed so we can send a kick event
-  const findResult = await pool.query(
+  const findResult = await client.query(
     `SELECT token FROM compost_game_tokens
      WHERE game_id = $1 AND player_index = $2`,
     [gameId, removedIndex]
@@ -630,14 +671,14 @@ export async function removePlayerTokenByIndex(
   const removedToken: string | null = findResult.rows[0]?.token ?? null;
 
   // Delete the removed player's token
-  await pool.query(
+  await client.query(
     `DELETE FROM compost_game_tokens
      WHERE game_id = $1 AND player_index = $2`,
     [gameId, removedIndex]
   );
 
   // Shift down all higher indices
-  await pool.query(
+  await client.query(
     `UPDATE compost_game_tokens
      SET player_index = player_index - 1
      WHERE game_id = $1 AND player_index > $2`,
@@ -658,9 +699,11 @@ export async function removePlayerTokenByIndex(
 
 export async function removeEventWaitingPlayer(
   gameId: string,
-  playerId: string
+  playerId: string,
+  heldClient?: PgClient,
 ): Promise<{ state: GameState; removedToken: string | null } | null> {
-  const client = await pool.connect();
+  const ownsClient = !heldClient;
+  const client = heldClient ?? await pool.connect();
   try {
     await client.query("BEGIN");
     const game = await client.query(`SELECT state FROM compost_games WHERE game_id=$1 FOR UPDATE`, [gameId]);
@@ -719,7 +762,7 @@ export async function removeEventWaitingPlayer(
     await client.query("ROLLBACK");
     throw error;
   } finally {
-    client.release();
+    if (ownsClient) client.release();
   }
 }
 
@@ -732,9 +775,11 @@ export async function kickFacilitatedPlayer(
   gameId: string,
   playerId: string,
   hostToken: string,
-  facilitatorId: string
+  facilitatorId: string,
+  heldClient?: PgClient,
 ): Promise<{ state: GameState; removedToken: string | null; active: boolean } | null> {
-  const client = await pool.connect();
+  const ownsClient = !heldClient;
+  const client = heldClient ?? await pool.connect();
   try {
     await client.query("BEGIN");
     const gameResult = await client.query(
@@ -868,7 +913,7 @@ export async function kickFacilitatedPlayer(
     await client.query("ROLLBACK");
     throw error;
   } finally {
-    client.release();
+    if (ownsClient) client.release();
   }
 }
 
@@ -915,8 +960,8 @@ export function sendRoomTransferEvent(
   clients?.delete(token);
 }
 
-export async function sendNudgeEvent(gameId: string, targetPlayerIndex: number, fromName: string): Promise<void> {
-  const result = await pool.query(
+export async function sendNudgeEvent(gameId: string, targetPlayerIndex: number, fromName: string, client: PgQueryable = pool): Promise<void> {
+  const result = await client.query(
     `SELECT token FROM compost_game_tokens WHERE game_id = $1 AND player_index = $2`,
     [gameId, targetPlayerIndex]
   );
@@ -934,10 +979,17 @@ export async function sendNudgeEvent(gameId: string, targetPlayerIndex: number, 
 export function broadcastToGame(
   gameId: string,
   state: GameState,
-  serializeFn: (state: GameState, viewerIndex?: number) => object
+  serializeFn: (state: GameState, viewerIndex?: number) => object,
+  heldClient?: PgClient,
 ): void {
-  for (const listener of gameBroadcastListeners) {
-    try { listener(gameId); } catch { /* a stream subscriber must not break gameplay broadcasts */ }
+  if (heldClient) {
+    const pending = deferredBroadcastsByClient.get(heldClient) ?? new Set<string>();
+    pending.add(gameId);
+    deferredBroadcastsByClient.set(heldClient, pending);
+  } else {
+    for (const listener of gameBroadcastListeners) {
+      try { listener(gameId); } catch { /* a stream subscriber must not break gameplay broadcasts */ }
+    }
   }
   const clients = sseClientsByToken.get(gameId);
   if (!clients || clients.size === 0) return;

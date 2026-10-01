@@ -174,9 +174,31 @@ try {
     await request(`/events/${chooseCode}/ready`, post({ token: result.json.token, ready: true }));
     await request(`/events/${chooseCode}/presence`, post({ token: result.json.token }));
   }
+  const beforeReorder = await getAsHost(`/facilitator/events/${chooseId}`);
+  const guestIds = beforeReorder.json.tables[0].players.map((player: any) => player.playerId);
+  const reordered = await request(`/games/${firstGameId}/waiting/reorder`, post({
+    token: chooseEvent.json.hostTokens[firstGameId], userToken,
+    playerIds: [...guestIds].reverse(),
+  }));
+  assert.equal(reordered.status, 200, "reorder transaction reuses the held Event game-lock client");
+  assert.deepEqual(
+    (await getAsHost(`/facilitator/events/${chooseId}`)).json.tables[0].players.map((player: any) => player.playerId),
+    [...guestIds].reverse(),
+    "participant order changes durably under the same advisory lock",
+  );
   const partialStart = await request(`/facilitator/events/${chooseId}/control`, post({ userToken, action: "start" }));
   assert.equal(partialStart.json.results[0].success, true);
   assert.equal(partialStart.json.results[1].success, false, "not-ready tables remain waiting");
+  const pausedAll = await request(`/facilitator/events/${chooseId}/control`, post({ userToken, action: "pause_all" }));
+  assert.ok(pausedAll.json.results.every((result: any) => result.success));
+  const resumedAll = await request(`/facilitator/events/${chooseId}/control`, post({ userToken, action: "resume_all" }));
+  assert.ok(resumedAll.json.results.every((result: any) => result.success));
+  const messagedAll = await request(`/facilitator/events/${chooseId}/control`, post({
+    userToken, action: "message", text: "Welcome to both tables",
+  }));
+  assert.ok(messagedAll.json.results.every((result: any) => result.success));
+  const messageDetail = await getAsHost(`/facilitator/events/${chooseId}`);
+  assert.ok(messageDetail.json.tables.every((table: any) => table.message === "Welcome to both tables"));
   const fallbackJoin = await request(`/events/${chooseCode}/join`, post({ name: "Balanced Fallback" }));
   assert.equal(fallbackJoin.status, 201, "active event accepts guests in a waiting table");
   assert.equal(fallbackJoin.json.tableNumber, 2, "choose mode without a table uses balanced available-room fallback");
@@ -243,6 +265,56 @@ try {
   }));
   assert.equal(crossEventMove.status, 409, "cross-event seat transfer is rejected");
 
+  const oppositeTransferEvent = await request("/facilitator/events", post({
+    userToken, name: "Opposite Direction Transfers", tableCount: 2,
+    tableCapacities: [2, 2], assignmentMode: "choose",
+  }));
+  const oppositeTransferId = oppositeTransferEvent.json.eventId as string;
+  const oppositeCode = (oppositeTransferEvent.json.code as string).toLowerCase();
+  const leftTableId = oppositeTransferEvent.json.tables[0].gameId as string;
+  const rightTableId = oppositeTransferEvent.json.tables[1].gameId as string;
+  eventIds.push(oppositeTransferId);
+  gameIds.push(leftTableId, rightTableId);
+  const [leftGuest, rightGuest] = await Promise.all([
+    request(`/events/${oppositeCode}/join`, post({ name: "Left Guest", tableNumber: 1 })),
+    request(`/events/${oppositeCode}/join`, post({ name: "Right Guest", tableNumber: 2 })),
+  ]);
+  assert.equal(leftGuest.status, 201);
+  assert.equal(rightGuest.status, 201);
+  const oppositeMoves = await Promise.all([
+    request(`/games/${leftTableId}/waiting/transfer`, post({
+      token: oppositeTransferEvent.json.hostTokens[leftTableId], userToken,
+      playerId: leftGuest.json.playerId, targetGameId: rightTableId,
+    })),
+    request(`/games/${rightTableId}/waiting/transfer`, post({
+      token: oppositeTransferEvent.json.hostTokens[rightTableId], userToken,
+      playerId: rightGuest.json.playerId, targetGameId: leftTableId,
+    })),
+  ]);
+  assert.deepEqual(oppositeMoves.map((result) => result.status), [200, 200],
+    "opposite-direction transfers serialize under the same sorted two-game lock order");
+  const oppositeDetail = await getAsHost(`/facilitator/events/${oppositeTransferId}`);
+  assert.deepEqual(
+    oppositeDetail.json.tables.map((table: any) => table.players.map((player: any) => player.playerName)),
+    [["Right Guest"], ["Left Guest"]],
+  );
+
+  const burstEvent = await request("/facilitator/events", post({
+    userToken, name: "Eight Table Join Burst", tableCount: 8,
+    tableCapacities: Array(8).fill(2),
+  }));
+  const burstEventId = burstEvent.json.eventId as string;
+  const burstCode = (burstEvent.json.code as string).toLowerCase();
+  eventIds.push(burstEventId);
+  gameIds.push(...burstEvent.json.tables.map((table: any) => table.gameId));
+  const burstJoins = await Promise.all(Array.from({ length: 16 }, (_, index) =>
+    request(`/events/${burstCode}/join`, post({ name: `Burst Guest ${index + 1}` })),
+  ));
+  assert.equal(burstJoins.filter((result) => result.status === 201).length, 16,
+    "16 simultaneous joins across eight tables complete without nested pool checkouts");
+  assert.equal(new Set(burstJoins.map((result) => result.json.token)).size, 16,
+    "simultaneous joins receive unique durable seat credentials");
+
   const perTableEndEvent = await request("/facilitator/events", post({
     userToken, name: "Per-table End Stays Local", tableCount: 2, tableCapacities: [2, 2],
     assignmentMode: "choose",
@@ -295,6 +367,13 @@ try {
   await request(`/events/${raceCode}/presence`, post({ token: raceJoin.json.token }));
   const readyDirectStart = await request(`/games/${raceGameId}/start`, post({ token: raceHostToken, userToken }));
   assert.equal(readyDirectStart.status, 200, "direct start succeeds only after all event guests are ready and connected");
+  const raceStateBeforeAction = (await getGame(raceGameId))!;
+  const playerAction = await request(`/games/${raceGameId}/action`, post({
+    type: "draw_card",
+    playerId: raceStateBeforeAction.players[0].id,
+    token: firstRaceGuest.json.token,
+  }));
+  assert.equal(playerAction.status, 200, "gameplay action persists using the held Event lock client");
   let directStartStatus = "";
   for (let attempt = 0; attempt < 10 && directStartStatus !== "active"; attempt++) {
     directStartStatus = (await request(`/events/${raceCode}`)).json.status;
