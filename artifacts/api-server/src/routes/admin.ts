@@ -17,6 +17,7 @@ import {
 import { finalizeCardImageOverride } from "../lib/cardSettingsStore.js";
 import { pool } from "@workspace/db";
 import { resetUserPassword } from "../lib/userStore.js";
+import { invalidateGameCaches } from "../lib/gameStore.js";
 
 const router = Router();
 
@@ -273,6 +274,7 @@ router.delete("/admin/games/:gameId", async (req, res) => {
       res.status(404).json({ error: "Game not found" });
       return;
     }
+    invalidateGameCaches(gameId);
     res.json({ success: true });
   } catch (err) {
     console.error("[admin delete game]", err);

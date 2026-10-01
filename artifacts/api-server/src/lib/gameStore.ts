@@ -7,6 +7,7 @@ import {
   rollbackDatabaseTransaction,
   unlockThenReleaseDatabaseClient,
 } from "./databaseSafeguards.js";
+import { GameStoreCache } from "./gameStoreCache.js";
 
 export type PgQueryResult = { rows: any[]; rowCount?: number | null };
 export type PgQueryable = { query: (...args: any[]) => Promise<PgQueryResult> };
@@ -17,14 +18,55 @@ const sseClientsByToken = new Map<string, Map<string, Response>>();
 
 // ── In-memory game state cache ────────────────────────────────────────────────
 // Eliminates a DB read on every action — the DB remains the durable backup.
-const gameStateCache = new Map<string, GameState>();
-
-// ── In-memory token → player-index map per game ───────────────────────────────
-// Eliminates a DB query on every SSE broadcast.
-const tokenIndexCache = new Map<string, Map<string, number>>();
+const gameStoreCache = new GameStoreCache<GameState>();
 const gameBroadcastListeners = new Set<(gameId: string) => void>();
 const deferredBroadcastsByClient = new WeakMap<PgClient, Set<string>>();
 const destroyedClients = new WeakSet<PgClient>();
+let tokenPublicationEpoch = 0;
+
+const cacheEvictionTimer = setInterval(() => {
+  gameStoreCache.evict();
+}, 15 * 60 * 1_000);
+cacheEvictionTimer.unref();
+
+/** Run one bounded eviction pass; exported so cache policy can be tested deterministically. */
+export function evictGameStoreCache(now = Date.now(), maxEntries?: number): string[] {
+  return gameStoreCache.evict(now, maxEntries);
+}
+
+/** Invalidate every process-local cache for a game after a durable deletion. */
+export function invalidateGameCaches(gameId: string): void {
+  tokenPublicationEpoch++;
+  gameStoreCache.deleteGame(gameId);
+}
+
+function recordAuthoritativeGameChange(gameId: string): void {
+  tokenPublicationEpoch++;
+  gameStoreCache.advanceGeneration(gameId);
+}
+
+function recordUncachedGameChange(gameId: string, invalidateState: boolean): void {
+  tokenPublicationEpoch++;
+  if (invalidateState) gameStoreCache.invalidateState(gameId);
+  else gameStoreCache.invalidateTokenIndex(gameId);
+}
+
+/**
+ * Token lookups may not know the game ID until after their first query. Retry
+ * once if any committed game/token mutation overlaps the complete lookup.
+ * The callback retains its supplied client, so held-client reads never acquire
+ * a nested pool connection.
+ */
+export async function readTokenSlotConsistently<T>(
+  load: () => Promise<T>,
+): Promise<T | undefined> {
+  for (let attempt = 0; attempt < 2; attempt++) {
+    const epoch = tokenPublicationEpoch;
+    const value = await load();
+    if (epoch === tokenPublicationEpoch) return value;
+  }
+  return undefined;
+}
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -69,23 +111,34 @@ export function createGameId(): string {
 export async function storeGame(state: GameState, client: PgQueryable = pool): Promise<void> {
   // Stamp the finish time once, regardless of how the game ended (win or
   // manual end), so post-session summaries can show duration.
-  if (state.phase === "game_over" && !state.endedAt) {
-    state.endedAt = Date.now();
+  const snapshot = JSON.parse(JSON.stringify(state)) as GameState;
+  if (snapshot.phase === "game_over" && !snapshot.endedAt) {
+    snapshot.endedAt = Date.now();
   }
-  gameStateCache.set(state.gameId, state);
   await client.query(
     `INSERT INTO compost_games (game_id, state, updated_at)
      VALUES ($1, $2, NOW())
      ON CONFLICT (game_id) DO UPDATE
        SET state = EXCLUDED.state,
            updated_at = NOW()`,
-    [state.gameId, JSON.stringify(state)]
+    [snapshot.gameId, JSON.stringify(snapshot)]
   );
+  // A supplied client may be inside a transaction that this function does not
+  // own. Drop the old snapshot rather than exposing an uncommitted write.
+  if (client === pool) {
+    recordAuthoritativeGameChange(snapshot.gameId);
+    gameStoreCache.setState(snapshot);
+  }
+  else {
+    recordUncachedGameChange(snapshot.gameId, true);
+    if (snapshot.eventId) gameStoreCache.markEventMembership(snapshot.gameId, true);
+  }
 }
 
 /** Keep the durable transaction's committed state visible to normal game readers. */
 export function updateGameStateCache(state: GameState): void {
-  gameStateCache.set(state.gameId, state);
+  recordAuthoritativeGameChange(state.gameId);
+  gameStoreCache.setState(state);
 }
 
 export function onGameBroadcast(listener: (gameId: string) => void): () => void {
@@ -94,16 +147,73 @@ export function onGameBroadcast(listener: (gameId: string) => void): () => void 
 }
 
 export async function getGame(gameId: string, client?: PgQueryable): Promise<GameState | undefined> {
-  if (!client && gameStateCache.has(gameId)) return gameStateCache.get(gameId);
-  const result = await (client ?? pool).query(
-    `SELECT state FROM compost_games WHERE game_id = $1`,
-    [gameId]
-  );
-  if (result.rows.length === 0) return undefined;
-  const row = result.rows[0];
-  const state = (typeof row.state === "string" ? JSON.parse(row.state) : row.state) as GameState;
-  gameStateCache.set(gameId, state);
-  return state;
+  const queryable = client ?? pool;
+  const canCache = queryable === pool;
+  if (canCache) {
+    const cached = gameStoreCache.getState(gameId);
+    if (cached) {
+      if (!cached.eventId && !gameStoreCache.knowsEventMembership(gameId)) {
+        const read = gameStoreCache.beginRead(gameId);
+        try {
+          const isEventMember = await isGameEventMember(gameId, queryable);
+          gameStoreCache.publishIfCurrent(read, () =>
+            gameStoreCache.markEventMembership(gameId, isEventMember));
+        } finally {
+          gameStoreCache.finishRead(read);
+        }
+      }
+      return cached;
+    }
+  }
+  const read = canCache ? gameStoreCache.beginRead(gameId) : undefined;
+  try {
+    const result = await queryable.query(
+      `SELECT state FROM compost_games WHERE game_id = $1`,
+      [gameId]
+    );
+    if (result.rows.length === 0) {
+      if (read) gameStoreCache.clearGameIfCurrent(read);
+      return undefined;
+    }
+    const row = result.rows[0];
+    const state = JSON.parse(JSON.stringify(
+      (typeof row.state === "string" ? JSON.parse(row.state) : row.state) as GameState,
+    )) as GameState;
+    if (read) {
+      const isEventMember = state.eventId ? true : await isGameEventMember(gameId, queryable);
+      gameStoreCache.publishIfCurrent(read, () =>
+        gameStoreCache.setState(state, Date.now(), isEventMember));
+    }
+    return JSON.parse(JSON.stringify(state)) as GameState;
+  } finally {
+    if (read) gameStoreCache.finishRead(read);
+  }
+}
+
+async function isGameEventMember(gameId: string, client: PgQueryable): Promise<boolean> {
+  try {
+    const result = await client.query(
+      `SELECT 1 FROM compost_event_tables WHERE game_id=$1 LIMIT 1`,
+      [gameId],
+    );
+    return result.rows.length > 0;
+  } catch (error) {
+    if ((error as { code?: string }).code === "42P01") return false;
+    throw error;
+  }
+}
+
+async function ensureCachedEventMembership(gameId: string, client: PgQueryable): Promise<void> {
+  if (!gameStoreCache.knowsEventMembership(gameId)) {
+    const read = gameStoreCache.beginRead(gameId);
+    try {
+      const isEventMember = await isGameEventMember(gameId, client);
+      gameStoreCache.publishIfCurrent(read, () =>
+        gameStoreCache.markEventMembership(gameId, isEventMember));
+    } finally {
+      gameStoreCache.finishRead(read);
+    }
+  }
 }
 
 async function eventLookupInTransaction<T>(client: PgClient, query: () => Promise<T>): Promise<T | null> {
@@ -120,27 +230,46 @@ async function eventLookupInTransaction<T>(client: PgClient, query: () => Promis
   }
 }
 
-export async function reloadGameState(gameId: string, client: PgQueryable = pool): Promise<GameState | undefined> {
-  const result = await client.query(`SELECT state FROM compost_games WHERE game_id=$1`, [gameId]);
-  if (!result.rows.length) {
-    gameStateCache.delete(gameId);
-    tokenIndexCache.delete(gameId);
-    return undefined;
+export async function reloadGameState(
+  gameId: string,
+  client: PgQueryable = pool,
+  options: { cacheGlobal?: boolean } = {},
+): Promise<GameState | undefined> {
+  const canCache = client === pool || options.cacheGlobal === true;
+  const read = canCache ? gameStoreCache.beginRead(gameId) : undefined;
+  try {
+    const result = await client.query(`SELECT state FROM compost_games WHERE game_id=$1`, [gameId]);
+    if (!result.rows.length) {
+      if (read) gameStoreCache.clearGameIfCurrent(read);
+      return undefined;
+    }
+    const value = result.rows[0].state;
+    const state = JSON.parse(JSON.stringify(
+      (typeof value === "string" ? JSON.parse(value) : value) as GameState,
+    )) as GameState;
+    if (read) {
+      const isEventMember = state.eventId ? true : await isGameEventMember(gameId, client);
+      const tokenRows = await client.query(`SELECT token,player_index FROM compost_game_tokens WHERE game_id=$1`, [gameId]);
+      const tokenIndex = new Map(tokenRows.rows.map((row: { token: string; player_index: number | string }) =>
+        [row.token, Number(row.player_index)]));
+      gameStoreCache.publishIfCurrent(read, () => {
+        gameStoreCache.setState(state, Date.now(), isEventMember);
+        gameStoreCache.setTokenIndex(gameId, tokenIndex);
+      });
+    }
+    return JSON.parse(JSON.stringify(state)) as GameState;
+  } finally {
+    if (read) gameStoreCache.finishRead(read);
   }
-  const value = result.rows[0].state;
-  const state = (typeof value === "string" ? JSON.parse(value) : value) as GameState;
-  gameStateCache.set(gameId, state);
-  const tokenRows = await client.query(`SELECT token,player_index FROM compost_game_tokens WHERE game_id=$1`, [gameId]);
-  tokenIndexCache.set(gameId, new Map(tokenRows.rows.map((row: { token: string; player_index: number | string }) =>
-    [row.token, Number(row.player_index)])));
-  return state;
 }
 
 export async function acquireGameMutationLock(gameId: string): Promise<PgClient> {
   const client = await connectDatabaseClient();
   try {
     await client.query(`SELECT pg_advisory_lock(7419, hashtext($1))`, [gameId]);
-    await reloadGameState(gameId, client);
+    // This client owns a session advisory lock, not an open transaction; its
+    // reads reflect committed state and may safely refresh the process cache.
+    await reloadGameState(gameId, client, { cacheGlobal: true });
     return client;
   } catch (error) {
     let unlockError: unknown;
@@ -247,7 +376,9 @@ export async function withGameMutationLocks<T>(
       );
     }
     for (const gameId of sortedGameIds) {
-      await reloadGameState(gameId, client);
+      // Session locks are held outside a transaction, so this snapshot is
+      // durable. Xact-lock callers must use reloadGameState's safe default.
+      await reloadGameState(gameId, client, { cacheGlobal: true });
     }
     actionStarted = true;
     return await action(client);
@@ -443,29 +574,45 @@ export async function claimSlot(
      VALUES ($1, $2, $3)`,
     [gameId, token, nextIndex]
   );
-  if (!tokenIndexCache.has(gameId)) tokenIndexCache.set(gameId, new Map());
-  tokenIndexCache.get(gameId)!.set(token, nextIndex);
+  if (queryable === pool) recordAuthoritativeGameChange(gameId);
+  if (queryable === pool) {
+    const nextIndexMap = new Map(gameStoreCache.getTokenIndex(gameId) ?? []);
+    nextIndexMap.set(token, nextIndex);
+    gameStoreCache.setTokenIndex(gameId, nextIndexMap);
+  } else {
+    recordUncachedGameChange(gameId, false);
+  }
   return { token, playerIndex: nextIndex };
 }
 
 /** Find the room currently owning a credential, for durable transfer recovery. */
 export async function getGameIdForToken(token: string, client: PgQueryable = pool): Promise<string | null> {
-  const result = await client.query(
-    `SELECT game_id FROM compost_game_tokens WHERE token = $1 LIMIT 1`,
-    [token]
-  );
-  return (result.rows[0]?.game_id as string | undefined) ?? null;
+  const gameId = await readTokenSlotConsistently(async () => {
+    const result = await client.query(
+      `SELECT game_id FROM compost_game_tokens WHERE token = $1 LIMIT 1`,
+      [token]
+    );
+    return (result.rows[0]?.game_id as string | undefined) ?? null;
+  });
+  return gameId ?? null;
 }
 
 /** Mint the reserved, non-player token used by a new spectator-host session. */
 export async function createSpectatorHostToken(gameId: string, client: PgQueryable = pool): Promise<string> {
+  if (client === pool) await ensureCachedEventMembership(gameId, client);
   const token = generateToken();
   await client.query(
     `INSERT INTO compost_game_tokens (game_id, token, player_index) VALUES ($1, $2, -1)`,
     [gameId, token]
   );
-  if (!tokenIndexCache.has(gameId)) tokenIndexCache.set(gameId, new Map());
-  tokenIndexCache.get(gameId)!.set(token, -1);
+  if (client === pool) recordAuthoritativeGameChange(gameId);
+  if (client === pool) {
+    const nextIndexMap = new Map(gameStoreCache.getTokenIndex(gameId) ?? []);
+    nextIndexMap.set(token, -1);
+    gameStoreCache.setTokenIndex(gameId, nextIndexMap);
+  } else {
+    recordUncachedGameChange(gameId, false);
+  }
   return token;
 }
 
@@ -554,7 +701,9 @@ export async function reorderWaitingPlayers(
     commitAttempted = true;
     await client.query("COMMIT");
     committed = true;
-    gameStateCache.set(gameId, nextState);
+    recordAuthoritativeGameChange(gameId);
+    gameStoreCache.setState(nextState);
+    if (eventId) gameStoreCache.markEventMembership(gameId, true);
     const nextMap = new Map<string, number>();
     for (const row of tokenRows.rows) {
       const index = Number(row.player_index);
@@ -567,7 +716,7 @@ export async function reorderWaitingPlayers(
         if (newIndex >= guestOffset) nextMap.set(row.token, newIndex);
       }
     }
-    tokenIndexCache.set(gameId, nextMap);
+    gameStoreCache.setTokenIndex(gameId, nextMap);
     return nextState;
   } catch (error) {
     if (committed) throw safelyClassifyFailedTransaction(error, false);
@@ -712,15 +861,21 @@ export async function transferWaitingPlayer(
     commitAttempted = true;
     await client.query("COMMIT");
     committed = true;
-    gameStateCache.set(sourceGameId, nextSource);
-    gameStateCache.set(targetGameId, nextTarget);
-    const sourceMap = tokenIndexCache.get(sourceGameId) ?? new Map<string, number>();
+    recordAuthoritativeGameChange(sourceGameId);
+    recordAuthoritativeGameChange(targetGameId);
+    gameStoreCache.setState(nextSource);
+    gameStoreCache.setState(nextTarget);
+    if (eventMembership) {
+      gameStoreCache.markEventMembership(sourceGameId, true);
+      gameStoreCache.markEventMembership(targetGameId, true);
+    }
+    const sourceMap = new Map(gameStoreCache.getTokenIndex(sourceGameId) ?? []);
     sourceMap.delete(movedToken);
     for (const [key, index] of sourceMap) if (index > playerIndex) sourceMap.set(key, index - 1);
-    tokenIndexCache.set(sourceGameId, sourceMap);
-    const targetMap = tokenIndexCache.get(targetGameId) ?? new Map<string, number>();
+    gameStoreCache.setTokenIndex(sourceGameId, sourceMap);
+    const targetMap = new Map(gameStoreCache.getTokenIndex(targetGameId) ?? []);
     targetMap.set(movedToken, target.players.length);
-    tokenIndexCache.set(targetGameId, targetMap);
+    gameStoreCache.setTokenIndex(targetGameId, targetMap);
     return { source: nextSource, target: nextTarget, token: movedToken };
   } catch (error) {
     if (committed) throw safelyClassifyFailedTransaction(error, false);
@@ -750,18 +905,34 @@ export async function getPlayerIndexForToken(
   token: string,
   client?: PgQueryable,
 ): Promise<number | null> {
-  const cached = tokenIndexCache.get(gameId)?.get(token);
-  if (!client && cached !== undefined) return cached;
-  const result = await (client ?? pool).query(
-    `SELECT player_index FROM compost_game_tokens
-     WHERE game_id = $1 AND token = $2`,
-    [gameId, token]
-  );
-  if (result.rows.length === 0) return null;
-  const playerIndex = result.rows[0].player_index as number;
-  if (!tokenIndexCache.has(gameId)) tokenIndexCache.set(gameId, new Map());
-  tokenIndexCache.get(gameId)!.set(token, playerIndex);
-  return playerIndex;
+  const queryable = client ?? pool;
+  const canCache = queryable === pool;
+  const cached = canCache ? gameStoreCache.getTokenIndex(gameId)?.get(token) : undefined;
+  if (cached !== undefined) return cached;
+  const read = canCache ? gameStoreCache.beginRead(gameId) : undefined;
+  try {
+    const result = await queryable.query(
+      `SELECT player_index FROM compost_game_tokens
+       WHERE game_id = $1 AND token = $2`,
+      [gameId, token]
+    );
+    if (result.rows.length === 0) return null;
+    const playerIndex = Number(result.rows[0].player_index);
+    if (read) {
+      const eventMembership = gameStoreCache.knowsEventMembership(gameId)
+        ? undefined
+        : await isGameEventMember(gameId, queryable);
+      gameStoreCache.publishIfCurrent(read, () => {
+        if (eventMembership !== undefined) gameStoreCache.markEventMembership(gameId, eventMembership);
+        const nextIndexMap = new Map(gameStoreCache.getTokenIndex(gameId) ?? []);
+        nextIndexMap.set(token, playerIndex);
+        gameStoreCache.setTokenIndex(gameId, nextIndexMap);
+      });
+    }
+    return playerIndex;
+  } finally {
+    if (read) gameStoreCache.finishRead(read);
+  }
 }
 
 export async function removePlayerTokenByIndex(
@@ -777,28 +948,35 @@ export async function removePlayerTokenByIndex(
   );
   const removedToken: string | null = findResult.rows[0]?.token ?? null;
 
-  // Delete the removed player's token
-  await client.query(
-    `DELETE FROM compost_game_tokens
-     WHERE game_id = $1 AND player_index = $2`,
-    [gameId, removedIndex]
-  );
+  try {
+    await client.query(
+      `DELETE FROM compost_game_tokens
+       WHERE game_id = $1 AND player_index = $2`,
+      [gameId, removedIndex]
+    );
 
-  // Shift down all higher indices
-  await client.query(
-    `UPDATE compost_game_tokens
-     SET player_index = player_index - 1
-     WHERE game_id = $1 AND player_index > $2`,
-    [gameId, removedIndex]
-  );
+    await client.query(
+      `UPDATE compost_game_tokens
+       SET player_index = player_index - 1
+       WHERE game_id = $1 AND player_index > $2`,
+      [gameId, removedIndex]
+    );
+  } catch (error) {
+    recordUncachedGameChange(gameId, false);
+    throw error;
+  }
 
-  // Update in-memory token cache: remove the token, shift higher indices down
-  const tokenMap = tokenIndexCache.get(gameId);
-  if (tokenMap) {
+  // Mutate a private copy only after every durable statement has succeeded.
+  if (client !== pool) {
+    recordUncachedGameChange(gameId, false);
+  } else {
+    recordAuthoritativeGameChange(gameId);
+    const tokenMap = new Map(gameStoreCache.getTokenIndex(gameId) ?? []);
     if (removedToken) tokenMap.delete(removedToken);
     for (const [tok, idx] of tokenMap) {
       if (idx > removedIndex) tokenMap.set(tok, idx - 1);
     }
+    gameStoreCache.setTokenIndex(gameId, tokenMap);
   }
 
   return removedToken;
@@ -862,11 +1040,14 @@ export async function removeEventWaitingPlayer(
     commitAttempted = true;
     await client.query("COMMIT");
     committed = true;
-    gameStateCache.set(gameId, nextState);
-    const tokenMap = tokenIndexCache.get(gameId);
+    recordAuthoritativeGameChange(gameId);
+    gameStoreCache.setState(nextState);
+    gameStoreCache.markEventMembership(gameId, true);
+    const tokenMap = new Map(gameStoreCache.getTokenIndex(gameId) ?? []);
     if (tokenMap) {
       if (tokenRow) tokenMap.delete(tokenRow.token);
       for (const [token, index] of tokenMap) if (index > removedIndex) tokenMap.set(token, index - 1);
+      gameStoreCache.setTokenIndex(gameId, tokenMap);
     }
     return { state: nextState, removedToken: (tokenRow?.token as string | undefined) ?? null };
   } catch (error) {
@@ -1014,8 +1195,10 @@ export async function kickFacilitatedPlayer(
     await client.query("COMMIT");
     committed = true;
 
-    gameStateCache.set(gameId, nextState);
-    const tokenMap = tokenIndexCache.get(gameId);
+    recordAuthoritativeGameChange(gameId);
+    gameStoreCache.setState(nextState);
+    if (eventId) gameStoreCache.markEventMembership(gameId, true);
+    const tokenMap = new Map(gameStoreCache.getTokenIndex(gameId) ?? []);
     if (tokenMap) {
       if (removedToken) tokenMap.delete(removedToken);
       if (!active) {
@@ -1023,6 +1206,7 @@ export async function kickFacilitatedPlayer(
           if (index > removedIndex) tokenMap.set(token, index - 1);
         }
       }
+      gameStoreCache.setTokenIndex(gameId, tokenMap);
     }
     return { state: nextState, removedToken, active };
   } catch (error) {
@@ -1111,7 +1295,7 @@ export function broadcastToGame(
   const clients = sseClientsByToken.get(gameId);
   if (!clients || clients.size === 0) return;
 
-  const tokenMap = tokenIndexCache.get(gameId);
+  const tokenMap = gameStoreCache.getTokenIndex(gameId);
   for (const [token, res] of clients) {
     const playerIndex = tokenMap?.get(token);
     const payload = serializeFn(state, playerIndex);

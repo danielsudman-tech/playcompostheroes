@@ -16,7 +16,8 @@ import {
 import { WIN_FUNCTIONS } from "../lib/cards.js";
 import {
   broadcastToGame, createGameId, getEventForGame, getGame,
-  isEventGameReadyToStart, onGameBroadcast, updateGameStateCache, withGameMutationLocks, withClientTransaction,
+  isEventGameReadyToStart, readTokenSlotConsistently,
+  onGameBroadcast, updateGameStateCache, withGameMutationLocks, withClientTransaction,
   type PgClient, type PgQueryable,
 } from "../lib/gameStore.js";
 import { extractBearerToken, getUserByToken, isApprovedFacilitator } from "../lib/userStore.js";
@@ -707,21 +708,24 @@ router.post("/events/:code/join", async (req, res): Promise<void> => {
 
 async function resolveEventSeat(code: string, token: unknown, client: PgQueryable = pool) {
   if (typeof token !== "string" || !token) return null;
-  const row = (await client.query(
-    `SELECT e.id AS event_id,e.status AS event_status,t.game_id,t.table_number,tok.player_index
-       FROM compost_events e JOIN compost_event_tables t ON t.event_id=e.id
-       JOIN compost_game_tokens tok ON tok.game_id=t.game_id
-       WHERE e.code=$1 AND tok.token=$2`, [normalizeCode(code), token],
-  )).rows[0];
-  if (!row || Number(row.player_index) < 0) return null;
-  const state = await getGame(row.game_id, client);
-  const player = state?.players[Number(row.player_index)];
-  if (!player) return null;
-  const seat = await client.query(
-    `SELECT 1 FROM compost_event_seats WHERE game_id=$1 AND player_id=$2`, [row.game_id, player.id],
-  );
-  if (!seat.rows.length) return null;
-  return { ...row, player_id: player.id, token, playerIndex: Number(row.player_index) };
+  const slot = await readTokenSlotConsistently(async () => {
+    const row = (await client.query(
+      `SELECT e.id AS event_id,e.status AS event_status,t.game_id,t.table_number,tok.player_index
+         FROM compost_events e JOIN compost_event_tables t ON t.event_id=e.id
+         JOIN compost_game_tokens tok ON tok.game_id=t.game_id
+         WHERE e.code=$1 AND tok.token=$2`, [normalizeCode(code), token],
+    )).rows[0];
+    if (!row || Number(row.player_index) < 0) return null;
+    const state = await getGame(row.game_id, client);
+    const player = state?.players[Number(row.player_index)];
+    if (!player) return null;
+    const seat = await client.query(
+      `SELECT 1 FROM compost_event_seats WHERE game_id=$1 AND player_id=$2`, [row.game_id, player.id],
+    );
+    if (!seat.rows.length) return null;
+    return { ...row, player_id: player.id, token, playerIndex: Number(row.player_index) };
+  });
+  return slot ?? null;
 }
 
 type EventReadyResult =
