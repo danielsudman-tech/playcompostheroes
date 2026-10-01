@@ -1,11 +1,11 @@
 import { useEffect, useState } from "react";
 import { useLocation, useParams } from "wouter";
-import { ArrowLeft, Check, Clock3, Copy, ExternalLink, HelpCircle, Link2, Megaphone, Pause, Play, Radio, Send, Settings2, ShieldAlert, Users, WifiOff } from "lucide-react";
+import { ArrowLeft, Check, Clock3, Copy, ExternalLink, HelpCircle, Link2, Megaphone, Pause, Play, Radio, Send, Settings2, ShieldAlert, Trash2, Users, WifiOff } from "lucide-react";
 import { recoverHostToken } from "@workspace/api-client-react";
 import { getStoredToken, storeToken } from "@/hooks/use-game";
 import { useToast } from "@/hooks/use-toast";
 import { useCurrentUser } from "@/components/AppGate";
-import { type EventTable, useEvent, useEventControl, useEventStream, useTableControl, useUpdateEvent, userToken } from "@/hooks/use-events";
+import { type EventTable, useDeleteEvent, useEvent, useEventControl, useEventStream, useTableControl, useUpdateEvent, userToken } from "@/hooks/use-events";
 
 type AttentionIssue = { table: EventTable; rank: number; title: string; context: string; elapsed?: string };
 function elapsedSince(timestamp: unknown): string | undefined {
@@ -67,15 +67,17 @@ export default function EventControl() {
   const [, navigate] = useLocation();
   const user = useCurrentUser();
   const { toast } = useToast();
-  const { data: event, isLoading, isError, refetch } = useEvent(id);
+  const { data: event, isLoading, isError, error, refetch } = useEvent(id);
   const live = useEventStream(id);
   const control = useEventControl(id);
   const tableControl = useTableControl(id);
   const update = useUpdateEvent(id);
+  const deletion = useDeleteEvent(id);
   const [message, setMessage] = useState("");
   const [target, setTarget] = useState<EventTable | null>(null);
   const [tableMessage, setTableMessage] = useState("");
   const [confirm, setConfirm] = useState<"start" | "pause" | "resume" | "end" | null>(null);
+  const [confirmDelete, setConfirmDelete] = useState(false);
   const [settings, setSettings] = useState(false);
   const [name, setName] = useState("");
   const [threshold, setThreshold] = useState(2);
@@ -116,7 +118,7 @@ export default function EventControl() {
   };
   if (user?.role !== "facilitator") return <main className="event-shell grid place-items-center p-6"><div className="event-panel p-8 max-w-md text-center"><h1 className="text-2xl font-display">Host access needed</h1><p className="text-sm text-muted-foreground mt-2">Sign in with the approved facilitator account for this event.</p><button className="event-button event-button-soft mt-5" onClick={() => navigate("/facilitator")}>Back to facilitator</button></div></main>;
   if (isLoading) return <main className="event-shell p-6"><div className="max-w-7xl mx-auto space-y-6"><div className="event-skeleton h-20 w-2/3" /><div className="event-skeleton h-40 w-full" /><div className="grid md:grid-cols-3 gap-4">{[1, 2, 3].map(n => <div className="event-skeleton h-52" key={n} />)}</div></div></main>;
-  if (isError || !event) return <main className="event-shell grid place-items-center p-6"><div className="event-panel p-8 text-center"><ShieldAlert className="mx-auto text-destructive" /><h1 className="text-2xl font-display mt-3">We couldn't open this event</h1><button className="event-button event-button-primary mt-5" onClick={() => refetch()}>Try again</button></div></main>;
+  if (isError || !event) return <main className="event-shell grid place-items-center p-6"><div className="event-panel p-8 text-center"><ShieldAlert className="mx-auto text-destructive" /><h1 className="text-2xl font-display mt-3">{(error as { status?: number } | null)?.status === 404 ? "This event has been removed" : "We couldn't open this event"}</h1><button className="event-button event-button-primary mt-5" onClick={() => navigate("/facilitator")}>Back to events</button></div></main>;
   const tables = [...(event.tables ?? [])].sort((a, b) => urgency(a, threshold).rank - urgency(b, threshold).rank || (a.tableNumber ?? 0) - (b.tableNumber ?? 0));
   const issues = tables.flatMap(table => attentionIssues(table, threshold)).sort((a, b) => a.rank - b.rank || (a.table.tableNumber ?? 0) - (b.table.tableNumber ?? 0));
   const guests = tables.reduce((sum, t) => sum + (t.playerCount ?? t.seats?.length ?? t.players?.length ?? 0), 0);
@@ -132,6 +134,7 @@ export default function EventControl() {
         <div className="flex flex-wrap gap-2">
           <button className="event-button event-button-outline" disabled={eventClosing} data-testid="button-edit-event" onClick={() => setSettings(!settings)}><Settings2 size={15} /> Settings</button>
           <button className="event-button event-button-primary" data-testid="button-copy-event-link" onClick={() => copy(shareLink)}>{copied ? <Check size={16} /> : <Link2 size={16} />} Copy guest link</button>
+          {event.status === "completed" && <button className="event-button event-button-warn" data-testid="button-delete-completed-event" onClick={() => setConfirmDelete(true)}><Trash2 size={15} /> Delete event</button>}
         </div>
       </section>
       {settings && <form className="event-panel p-5 flex flex-wrap gap-3 items-end" onSubmit={e => { e.preventDefault(); update.mutate({ name: name.trim(), idleThresholdMinutes: threshold, triviaEnabled }, { onSuccess: () => { setSettings(false); toast({ title: "Event settings saved" }); }, onError: err => toast({ title: "Couldn't save settings", description: err.message, variant: "destructive" }) }); }}>
@@ -199,9 +202,10 @@ export default function EventControl() {
       </section>
       {tables.length === 0 && <div className="event-panel text-center p-10"><HelpCircle className="mx-auto text-primary mb-3" /><p className="font-display text-xl">Tables are being prepared</p><button className="event-button event-button-soft mt-4" onClick={() => refetch()}>Check again</button></div>}
     </div>
-    {(confirm || target) && <div className="fixed inset-0 z-50 bg-[#26392d]/50 flex items-center justify-center p-4" onMouseDown={e => { if (e.target === e.currentTarget) { setConfirm(null); setTarget(null); } }}>
-      <div className="event-panel w-full max-w-md p-6 shadow-2xl" role="dialog" aria-modal="true" aria-label={confirm ? `Confirm ${confirm}` : "Message table"}>
-        {confirm ? <><p className="event-kicker">Confirm action</p><h2 className="font-display text-3xl mt-2">{confirm === "end" ? event.status === "ending" ? "Retry ending this event?" : "End this event?" : confirm === "start" ? "Start ready tables?" : `${confirm === "pause" ? "Pause" : "Resume"} every table?`}</h2><p className="text-sm text-[#71826a] mt-2">{confirm === "end" ? event.status === "ending" ? "Some tables may still be closing. Retry the end action to finish them." : "This ends play for every table. This cannot be undone." : confirm === "start" ? "Tables without enough ready guests may not start. Any failed tables will be listed so you can help them." : "Each table will be updated. If one fails, you can retry it from its card."}</p><div className="flex justify-end gap-2 mt-6"><button className="event-button event-button-outline" onClick={() => setConfirm(null)}>{event.status === "ending" ? "Cancel" : "Keep playing"}</button><button className={`event-button ${confirm === "end" ? "event-button-warn" : "event-button-primary"}`} disabled={control.isPending || event.status === "completed" || (event.status === "ending" && confirm !== "end")} onClick={() => sendControl(confirm)} data-testid="button-confirm-event-control">{confirm === "start" ? "Start ready tables" : confirm === "end" && event.status === "ending" ? "Retry end event" : `Yes, ${confirm} all`}</button></div></>
+    {(confirm || target || confirmDelete) && <div className="fixed inset-0 z-50 bg-[#26392d]/50 flex items-center justify-center p-4" onMouseDown={e => { if (e.target === e.currentTarget) { setConfirm(null); setTarget(null); setConfirmDelete(false); } }}>
+      <div className="event-panel w-full max-w-md p-6 shadow-2xl" role="dialog" aria-modal="true" aria-label={confirmDelete ? "Confirm permanent event deletion" : confirm ? `Confirm ${confirm}` : "Message table"}>
+        {confirmDelete ? <><p className="event-kicker text-[#a65937]">Permanent action</p><h2 className="font-display text-3xl mt-2">Delete this event?</h2><p className="text-sm text-[#71826a] mt-2">This permanently deletes <strong>{event.name}</strong>, its completed tables, guest seats, and seat tokens. This cannot be undone.</p><p className="text-sm font-extrabold text-[#a65937] mt-3">The event and all of its table data will be removed for everyone.</p><div className="flex justify-end gap-2 mt-6"><button className="event-button event-button-outline" onClick={() => setConfirmDelete(false)} disabled={deletion.isPending}>Keep event</button><button className="event-button event-button-warn" disabled={deletion.isPending || event.status !== "completed"} onClick={() => deletion.mutate(undefined, { onSuccess: () => { toast({ title: "Event permanently deleted" }); navigate("/facilitator"); }, onError: err => toast({ title: "Event wasn't deleted", description: err.message, variant: "destructive" }) })} data-testid="button-confirm-delete-event">{deletion.isPending ? "Deleting event…" : "Permanently delete event"}</button></div></>
+          : confirm ? <><p className="event-kicker">Confirm action</p><h2 className="font-display text-3xl mt-2">{confirm === "end" ? event.status === "ending" ? "Retry ending this event?" : "End this event?" : confirm === "start" ? "Start ready tables?" : `${confirm === "pause" ? "Pause" : "Resume"} every table?`}</h2><p className="text-sm text-[#71826a] mt-2">{confirm === "end" ? event.status === "ending" ? "Some tables may still be closing. Retry the end action to finish them." : "This ends play for every table. This cannot be undone." : confirm === "start" ? "Tables without enough ready guests may not start. Any failed tables will be listed so you can help them." : "Each table will be updated. If one fails, you can retry it from its card."}</p><div className="flex justify-end gap-2 mt-6"><button className="event-button event-button-outline" onClick={() => setConfirm(null)}>{event.status === "ending" ? "Cancel" : "Keep playing"}</button><button className={`event-button ${confirm === "end" ? "event-button-warn" : "event-button-primary"}`} disabled={control.isPending || event.status === "completed" || (event.status === "ending" && confirm !== "end")} onClick={() => sendControl(confirm)} data-testid="button-confirm-event-control">{confirm === "start" ? "Start ready tables" : confirm === "end" && event.status === "ending" ? "Retry end event" : `Yes, ${confirm} all`}</button></div></>
           : target && <form onSubmit={e => { e.preventDefault(); if (tableMessage.trim() && !eventClosing && target.phase !== "game_over") sendTable(target, "message", tableMessage.trim()); }}><p className="event-kicker">Only this table</p><h2 className="font-display text-3xl mt-2">Message {target.label ?? target.name ?? `Table ${target.tableNumber ?? ""}`}</h2><textarea className="event-input mt-5 py-3 min-h-28" maxLength={300} autoFocus disabled={eventClosing} value={tableMessage} onChange={e => setTableMessage(e.target.value)} placeholder="Write a note for this table…" data-testid="input-table-message" /><div className="flex justify-end gap-2 mt-4"><button type="button" className="event-button event-button-outline" onClick={() => setTarget(null)}>Cancel</button><button className="event-button event-button-primary" disabled={!tableMessage.trim() || tableControl.isPending || eventClosing || target.phase === "game_over"} data-testid="button-send-table-message"><Send size={15} /> Send note</button></div></form>}
       </div>
     </div>}

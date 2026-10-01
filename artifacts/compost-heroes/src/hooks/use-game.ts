@@ -206,7 +206,13 @@ export function useGameState(gameId: string | null, token?: string | null) {
         ? `/api/games/${gameId}?token=${encodeURIComponent(token)}`
         : `/api/games/${gameId}`;
       const r = await fetch(url);
-      if (!r.ok) throw new Error("Failed to fetch game state");
+      if (!r.ok) {
+        const responseData = await r.json().catch(() => ({}));
+        const message = responseData && typeof responseData.error === "string"
+          ? responseData.error
+          : "Failed to fetch game state";
+        throw Object.assign(new Error(message), { status: r.status });
+      }
       return r.json() as Promise<GameState>;
     },
     enabled: !!gameId,

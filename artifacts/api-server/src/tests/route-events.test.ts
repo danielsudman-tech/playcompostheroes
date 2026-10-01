@@ -3,7 +3,11 @@ import { randomUUID } from "node:crypto";
 import { pool } from "@workspace/db";
 import app from "../app.js";
 import { runStartupMigrations } from "../lib/analyticsStore.js";
-import { getGame, storeGame, transferWaitingPlayer } from "../lib/gameStore.js";
+import {
+  beginEventTriviaRead, finishEventTriviaRead, getEventTriviaEnabled,
+  setEventTriviaEnabled, setEventTriviaEnabledIfCurrent,
+} from "../lib/eventTriviaSettings.js";
+import { getGame, getGameIdForToken, storeGame, transferWaitingPlayer } from "../lib/gameStore.js";
 
 const server = app.listen(0);
 const base = `http://127.0.0.1:${(server.address() as { port: number }).port}/api`;
@@ -25,6 +29,15 @@ async function request(path: string, init?: RequestInit) {
 async function getAsHost(path: string, token = userToken) {
   return request(path, { headers: { Authorization: `Bearer ${token}` } });
 }
+async function deleteAsHost(path: string, token = userToken) {
+  const response = await fetch(`${base}${path}`, {
+    method: "DELETE",
+    headers: { Authorization: `Bearer ${token}` },
+    signal: AbortSignal.timeout(20_000),
+  });
+  const text = await response.text();
+  return { status: response.status, json: text ? JSON.parse(text) as any : null };
+}
 function post(body: unknown): RequestInit {
   return { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) };
 }
@@ -44,6 +57,21 @@ async function readSseSnapshot(reader: ReadableStreamDefaultReader<Uint8Array>):
     const data = buffered.split("\n\n", 1)[0].split("\n").find((line) => line.startsWith("data: "));
     if (!data) throw new Error("Event game SSE snapshot did not contain data");
     return JSON.parse(data.slice(6));
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+async function readSseFrame(reader: ReadableStreamDefaultReader<Uint8Array>): Promise<string> {
+  const decoder = new TextDecoder();
+  let buffered = "";
+  const timeout = setTimeout(() => { void reader.cancel(); }, 10_000);
+  try {
+    while (!buffered.includes("\n\n")) {
+      const result = await reader.read();
+      if (result.done) throw new Error("Event stream closed before its terminal frame");
+      buffered += decoder.decode(result.value, { stream: true });
+    }
+    return buffered.split("\n\n", 1)[0];
   } finally {
     clearTimeout(timeout);
   }
@@ -672,6 +700,124 @@ try {
   const raceSeatCount = await pool.query(`SELECT COUNT(*) FROM compost_event_seats WHERE event_id=$1`, [raceId]);
   assert.equal(Number(raceSeatCount.rows[0].count), (await getGame(raceGameId))?.players.length,
     "event close leaves joined state and event seat records consistent");
+
+  const unfinishedDelete = await request("/facilitator/events", post({
+    userToken, name: "Cannot Delete Upcoming Event", tableCount: 1, tableCapacities: [2],
+  }));
+  assert.equal(unfinishedDelete.status, 201);
+  const unfinishedEventId = unfinishedDelete.json.eventId as string;
+  const unfinishedGameId = unfinishedDelete.json.tables[0].gameId as string;
+  eventIds.push(unfinishedEventId);
+  gameIds.push(unfinishedGameId);
+  assert.equal((await deleteAsHost(`/facilitator/events/${unfinishedEventId}`)).status, 409,
+    "upcoming events cannot be deleted");
+  assert.equal((await pool.query(`SELECT 1 FROM compost_events WHERE id=$1`, [unfinishedEventId])).rows.length, 1,
+    "a rejected delete leaves its event intact");
+
+  const phaseGuard = await request("/facilitator/events", post({
+    userToken, name: "Completed Status Needs Completed Tables", tableCount: 1, tableCapacities: [2],
+  }));
+  assert.equal(phaseGuard.status, 201);
+  const phaseGuardEventId = phaseGuard.json.eventId as string;
+  const phaseGuardGameId = phaseGuard.json.tables[0].gameId as string;
+  eventIds.push(phaseGuardEventId);
+  gameIds.push(phaseGuardGameId);
+  await pool.query(`UPDATE compost_events SET status='completed' WHERE id=$1`, [phaseGuardEventId]);
+  assert.equal((await deleteAsHost(`/facilitator/events/${phaseGuardEventId}`)).status, 409,
+    "a completed Event status cannot substitute for checking every durable game phase");
+  assert.equal((await pool.query(`SELECT 1 FROM compost_games WHERE game_id=$1`, [phaseGuardGameId])).rows.length, 1,
+    "a phase-guard rejection leaves the game data intact");
+
+  const deletable = await request("/facilitator/events", post({
+    userToken, name: "Completed Event Deletion", tableCount: 1, tableCapacities: [2],
+  }));
+  assert.equal(deletable.status, 201);
+  const deletableEventId = deletable.json.eventId as string;
+  const deletableGameId = deletable.json.tables[0].gameId as string;
+  const deletableCode = (deletable.json.code as string).toLowerCase();
+  eventIds.push(deletableEventId);
+  gameIds.push(deletableGameId);
+  const inFlightTriviaRead = beginEventTriviaRead(deletableEventId);
+  const deletionGuest = await request(`/events/${deletableCode}/join`, post({ name: "Deletion guest" }));
+  assert.equal(deletionGuest.status, 201);
+  const closedDeletionEvent = await request(
+    `/facilitator/events/${deletableEventId}/control`,
+    post({ userToken, action: "end" }),
+  );
+  assert.equal(closedDeletionEvent.status, 200);
+  assert.equal((await getGame(deletableGameId))?.phase, "game_over");
+  const unrelatedEvent = await request("/facilitator/events", post({
+    userToken: otherToken, name: "Unrelated Event", tableCount: 1,
+  }));
+  assert.equal(unrelatedEvent.status, 201);
+  const unrelatedEventId = unrelatedEvent.json.eventId as string;
+  const unrelatedGameId = unrelatedEvent.json.tables[0].gameId as string;
+  eventIds.push(unrelatedEventId);
+  gameIds.push(unrelatedGameId);
+  setEventTriviaEnabled(unrelatedEventId, false);
+  const deletionStreamTicket = (await request(
+    `/facilitator/events/${deletableEventId}/stream-ticket`,
+    post({ userToken }),
+  )).json.ticket as string;
+  const unusedStreamTicket = (await request(
+    `/facilitator/events/${deletableEventId}/stream-ticket`,
+    post({ userToken }),
+  )).json.ticket as string;
+  const eventStream = await fetch(
+    `${base}/facilitator/events/${deletableEventId}/stream?ticket=${encodeURIComponent(deletionStreamTicket)}`,
+    { signal: AbortSignal.timeout(20_000) },
+  );
+  assert.equal(eventStream.status, 200);
+  const eventStreamReader = eventStream.body!.getReader();
+  const gameStream = await fetch(
+    `${base}/games/${deletableGameId}/events?token=${encodeURIComponent(deletionGuest.json.token)}`,
+    { signal: AbortSignal.timeout(20_000) },
+  );
+  assert.equal(gameStream.status, 200);
+  const deletionGameStreamReader = gameStream.body!.getReader();
+  try {
+    assert.equal((await readSseSnapshot(eventStreamReader)).eventId, deletableEventId);
+    assert.equal((await readSseSnapshot(deletionGameStreamReader)).phase, "game_over");
+    const deletion = await deleteAsHost(`/facilitator/events/${deletableEventId}`);
+    assert.equal(deletion.status, 204, "the owning facilitator can permanently delete a completed Event");
+
+    const terminalFrame = await readSseFrame(eventStreamReader);
+    assert.match(terminalFrame, /event: event-removed/, "Event control streams receive a terminal removal notice");
+    assert.match(terminalFrame, /This event has been removed/);
+    assert.match(await readSseFrame(deletionGameStreamReader), /event: event-removed/,
+      "open table streams are closed with a removal notice after commit");
+  } finally {
+    await eventStreamReader.cancel();
+    await deletionGameStreamReader.cancel();
+  }
+  assert.equal((await deleteAsHost(`/facilitator/events/${phaseGuardEventId}`, otherToken)).status, 403,
+    "another facilitator cannot delete an event they do not own");
+  assert.equal((await request(`/events/${deletableCode}`)).status, 404);
+  assert.equal((await request(`/events/${deletableCode}`)).json.error, "This event has been removed");
+  assert.equal((await request(`/games/${deletableGameId}`)).json.error, "This event has been removed",
+    "a fresh direct table link with no remembered Event code still receives the removal message");
+  assert.equal(setEventTriviaEnabledIfCurrent(inFlightTriviaRead, false), false,
+    "a settings read started before deletion cannot repopulate the cleared Event trivia cache");
+  finishEventTriviaRead(inFlightTriviaRead);
+  assert.equal(getEventTriviaEnabled(deletableEventId), true);
+  assert.equal(getEventTriviaEnabled(unrelatedEventId), false,
+    "deletion leaves unrelated Event process-local trivia settings intact");
+  setEventTriviaEnabled(unrelatedEventId, true);
+  assert.equal((await deleteAsHost(`/facilitator/events/${deletableEventId}`)).status, 404,
+    "a removed event cannot be deleted again");
+  assert.equal((await request(
+    `/facilitator/events/${deletableEventId}/stream?ticket=${encodeURIComponent(unusedStreamTicket)}`,
+  )).status, 401, "unused stream tickets are revoked after deletion");
+  assert.ok(await getGame(deletableGameId) == null, "the process-local game snapshot is evicted after commit");
+  assert.equal(await getGameIdForToken(deletionGuest.json.token), null, "deleted seat credentials leave no cached or durable lookup");
+  assert.equal((await pool.query(`SELECT 1 FROM compost_events WHERE id=$1`, [deletableEventId])).rows.length, 0);
+  assert.equal((await pool.query(`SELECT 1 FROM compost_event_tables WHERE event_id=$1`, [deletableEventId])).rows.length, 0);
+  assert.equal((await pool.query(`SELECT 1 FROM compost_event_seats WHERE event_id=$1`, [deletableEventId])).rows.length, 0);
+  assert.equal((await pool.query(`SELECT 1 FROM compost_games WHERE game_id=$1`, [deletableGameId])).rows.length, 0);
+  assert.equal((await pool.query(`SELECT 1 FROM compost_game_tokens WHERE game_id=$1`, [deletableGameId])).rows.length, 0);
+  assert.equal((await pool.query(`SELECT 1 FROM compost_events WHERE id=$1`, [unrelatedEventId])).rows.length, 1,
+    "deleting one Event leaves a different Event intact");
+  assert.equal((await pool.query(`SELECT 1 FROM compost_games WHERE game_id=$1`, [unrelatedGameId])).rows.length, 1);
 } finally {
   for (const eventId of eventIds) {
     await pool.query(`DELETE FROM compost_events WHERE id=$1`, [eventId]);

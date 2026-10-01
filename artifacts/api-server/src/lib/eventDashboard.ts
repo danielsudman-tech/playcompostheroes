@@ -30,6 +30,13 @@ export class EventDetailCoalescer {
     if (!state.inFlight && state.timer === undefined) this.schedule(eventId, state);
   }
 
+  cancel(eventId: string): void {
+    const state = this.pending.get(eventId);
+    if (!state) return;
+    if (state.timer !== undefined) clearTimeout(state.timer);
+    this.pending.delete(eventId);
+  }
+
   private schedule(eventId: string, state: PendingEventDetail): void {
     state.timer = setTimeout(() => {
       state.timer = undefined;
@@ -44,7 +51,9 @@ export class EventDetailCoalescer {
       state.inFlight = true;
       void this.buildDetail(eventId)
         .then((detail) => {
-          if (detail != null && this.hasSubscribers(eventId)) this.push(eventId, detail);
+          if (detail != null && this.pending.get(eventId) === state && this.hasSubscribers(eventId)) {
+            this.push(eventId, detail);
+          }
         })
         .catch((error) => this.onError(error))
         .finally(() => {

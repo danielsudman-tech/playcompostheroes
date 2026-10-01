@@ -335,7 +335,7 @@ router.get("/games/:gameId", async (req, res) => {
   const token = req.query.token as string | undefined;
   const state = await getGame(gameId);
   if (!state) {
-    res.status(404).json({ error: "Game not found" });
+    res.status(404).json({ error: "This event has been removed" });
     return;
   }
 

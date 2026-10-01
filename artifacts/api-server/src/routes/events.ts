@@ -17,13 +17,18 @@ import { WIN_FUNCTIONS } from "../lib/cards.js";
 import {
   broadcastToGame, createGameId, getEventForGame, getGame,
   getCachedGameState,
-  isEventGameReadyToStart, readTokenSlotConsistently,
+  invalidateGameCaches, isEventGameReadyToStart, readTokenSlotConsistently,
   onGameBroadcast, updateGameStateCache, withGameMutationLocks, withClientTransaction,
   type PgClient, type PgQueryable,
 } from "../lib/gameStore.js";
-import { setEventTriviaEnabled } from "../lib/eventTriviaSettings.js";
+import {
+  beginEventTriviaRead, finishEventTriviaRead, forgetEventTriviaEnabled,
+  setEventTriviaEnabled, setEventTriviaEnabledIfCurrent,
+} from "../lib/eventTriviaSettings.js";
 import { extractBearerToken, getUserByToken, isApprovedFacilitator } from "../lib/userStore.js";
-import { consumeEventStreamTicket, issueEventStreamTicket } from "../lib/eventStreamTickets.js";
+import {
+  consumeEventStreamTicket, issueEventStreamTicket, revokeEventStreamTickets,
+} from "../lib/eventStreamTickets.js";
 import {
   EVENT_PRESENCE_SWEEP_INTERVAL_MS, EventPresenceSweepCursor,
   updateEventPresenceAndPublishTransition,
@@ -43,16 +48,28 @@ const uuid = () => randomUUID();
 const createCode = () => randomBytes(6).toString("base64url").toUpperCase();
 const normalizeCode = (code: string) => code.toUpperCase();
 const parseState = (value: unknown) => (typeof value === "string" ? JSON.parse(value) : value) as GameState;
+async function eventCodeIsPresent(code: string): Promise<boolean> {
+  const result = await pool.query(
+    `SELECT 1 FROM compost_events WHERE code=$1`,
+    [normalizeCode(code)],
+  );
+  return result.rows.length > 0;
+}
 
 async function eventRecord(eventId: string, client: PgQueryable = pool) {
-  const result = await client.query(
-    `SELECT id, code, facilitator_id, name, status, assignment_mode, idle_seconds, trivia_enabled,
-            EXTRACT(EPOCH FROM last_meaningful_activity_at) * 1000 AS last_activity
-       FROM compost_events WHERE id = $1`, [eventId],
-  );
-  const event = result.rows[0] as any;
-  if (event) setEventTriviaEnabled(event.id, event.trivia_enabled !== false);
-  return event;
+  const triviaRead = beginEventTriviaRead(eventId);
+  try {
+    const result = await client.query(
+      `SELECT id, code, facilitator_id, name, status, assignment_mode, idle_seconds, trivia_enabled,
+              EXTRACT(EPOCH FROM last_meaningful_activity_at) * 1000 AS last_activity
+         FROM compost_events WHERE id = $1`, [eventId],
+    );
+    const event = result.rows[0] as any;
+    if (event) setEventTriviaEnabledIfCurrent(triviaRead, event.trivia_enabled !== false);
+    return event;
+  } finally {
+    finishEventTriviaRead(triviaRead);
+  }
 }
 async function tableRecords(eventId: string, client: PgQueryable = pool) {
   return (await client.query(
@@ -74,19 +91,30 @@ function pushEvent(eventId: string, payload: unknown) {
 }
 
 async function buildDetail(eventId: string, includeTokens = false, client: PgQueryable = pool) {
-  const eventTables = await client.query(
-    `SELECT e.id, e.code, e.name, e.status, e.assignment_mode, e.idle_seconds, e.trivia_enabled,
-            EXTRACT(EPOCH FROM e.last_meaningful_activity_at) * 1000 AS last_activity,
-            t.game_id, t.table_number, t.capacity
-       FROM compost_events e
-       LEFT JOIN compost_event_tables t ON t.event_id = e.id
-      WHERE e.id = $1
-      ORDER BY t.table_number`,
-    [eventId],
-  );
-  if (!eventTables.rows.length) return null;
+  const triviaRead = beginEventTriviaRead(eventId);
+  let eventTables;
+  try {
+    eventTables = await client.query(
+      `SELECT e.id, e.code, e.name, e.status, e.assignment_mode, e.idle_seconds, e.trivia_enabled,
+              EXTRACT(EPOCH FROM e.last_meaningful_activity_at) * 1000 AS last_activity,
+              t.game_id, t.table_number, t.capacity
+         FROM compost_events e
+         LEFT JOIN compost_event_tables t ON t.event_id = e.id
+        WHERE e.id = $1
+        ORDER BY t.table_number`,
+      [eventId],
+    );
+  } catch (error) {
+    finishEventTriviaRead(triviaRead);
+    throw error;
+  }
+  if (!eventTables.rows.length) {
+    finishEventTriviaRead(triviaRead);
+    return null;
+  }
   const event = eventTables.rows[0];
-  setEventTriviaEnabled(event.id, event.trivia_enabled !== false);
+  setEventTriviaEnabledIfCurrent(triviaRead, event.trivia_enabled !== false);
+  finishEventTriviaRead(triviaRead);
   const tables = eventTables.rows
     .filter((row: any) => row.game_id != null)
     .map((row: any) => ({ game_id: row.game_id, table_number: row.table_number, capacity: row.capacity }));
@@ -166,6 +194,17 @@ const eventDetailCoalescer = new EventDetailCoalescer(
   (error) => console.error("[event dashboard detail push]", error),
 );
 const enqueueEventDetail = (eventId: string) => eventDetailCoalescer.enqueue(eventId);
+
+function notifyEventRemoved(eventId: string): void {
+  eventDetailCoalescer.cancel(eventId);
+  forgetEventTriviaEnabled(eventId);
+  revokeEventStreamTickets(eventId);
+  const subscribers = streams.get(eventId);
+  streams.delete(eventId);
+  for (const send of subscribers ?? []) {
+    try { send({ eventRemoved: true }); } catch {}
+  }
+}
 
 onGameBroadcast((gameId) => {
   void pool.query(
@@ -249,7 +288,6 @@ router.get("/facilitator/events", async (req, res): Promise<void> => {
             (SELECT COUNT(*) FROM compost_event_tables t WHERE t.event_id = e.id) AS table_count
        FROM compost_events e WHERE e.facilitator_id = $1 ORDER BY e.created_at DESC`, [user.id],
   )).rows;
-  for (const row of rows) setEventTriviaEnabled(row.id, row.trivia_enabled !== false);
   res.json(GetFacilitatorEventsResponse.parse(rows.map((r) => ({ eventId: r.id, code: r.code, name: r.name, status: r.status, assignmentMode: r.assignment_mode, idleSeconds: r.idle_seconds, triviaEnabled: r.trivia_enabled !== false, tableCount: Number(r.table_count) }))));
 });
 
@@ -340,6 +378,89 @@ router.get("/facilitator/events/:eventId", async (req, res): Promise<void> => {
   res.json(GetFacilitatorEventResponse.parse(await buildDetail(req.params.eventId, true)));
 });
 
+router.delete("/facilitator/events/:eventId", async (req, res): Promise<void> => {
+  const eventId = req.params.eventId;
+  const userToken = extractBearerToken(req.get("authorization"));
+  const preflight = await requireHost(eventId, userToken);
+  if ("failure" in preflight) {
+    res.status(Number(preflight.failure)).json({ error: preflight.error });
+    return;
+  }
+  if (preflight.event.status !== "completed") {
+    res.status(409).json({ error: "Only completed events can be deleted" });
+    return;
+  }
+
+  const initialTables = await tableRecords(eventId);
+  if (!initialTables.length) {
+    res.status(409).json({ error: "Event tables could not be verified as complete" });
+    return;
+  }
+  const initialGameIds = initialTables.map((table) => table.game_id).sort();
+  const sameGameIds = (tables: typeof initialTables) => {
+    const gameIds = tables.map((table) => table.game_id).sort();
+    return gameIds.length === initialGameIds.length &&
+      gameIds.every((gameId, index) => gameId === initialGameIds[index]);
+  };
+  const outcome = await withGameMutationLocks(initialGameIds, async (client) => {
+    const outcome = await withClientTransaction(client, async () => {
+      await client.query(`SELECT id FROM compost_events WHERE id=$1 FOR UPDATE`, [eventId]);
+      const check = await requireHost(eventId, userToken, client);
+      if ("failure" in check) return { failure: Number(check.failure), error: check.error } as const;
+      if (check.event.status !== "completed") {
+        return { failure: 409, error: "Only completed events can be deleted" } as const;
+      }
+
+      const tables = await tableRecords(eventId, client);
+      if (!sameGameIds(tables)) {
+        return { failure: 409, error: "Event tables changed; refresh and retry" } as const;
+      }
+      const gameRows = await client.query(
+        `SELECT game_id, state FROM compost_games
+          WHERE game_id = ANY($1::text[])
+          ORDER BY game_id
+          FOR UPDATE`,
+        [initialGameIds],
+      );
+      if (gameRows.rows.length !== initialGameIds.length ||
+          gameRows.rows.some((row: any) => parseState(row.state).phase !== "game_over")) {
+        return { failure: 409, error: "Every event table must be complete before the event can be deleted" } as const;
+      }
+
+      await client.query(
+        `DELETE FROM compost_game_tokens WHERE game_id = ANY($1::text[])`,
+        [initialGameIds],
+      );
+      await client.query(`DELETE FROM compost_event_seats WHERE event_id=$1`, [eventId]);
+      await client.query(`DELETE FROM compost_event_tables WHERE event_id=$1`, [eventId]);
+      await client.query(
+        `DELETE FROM compost_games WHERE game_id = ANY($1::text[])`,
+        [initialGameIds],
+      );
+      const deleted = await client.query(
+        `DELETE FROM compost_events
+          WHERE id=$1 AND facilitator_id=$2 AND status='completed'`,
+        [eventId, check.user.id],
+      );
+      if (deleted.rowCount !== 1) {
+        throw new Error("Completed event changed during deletion");
+      }
+      return { deleted: true as const, gameIds: initialGameIds };
+    });
+    if (!("failure" in outcome)) {
+      for (const gameId of outcome.gameIds) invalidateGameCaches(gameId);
+      notifyEventRemoved(eventId);
+    }
+    return outcome;
+  });
+
+  if ("failure" in outcome) {
+    res.status(Number(outcome.failure)).json({ error: outcome.error });
+    return;
+  }
+  res.status(204).end();
+});
+
 router.patch("/facilitator/events/:eventId", async (req, res): Promise<void> => {
   const body = req.body as { userToken?: string; name?: string; idleSeconds?: number; assignmentMode?: "choose" | "auto"; triviaEnabled?: boolean };
   const parsedBody = UpdateFacilitatorEventBody.safeParse(body);
@@ -348,17 +469,25 @@ router.patch("/facilitator/events/:eventId", async (req, res): Promise<void> => 
   if ("failure" in check) { res.status(Number(check.failure)).json({ error: check.error }); return; }
   if (body.name !== undefined && (!body.name.trim() || body.name.trim().length > 100)) { res.status(400).json({ error: "Event name must be 1-100 characters" }); return; }
   if (body.idleSeconds !== undefined && (!Number.isInteger(body.idleSeconds) || body.idleSeconds < 30 || body.idleSeconds > 3600)) { res.status(400).json({ error: "idleSeconds must be between 30 and 3600" }); return; }
-  const updatedEvent = await pool.query(
-    `UPDATE compost_events
-        SET name = COALESCE($2,name),
-            idle_seconds = COALESCE($3,idle_seconds),
-            assignment_mode = COALESCE($4,assignment_mode),
-            trivia_enabled = COALESCE($5,trivia_enabled)
-      WHERE id = $1
-      RETURNING trivia_enabled`,
-    [req.params.eventId, body.name?.trim() ?? null, body.idleSeconds ?? null, body.assignmentMode ?? null, body.triviaEnabled ?? null],
-  );
-  if (updatedEvent.rows[0]) setEventTriviaEnabled(req.params.eventId, updatedEvent.rows[0].trivia_enabled !== false);
+  const triviaRead = beginEventTriviaRead(req.params.eventId);
+  let updatedEvent;
+  try {
+    updatedEvent = await pool.query(
+      `UPDATE compost_events
+          SET name = COALESCE($2,name),
+              idle_seconds = COALESCE($3,idle_seconds),
+              assignment_mode = COALESCE($4,assignment_mode),
+              trivia_enabled = COALESCE($5,trivia_enabled)
+        WHERE id = $1
+        RETURNING trivia_enabled`,
+      [req.params.eventId, body.name?.trim() ?? null, body.idleSeconds ?? null, body.assignmentMode ?? null, body.triviaEnabled ?? null],
+    );
+    if (updatedEvent.rows[0]) {
+      setEventTriviaEnabledIfCurrent(triviaRead, updatedEvent.rows[0].trivia_enabled !== false);
+    }
+  } finally {
+    finishEventTriviaRead(triviaRead);
+  }
   const tables = await tableRecords(req.params.eventId);
   for (const table of tables) {
     const state = getCachedGameState(table.game_id);
@@ -520,6 +649,12 @@ router.get("/facilitator/events/:eventId/stream", async (req, res): Promise<void
   let updateDuringInitialSnapshot = false;
   const write = (data: unknown) => {
     if (res.destroyed || res.writableEnded) return;
+    if (data && typeof data === "object" && (data as { eventRemoved?: unknown }).eventRemoved === true) {
+      res.write(`event: event-removed\ndata: ${JSON.stringify({ error: "This event has been removed" })}\n\n`);
+      cleanup();
+      res.end();
+      return;
+    }
     if (!initialSnapshotSent) {
       updateDuringInitialSnapshot = true;
       return;
@@ -572,8 +707,7 @@ router.get("/facilitator/events/:eventId/stream", async (req, res): Promise<void
 
 router.get("/events/:code", async (req, res): Promise<void> => {
   const row = (await pool.query(`SELECT id,code,name,status,assignment_mode,trivia_enabled FROM compost_events WHERE code=$1`, [normalizeCode(req.params.code)])).rows[0];
-  if (!row) { res.status(404).json({ error: "Event not found" }); return; }
-  setEventTriviaEnabled(row.id, row.trivia_enabled !== false);
+  if (!row) { res.status(404).json({ error: "This event has been removed" }); return; }
   const tables = await tableRecords(row.id);
   const result = [];
   for (const table of tables) {
@@ -593,7 +727,7 @@ router.post("/events/:code/join", async (req, res): Promise<void> => {
   const parsedBody = JoinEventBody.safeParse(req.body);
   if (!parsedBody.success) { res.status(400).json({ error: parsedBody.error.message }); return; }
   const event = (await pool.query(`SELECT * FROM compost_events WHERE code=$1`, [normalizeCode(req.params.code)])).rows[0];
-  if (!event) { res.status(404).json({ error: "Event not found" }); return; }
+  if (!event) { res.status(404).json({ error: "This event has been removed" }); return; }
   const tables = await tableRecords(event.id);
   if (existingToken) {
     const owned = await pool.query(
@@ -763,7 +897,14 @@ type EventReadyResult =
 
 router.get("/events/:code/ready", async (req, res): Promise<void> => {
   const seat = await resolveEventSeat(req.params.code, req.query.token);
-  if (!seat) { res.status(403).json({ error: "Invalid event seat token" }); return; }
+  if (!seat) {
+    if (!await eventCodeIsPresent(req.params.code)) {
+      res.status(404).json({ error: "This event has been removed" });
+      return;
+    }
+    res.status(403).json({ error: "Invalid event seat token" });
+    return;
+  }
   res.json(GetEventReadyResponse.parse({ ready: seat.ready }));
 });
 
@@ -772,7 +913,14 @@ router.post("/events/:code/ready", async (req, res): Promise<void> => {
   const parsedBody = SetEventReadyBody.safeParse(body);
   if (!parsedBody.success) { res.status(400).json({ error: parsedBody.error.message }); return; }
   const seat = await resolveEventSeat(req.params.code, body.token);
-  if (!seat) { res.status(403).json({ error: "Invalid event seat token" }); return; }
+  if (!seat) {
+    if (!await eventCodeIsPresent(req.params.code)) {
+      res.status(404).json({ error: "This event has been removed" });
+      return;
+    }
+    res.status(403).json({ error: "Invalid event seat token" });
+    return;
+  }
   const result = await withGameMutationLocks<EventReadyResult>([seat.game_id], async (client) => {
     const refreshed = await resolveEventSeat(req.params.code, body.token, client);
     if (!refreshed) return { status: 403, error: "Invalid event seat token" };
@@ -825,7 +973,14 @@ router.post("/events/:code/presence", async (req, res): Promise<void> => {
   }, async () => {
     if (matchedEventId) enqueueEventDetail(matchedEventId);
   });
-  if (!matchedEventId) { res.status(403).json({ error: "Invalid event seat token" }); return; }
+  if (!matchedEventId) {
+    if (!await eventCodeIsPresent(req.params.code)) {
+      res.status(404).json({ error: "This event has been removed" });
+      return;
+    }
+    res.status(403).json({ error: "Invalid event seat token" });
+    return;
+  }
   res.json(HeartbeatEventPresenceResponse.parse({ ok: true }));
 });
 

@@ -643,6 +643,14 @@ export const GetFacilitatorEventResponse = zod
   );
 
 /**
+ * Irreversibly deletes only an event owned by the authenticated approved facilitator after every linked game is verified to be complete.
+ * @summary Permanently delete a completed event and its game tables
+ */
+export const DeleteFacilitatorEventParams = zod.object({
+  eventId: zod.coerce.string(),
+});
+
+/**
  * @summary Edit event name or idle threshold
  */
 export const UpdateFacilitatorEventParams = zod.object({

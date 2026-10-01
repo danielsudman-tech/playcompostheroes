@@ -393,6 +393,24 @@ paths:
         "401": { description: Sign in required, content: { application/json: { schema: { $ref: "#/components/schemas/ErrorResponse" } } } }
         "403": { description: Not the approved creator, content: { application/json: { schema: { $ref: "#/components/schemas/ErrorResponse" } } } }
         "404": { description: Event not found, content: { application/json: { schema: { $ref: "#/components/schemas/ErrorResponse" } } } }
+    delete:
+      operationId: deleteFacilitatorEvent
+      tags: [game]
+      summary: Permanently delete a completed event and its game tables
+      description: Irreversibly deletes only an event owned by the authenticated approved facilitator after every linked game is verified to be complete.
+      parameters:
+        - name: eventId
+          in: path
+          required: true
+          schema: { type: string }
+      security:
+        - bearerAuth: []
+      responses:
+        "204": { description: Event and linked game data permanently deleted }
+        "401": { description: Sign in required, content: { application/json: { schema: { $ref: "#/components/schemas/ErrorResponse" } } } }
+        "403": { description: Not the approved creator, content: { application/json: { schema: { $ref: "#/components/schemas/ErrorResponse" } } } }
+        "404": { description: Event not found, content: { application/json: { schema: { $ref: "#/components/schemas/ErrorResponse" } } } }
+        "409": { description: Event is not completed or linked games are not all over, content: { application/json: { schema: { $ref: "#/components/schemas/ErrorResponse" } } } }
     patch:
       operationId: updateFacilitatorEvent
       tags: [game]

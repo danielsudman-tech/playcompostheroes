@@ -38,6 +38,14 @@ export function evictGameStoreCache(now = Date.now(), maxEntries?: number): stri
 export function invalidateGameCaches(gameId: string): void {
   tokenPublicationEpoch++;
   gameStoreCache.deleteGame(gameId);
+  const clients = sseClientsByToken.get(gameId);
+  sseClientsByToken.delete(gameId);
+  for (const response of clients?.values() ?? []) {
+    try {
+      response.write(`event: event-removed\ndata: {"error":"This event has been removed"}\n\n`);
+      response.end();
+    } catch {}
+  }
 }
 
 function recordAuthoritativeGameChange(gameId: string): void {

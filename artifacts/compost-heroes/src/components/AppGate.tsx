@@ -3,6 +3,7 @@ import { useLocation as useWouterLocation } from "wouter";
 import { Loader2, Lock, Eye, EyeOff, HelpCircle, X } from "lucide-react";
 import compostHeroesLogo from "@assets/Compost_Heroes_Logo_no_background_1773537933517.png";
 import { PHYSICAL_GAME_URL } from "@/lib/links";
+import { gameRouteGateForResponse } from "@/lib/gameRouteStatus";
 
 const STORAGE_KEY = "compost_user_token";
 
@@ -112,26 +113,34 @@ export function AppGate({ children }: { children: ReactNode }) {
   // For /game/:id and /game/:id/table, only Online requires an account.
   // Recomputed on
   // every client-side navigation via wouter's location hook.
-  const [location] = useWouterLocation();
+  const [location, navigate] = useWouterLocation();
   const gameId = pathGameId(location);
-  const [gameGate, setGameGate] = useState<{ gameId: string | null; required: boolean | null }>({
-    gameId, required: gameId ? null : false,
+  const [gameGate, setGameGate] = useState<{ gameId: string | null; required: boolean | null; removed: boolean }>({
+    gameId, required: gameId ? null : false, removed: false,
   });
   const gameNeedsGate = gameGate.gameId === gameId ? gameGate.required : null;
+  const gameRemoved = gameGate.gameId === gameId && gameGate.removed;
   useEffect(() => {
     if (!gameId) {
-      setGameGate({ gameId, required: false });
+      setGameGate({ gameId, required: false, removed: false });
       return;
     }
-    setGameGate({ gameId, required: null });
+    setGameGate({ gameId, required: null, removed: false });
     let cancelled = false;
     fetch(`/api/games/${encodeURIComponent(gameId)}`)
-      .then((r) => (r.ok ? r.json() : null))
-      .then((d: { mode?: string } | null) => {
-        if (!cancelled) setGameGate({ gameId, required: (d?.mode ?? "online") === "online" });
+      .then(async (response) => {
+        const metadata = response.ok ? await response.json() as { mode?: string } : null;
+        return gameRouteGateForResponse({
+          status: response.status,
+          ok: response.ok,
+          mode: metadata?.mode,
+        });
+      })
+      .then((gate) => {
+        if (!cancelled) setGameGate({ gameId, ...gate });
       })
       .catch(() => {
-        if (!cancelled) setGameGate({ gameId, required: true });
+        if (!cancelled) setGameGate({ gameId, ...gameRouteGateForResponse(null) });
       });
     return () => {
       cancelled = true;
@@ -278,6 +287,20 @@ export function AppGate({ children }: { children: ReactNode }) {
       setStatus("idle");
     }
   };
+
+  if (gameRemoved) {
+    return (
+      <main className="min-h-screen bg-background flex flex-col items-center justify-center p-4 text-center">
+        <div className="bg-card/90 rounded-3xl border border-border shadow-xl p-8 max-w-md">
+          <h1 className="text-2xl font-display text-foreground">This event has been removed</h1>
+          <p className="text-sm text-muted-foreground mt-3">This table is no longer available.</p>
+          <button className="mt-5 w-full h-11 rounded-xl bg-primary text-primary-foreground font-bold" onClick={() => navigate("/")}>
+            Back to Lobby
+          </button>
+        </div>
+      </main>
+    );
+  }
 
   if (status === "registered") {
     return <UserContext.Provider value={{ user, logout }}>{children}</UserContext.Provider>;

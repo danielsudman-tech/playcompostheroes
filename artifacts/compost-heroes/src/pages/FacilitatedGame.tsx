@@ -7,6 +7,7 @@ import { useParams, useLocation } from "wouter";
 import { motion, AnimatePresence } from "framer-motion";
 import confetti from "canvas-confetti";
 import { assetUrl } from "@/lib/assetUrl";
+import { isMissingGameError } from "@/lib/gameRouteStatus";
 import compostHeroesLogo from "@assets/Compost_Heroes_Logo_no_background_1773537933517.png";
 import {
   useGameState,
@@ -125,6 +126,7 @@ export default function FacilitatedGame() {
   })();
   const storedToken = gameId ? getStoredToken(gameId) : null;
   const { data: gameState, isLoading, error } = useGameState(gameId || null, urlSeatToken ?? storedToken);
+  const gameMetadata404 = isMissingGameError(error);
   const isFacilitated = gameState?.mode === "facilitated";
   const isOnline = gameState?.mode === "online";
   // The legacy facilitator mode is local play, not a facilitated session.
@@ -145,18 +147,19 @@ export default function FacilitatedGame() {
 
   const { claim, loading: claimLoading, requiresPassword, doClaim, error: claimError } = useClaimSlot(
     gameId || null,
-    (isFacilitated && !!(storedToken ?? urlSeatToken)) ||
-      (isOnline && (gameState?.phase !== "waiting" || !!(storedToken ?? urlSeatToken)))
+    !gameMetadata404 && ((isFacilitated && !!(storedToken ?? urlSeatToken)) ||
+      (isOnline && (gameState?.phase !== "waiting" || !!(storedToken ?? urlSeatToken))))
   );
   const localToken = isRemote ? claim?.token ?? urlSeatToken ?? storedToken : null;
   const eventCode = gameId ? getGameEventCode(gameId) : null;
   const eventSeat = eventCode ? rememberedEventSeat(eventCode) : null;
-  useEventPresence(eventCode ?? "", eventSeat, isFacilitated && !!eventSeat && !!localToken);
-  const { data: guestEvent, isLoading: guestEventLoading } = useGuestEvent(eventCode ?? "");
+  useEventPresence(eventCode ?? "", eventSeat, !gameMetadata404 && isFacilitated && !!eventSeat && !!localToken);
+  const { data: guestEvent, isLoading: guestEventLoading, error: guestEventError } = useGuestEvent(eventCode ?? "");
+  const removedEvent = gameMetadata404 || isMissingGameError(guestEventError);
   const eventReadiness = useEventReadyStatus(
     eventCode ?? "",
     eventSeat,
-    isFacilitated && gameState?.phase === "waiting" && !!eventSeat && !!localToken,
+    !gameMetadata404 && isFacilitated && gameState?.phase === "waiting" && !!eventSeat && !!localToken,
   );
   const eventReady = useSetEventReady(eventCode ?? "");
   const eventClosing = guestEvent?.status === "ending" || guestEvent?.status === "completed";
@@ -182,7 +185,7 @@ export default function FacilitatedGame() {
   const { sseConnected } = useGameSse(
     gameId || null,
     localToken,
-    isRemote && !!localToken,
+    !gameMetadata404 && isRemote && !!localToken,
     handleKicked,
      (from) => { setNudgedAt(Date.now()); logUpdate("Nudge received", "notice", `${from} is waiting for you to play.`); },
     isFacilitated ? handleRoomTransfer : undefined
@@ -339,6 +342,16 @@ export default function FacilitatedGame() {
     }
   }, [gameState?.phase, gameState?.winner]);
 
+  if (removedEvent) {
+    return (
+      <div className="min-h-screen bg-background flex flex-col items-center justify-center p-4 text-center">
+        <AlertCircle className="w-12 h-12 text-destructive mb-3" />
+        <h2 className="text-2xl font-display text-foreground mb-2">This event has been removed</h2>
+        <Button onClick={() => setLocation("/")}>Back to Lobby</Button>
+      </div>
+    );
+  }
+
   if (isLoading || (isFacilitated && claimLoading)) {
     return (
       <div className="min-h-screen bg-background flex flex-col items-center justify-center">
@@ -361,7 +374,7 @@ export default function FacilitatedGame() {
     return (
       <div className="min-h-screen bg-background flex flex-col items-center justify-center p-4 text-center">
         <AlertCircle className="w-12 h-12 text-destructive mb-3" />
-        <h2 className="text-2xl font-display text-foreground mb-2">Game Not Found</h2>
+        <h2 className="text-2xl font-display text-foreground mb-2">{removedEvent ? "This event has been removed" : "Game Not Found"}</h2>
         <Button onClick={() => setLocation("/")}>Back to Lobby</Button>
       </div>
     );

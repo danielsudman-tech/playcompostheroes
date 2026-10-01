@@ -18,7 +18,7 @@ export default function EventGathering() {
   const lobbyPath = `/event/${encodeURIComponent(code)}`;
   const seat = rememberedEventSeat(code);
   const token = seat?.gameId ? getStoredToken(seat.gameId) ?? seat.token : null;
-  const { data: event, isLoading: eventLoading, isError: eventError, refetch: refetchEvent } = useGuestEvent(code);
+  const { data: event, isLoading: eventLoading, isError: eventError, error: eventLoadError, refetch: refetchEvent } = useGuestEvent(code);
   // Only the saved guest's table is queried. The public event response supplies
   // the other tables' statuses without exposing their game states or host detail.
   const { data: game, isLoading: gameLoading, isError: gameError, refetch: refetchGame } = useGameState(
@@ -44,8 +44,8 @@ export default function EventGathering() {
     return <main className="event-shell px-4 grid place-items-center">
       <div className="event-panel w-full max-w-md p-7 sm:p-9 text-center">
         <CircleAlert size={30} className="mx-auto text-[#a65937]" />
-        <h1 className="font-display text-3xl mt-3">We lost the gathering.</h1>
-        <p className="text-sm text-[#637365] mt-2">Check your connection or return to your invitation.</p>
+        <h1 className="font-display text-3xl mt-3">{(eventLoadError as { status?: number } | null)?.status === 404 ? "This event has been removed" : "We lost the gathering."}</h1>
+        <p className="text-sm text-[#637365] mt-2">{(eventLoadError as { status?: number } | null)?.status === 404 ? "The event and its results are no longer available." : "Check your connection or return to your invitation."}</p>
         <div className="flex flex-wrap justify-center gap-2 mt-6">
           <button type="button" data-testid="button-retry-event-results" className="event-button event-button-primary" onClick={() => void refetchEvent()}>Try again</button>
           <Link href={lobbyPath} data-testid="link-results-event-lobby-error" className="event-button event-button-outline">Event lobby</Link>

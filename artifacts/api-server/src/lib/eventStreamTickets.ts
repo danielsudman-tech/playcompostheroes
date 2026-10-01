@@ -34,3 +34,13 @@ export function consumeEventStreamTicket(
   if (!grant || grant.eventId !== eventId || grant.expiresAt <= now) return null;
   return { userToken: grant.userToken };
 }
+
+export function revokeEventStreamTickets(eventId: string): number {
+  let revoked = 0;
+  for (const [ticket, grant] of tickets) {
+    if (grant.eventId !== eventId) continue;
+    tickets.delete(ticket);
+    revoked++;
+  }
+  return revoked;
+}

@@ -8,6 +8,7 @@ import {
 } from "@/hooks/event-dashboard-realtime";
 import {
   getEventReady, getFacilitatorEvents, createFacilitatorEvent, getFacilitatorEvent, updateFacilitatorEvent,
+  deleteFacilitatorEvent,
   createFacilitatorEventStreamTicket,
   controlFacilitatorEvent, controlFacilitatorEventTable, getPublicEvent, joinEvent, setEventReady,
   heartbeatEventPresence,
@@ -143,7 +144,12 @@ const normalizeEvent = (event: EventDetail): EventRecord => ({
   tables: event.tables.map(normalizeTable),
 });
 const rememberHostEvent = (event: EventRecord) => {
-  try { event.tables.forEach(table => localStorage.setItem(`compost_game_event_id_${table.gameId}`, event.eventId ?? "")); } catch {}
+  try {
+    event.tables.forEach(table => {
+      localStorage.setItem(`compost_game_event_id_${table.gameId}`, event.eventId ?? "");
+      localStorage.setItem(`compost_game_event_code_${table.gameId}`, event.code.toLowerCase());
+    });
+  } catch {}
   return event;
 };
 const normalizeSummary = (event: EventSummary): EventRecord => ({ ...event, tables: [] });
@@ -188,6 +194,45 @@ export function useCreateEvent() {
 export function useUpdateEvent(id: string) {
   const qc = useQueryClient();
   return useMutation({ mutationFn: async (data: { name?: string; idleThresholdMinutes?: number; triviaEnabled?: boolean }) => normalizeEvent(await updateFacilitatorEvent(id, { name: data.name, idleSeconds: data.idleThresholdMinutes ? data.idleThresholdMinutes * 60 : undefined, triviaEnabled: data.triviaEnabled, userToken: userToken() })), onSuccess: (event) => { qc.setQueryData(eventKey(id), event); qc.invalidateQueries({ queryKey: facilitatorEventsKey() }); } });
+}
+export function useDeleteEvent(id: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (requestedId?: string) => {
+      const deletedId = requestedId ?? id;
+      if (!deletedId) throw new Error("Event ID is missing");
+      await deleteFacilitatorEvent(deletedId, { headers: { Authorization: `Bearer ${userToken()}` } });
+      return deletedId;
+    },
+    onSuccess: async (deletedId) => {
+      const deletedEvent = qc.getQueryData<EventRecord>(eventKey(deletedId)) ??
+        qc.getQueryData<EventRecord[]>(facilitatorEventsKey())?.find(event => eventId(event) === deletedId);
+      for (const table of deletedEvent?.tables ?? []) {
+        try {
+          localStorage.removeItem(`compost_game_event_id_${table.gameId}`);
+          if (getGameEventCode(table.gameId) === deletedEvent?.code.toLowerCase()) forgetEventSeat(table.gameId);
+        } catch {}
+      }
+      try {
+        const eventIdPrefix = "compost_game_event_id_";
+        const indexedGameIds = Array.from({ length: localStorage.length }, (_, index) => localStorage.key(index))
+          .filter((key): key is string => !!key && key.startsWith(eventIdPrefix) && localStorage.getItem(key) === deletedId)
+          .map(key => key.slice(eventIdPrefix.length));
+        for (const gameId of indexedGameIds) {
+          const code = getGameEventCode(gameId);
+          if (code) localStorage.removeItem(`compost_event_${code.toLowerCase()}`);
+          localStorage.removeItem(`compost_token_${gameId}`);
+          localStorage.removeItem(`compost_game_event_code_${gameId}`);
+          localStorage.removeItem(`compost_game_event_id_${gameId}`);
+        }
+      } catch {}
+      qc.removeQueries({ queryKey: eventKey(deletedId), exact: true });
+      await Promise.all([
+        qc.invalidateQueries({ queryKey: facilitatorEventsKey() }),
+        deletedEvent ? qc.invalidateQueries({ queryKey: guestEventKey(deletedEvent.code) }) : Promise.resolve(),
+      ]);
+    },
+  });
 }
 export interface ControlResult { results: EventTableResult[] }
 export function useEventControl(id: string) {
@@ -316,6 +361,15 @@ export function useEventStream(id: string) {
           setConnected(false);
           scheduleReconnect();
         };
+        nextSource.addEventListener("event-removed", () => {
+          nextSource.close();
+          if (source === nextSource) source = null;
+          if (!isCurrent()) return;
+          eventSnapshotGenerations.set(snapshotKey, (eventSnapshotGenerations.get(snapshotKey) ?? 0) + 1);
+          setConnected(false);
+          qc.removeQueries({ queryKey, exact: true });
+          qc.invalidateQueries({ queryKey: facilitatorEventsKey() });
+        });
       } catch {
         if (!isCurrent()) return;
         setConnected(false);

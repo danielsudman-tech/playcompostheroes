@@ -12,7 +12,7 @@ export default function EventLobby() {
   const code = rawCode.toLowerCase();
   const [, navigate] = useLocation();
   const { toast } = useToast();
-  const { data: event, isLoading, isError, refetch } = useGuestEvent(code);
+  const { data: event, isLoading, isError, error, refetch } = useGuestEvent(code);
   const join = useJoinEvent(code);
   const [name, setName] = useState("");
   const [tableNumber, setTableNumber] = useState<number | undefined>();
@@ -40,7 +40,7 @@ export default function EventLobby() {
     });
   };
   if (isLoading) return <main className="event-shell grid place-items-center px-4"><div className="event-panel p-8 w-full max-w-lg space-y-4"><div className="event-skeleton h-10 w-2/3" /><div className="event-skeleton h-5 w-full" /><div className="event-skeleton h-36 w-full" /></div></main>;
-  if (isError || !event) return <main className="event-shell grid place-items-center px-4"><div className="event-panel p-8 w-full max-w-md text-center"><CircleAlert className="mx-auto text-[#a65937]" size={32} /><h1 className="font-display text-3xl mt-3">That event isn't here</h1><p className="text-sm text-[#71826a] mt-2">Check the code with your host, or try again.</p><div className="flex justify-center gap-2 mt-5"><button className="event-button event-button-outline" onClick={() => navigate("/")}>Home</button><button className="event-button event-button-primary" onClick={() => refetch()}>Try again</button></div></div></main>;
+  if (isError || !event) return <main className="event-shell grid place-items-center px-4"><div className="event-panel p-8 w-full max-w-md text-center"><CircleAlert className="mx-auto text-[#a65937]" size={32} /><h1 className="font-display text-3xl mt-3">{(error as { status?: number } | null)?.status === 404 ? "This event has been removed" : "That event isn't here"}</h1><p className="text-sm text-[#71826a] mt-2">Check the code with your host, or return to the home page.</p><div className="flex justify-center gap-2 mt-5"><button className="event-button event-button-outline" onClick={() => navigate("/")}>Home</button><button className="event-button event-button-primary" onClick={() => refetch()}>Try again</button></div></div></main>;
   return <main className="event-shell min-h-[100dvh] px-4 py-8 sm:py-12">
     <div className="max-w-5xl mx-auto">
       <button className="event-button event-button-outline mb-8" data-testid="button-event-back-home" onClick={() => navigate("/")}><ArrowLeft size={15} /> Home</button>

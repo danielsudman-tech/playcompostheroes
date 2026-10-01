@@ -1194,6 +1194,91 @@ export function useGetFacilitatorEvent<
 }
 
 /**
+ * Irreversibly deletes only an event owned by the authenticated approved facilitator after every linked game is verified to be complete.
+ * @summary Permanently delete a completed event and its game tables
+ */
+export const getDeleteFacilitatorEventUrl = (eventId: string) => {
+  return `/api/facilitator/events/${eventId}`;
+};
+
+export const deleteFacilitatorEvent = async (
+  eventId: string,
+  options?: RequestInit,
+): Promise<void> => {
+  return customFetch<void>(getDeleteFacilitatorEventUrl(eventId), {
+    ...options,
+    method: "DELETE",
+  });
+};
+
+export const getDeleteFacilitatorEventMutationOptions = <
+  TError = ErrorType<ErrorResponse>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof deleteFacilitatorEvent>>,
+    TError,
+    { eventId: string },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof deleteFacilitatorEvent>>,
+  TError,
+  { eventId: string },
+  TContext
+> => {
+  const mutationKey = ["deleteFacilitatorEvent"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof deleteFacilitatorEvent>>,
+    { eventId: string }
+  > = (props) => {
+    const { eventId } = props ?? {};
+
+    return deleteFacilitatorEvent(eventId, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type DeleteFacilitatorEventMutationResult = NonNullable<
+  Awaited<ReturnType<typeof deleteFacilitatorEvent>>
+>;
+
+export type DeleteFacilitatorEventMutationError = ErrorType<ErrorResponse>;
+
+/**
+ * @summary Permanently delete a completed event and its game tables
+ */
+export const useDeleteFacilitatorEvent = <
+  TError = ErrorType<ErrorResponse>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof deleteFacilitatorEvent>>,
+    TError,
+    { eventId: string },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof deleteFacilitatorEvent>>,
+  TError,
+  { eventId: string },
+  TContext
+> => {
+  return useMutation(getDeleteFacilitatorEventMutationOptions(options));
+};
+
+/**
  * @summary Edit event name or idle threshold
  */
 export const getUpdateFacilitatorEventUrl = (eventId: string) => {

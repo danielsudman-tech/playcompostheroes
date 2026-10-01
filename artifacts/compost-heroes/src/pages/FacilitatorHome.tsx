@@ -7,10 +7,10 @@ import { Input } from "@/components/ui/input";
 import { useToast } from "@/hooks/use-toast";
 import { useCurrentUser, useLogout } from "@/components/AppGate";
 import { useCreateNewGame, getStoredToken, storeToken } from "@/hooks/use-game";
-import { eventId, useCreateEvent, useEvents } from "@/hooks/use-events";
+import { eventId, type EventRecord, useCreateEvent, useDeleteEvent, useEvents } from "@/hooks/use-events";
 import compostHeroesLogo from "@assets/Compost_Heroes_Logo_no_background_1773537933517.png";
 import {
-  Users, PlusCircle, Copy, Check, Loader2, LogOut, User, ArrowLeft,
+  Users, PlusCircle, Copy, Check, Loader2, LogOut, User, ArrowLeft, Trash2,
   MonitorPlay, Lock, Tag, HelpCircle, PauseCircle, Trophy, Clock,
   ArrowRight, CalendarDays, LayoutGrid,
 } from "lucide-react";
@@ -105,12 +105,14 @@ export default function FacilitatorHome() {
   const createGame = useCreateNewGame();
   const events = useEvents();
   const createEvent = useCreateEvent();
+  const deleteEvent = useDeleteEvent("");
   const [eventName, setEventName] = useState("");
   const [tableCount, setTableCount] = useState(3);
   const [playersPerTable, setPlayersPerTable] = useState(4);
   const [assignmentMode, setAssignmentMode] = useState<"choose" | "auto">("choose");
   const [idleThresholdMinutes, setIdleThresholdMinutes] = useState(2);
   const [showEventForm, setShowEventForm] = useState(false);
+  const [eventToDelete, setEventToDelete] = useState<EventRecord | null>(null);
 
   const [label, setLabel] = useState("");
   const [maxPlayers, setMaxPlayers] = useState(4);
@@ -249,7 +251,21 @@ export default function FacilitatorHome() {
           <div className="space-y-4">
             {events.isLoading ? <div className="space-y-2"><div className="event-skeleton h-16" /><div className="event-skeleton h-16" /></div>
               : events.isError ? <div className="text-sm text-destructive p-4 rounded-xl bg-destructive/10">Events couldn't be loaded. <button className="underline font-bold" onClick={() => events.refetch()}>Try again</button></div>
-              : (["active", "ending", "upcoming", "completed"] as const).map(status => { const list = (events.data ?? []).filter(e => e.status === status); if (!list.length) return null; return <div key={status}><p className="event-kicker mb-2">{status === "active" ? "In progress" : status === "ending" ? "Ending" : status === "upcoming" ? "Coming up" : "Completed"}</p><div className="space-y-2">{list.map(ev => <button key={eventId(ev)} className="w-full text-left flex items-center gap-3 p-3.5 rounded-xl border border-[#dce2d1] bg-[#fafaf2] hover:border-[#729270] transition-colors" onClick={() => setLocation(`/facilitator/events/${eventId(ev)}`)} data-testid={`button-open-event-${eventId(ev)}`}><div className="w-10 h-10 shrink-0 rounded-xl bg-[#e4ebda] flex items-center justify-center text-[#56775c]"><LayoutGrid size={18} /></div><div className="flex-1 min-w-0"><p className="font-extrabold text-sm truncate">{ev.name}</p><p className="text-xs text-muted-foreground">{ev.tableCount ?? ev.tables?.length ?? 0} tables · {ev.code.toUpperCase()}</p></div><ArrowRight size={16} className="text-[#648069]" /></button>)}</div></div>; })}
+              : (["active", "ending", "upcoming", "completed"] as const).map(status => {
+                const list = (events.data ?? []).filter(e => e.status === status);
+                if (!list.length) return null;
+                return <div key={status}>
+                  <p className="event-kicker mb-2">{status === "active" ? "In progress" : status === "ending" ? "Ending" : status === "upcoming" ? "Coming up" : "Completed"}</p>
+                  <div className="space-y-2">{list.map(ev => <div key={eventId(ev)} className="flex items-center gap-2 p-2 rounded-xl border border-[#dce2d1] bg-[#fafaf2]">
+                    <button className="min-w-0 flex-1 text-left flex items-center gap-3 p-1.5 rounded-lg hover:bg-[#f1f2e8] transition-colors" onClick={() => setLocation(`/facilitator/events/${eventId(ev)}`)} data-testid={`button-open-event-${eventId(ev)}`}>
+                      <span className="w-10 h-10 shrink-0 rounded-xl bg-[#e4ebda] flex items-center justify-center text-[#56775c]"><LayoutGrid size={18} /></span>
+                      <span className="flex-1 min-w-0"><span className="block font-extrabold text-sm truncate">{ev.name}</span><span className="block text-xs text-muted-foreground">{ev.tableCount ?? ev.tables?.length ?? 0} tables · {ev.code.toUpperCase()}</span></span>
+                      <ArrowRight size={16} className="text-[#648069] shrink-0" />
+                    </button>
+                    {status === "completed" && <button type="button" className="event-button event-button-outline shrink-0 !min-h-10 !px-3 text-[#a65937]" onClick={() => setEventToDelete(ev)} aria-label={`Delete completed event ${ev.name}`} data-testid={`button-delete-event-${eventId(ev)}`}><Trash2 size={15} /><span className="hidden sm:inline">Delete</span></button>}
+                  </div>)}</div>
+                </div>;
+              })}
             {!events.isLoading && !events.isError && !events.data?.length && <div className="border border-dashed border-[#b9c8b5] rounded-xl px-5 py-6 text-center"><CalendarDays className="mx-auto text-[#779374] mb-2" size={22} /><p className="font-bold text-sm">Your first event starts here.</p><p className="text-xs text-muted-foreground">Set up tables above, then share one code with the whole group.</p></div>}
           </div>
         </section>
@@ -341,6 +357,20 @@ export default function FacilitatorHome() {
             </>
           )}
         </div>
+        {eventToDelete && <div className="fixed inset-0 z-50 bg-[#26392d]/50 flex items-center justify-center p-4" onMouseDown={e => { if (e.target === e.currentTarget) setEventToDelete(null); }}>
+          <section className="event-panel w-full max-w-md p-6 shadow-2xl" role="dialog" aria-modal="true" aria-labelledby="delete-event-heading">
+            <p className="event-kicker text-[#a65937]">Permanent action</p>
+            <h2 id="delete-event-heading" className="font-display text-3xl mt-2">Delete {eventToDelete.name}?</h2>
+            <p className="text-sm text-[#71826a] mt-3">This permanently deletes this completed Event and all its tables, guest seats, and seat tokens. This cannot be undone.</p>
+            <div className="flex justify-end gap-2 mt-6">
+              <button type="button" className="event-button event-button-outline" disabled={deleteEvent.isPending} onClick={() => setEventToDelete(null)} data-testid="button-cancel-delete-event">Cancel</button>
+              <button type="button" className="event-button event-button-warn" disabled={deleteEvent.isPending || eventToDelete.status !== "completed"} onClick={() => deleteEvent.mutate(eventId(eventToDelete), {
+                onSuccess: () => { toast({ title: "Event permanently deleted" }); setEventToDelete(null); },
+                onError: error => toast({ title: "Event wasn't deleted", description: error.message, variant: "destructive" }),
+              })} data-testid="button-confirm-delete-event">{deleteEvent.isPending ? "Deleting event…" : "Permanently delete event"}</button>
+            </div>
+          </section>
+        </div>}
       </motion.div>
     </div>
   );

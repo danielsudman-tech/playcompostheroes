@@ -19,6 +19,7 @@
     "test:bot-takeover": "tsx ./src/tests/bot-takeover.test.ts",
     "test:route-facilitated-kick": "tsx ./src/tests/route-facilitated-kick.test.ts",
     "test:events": "tsx ./src/tests/route-events.test.ts",
+    "test:event-delete": "tsx ./src/tests/route-event-delete.test.ts",
     "test:auth-rate-limit": "tsx ./src/tests/auth-rate-limit.test.ts",
     "test:auth-session-expiry": "tsx ./src/tests/auth-session-expiry.test.ts",
     "test:card-image-validation": "tsx ./src/tests/card-image-validation.test.ts",
