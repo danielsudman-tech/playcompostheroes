@@ -5,7 +5,7 @@ import {
   CreateFacilitatorEventBody, GetFacilitatorEventsResponse, GetFacilitatorEventResponse,
   UpdateFacilitatorEventBody, UpdateFacilitatorEventResponse, ControlFacilitatorEventBody,
   ControlFacilitatorEventResponse, ControlFacilitatorEventTableBody,
-  ControlFacilitatorEventTableResponse, GetPublicEventResponse, JoinEventBody,
+  ControlFacilitatorEventTableResponse, GetEventReadyResponse, GetPublicEventResponse, JoinEventBody,
   JoinEventResponse, SetEventReadyBody, SetEventReadyResponse,
   HeartbeatEventPresenceBody, HeartbeatEventPresenceResponse,
   CreateFacilitatorEventStreamTicketBody, CreateFacilitatorEventStreamTicketResponse,
@@ -743,10 +743,16 @@ async function resolveEventSeat(code: string, token: unknown, client: PgQueryabl
     const player = state?.players[Number(row.player_index)];
     if (!player) return null;
     const seat = await client.query(
-      `SELECT 1 FROM compost_event_seats WHERE game_id=$1 AND player_id=$2`, [row.game_id, player.id],
+      `SELECT ready FROM compost_event_seats WHERE game_id=$1 AND player_id=$2`, [row.game_id, player.id],
     );
     if (!seat.rows.length) return null;
-    return { ...row, player_id: player.id, token, playerIndex: Number(row.player_index) };
+    return {
+      ...row,
+      player_id: player.id,
+      token,
+      playerIndex: Number(row.player_index),
+      ready: (seat.rows[0] as { ready?: boolean }).ready === true,
+    };
   });
   return slot ?? null;
 }
@@ -754,6 +760,12 @@ async function resolveEventSeat(code: string, token: unknown, client: PgQueryabl
 type EventReadyResult =
   | { status: 200; eventId: string }
   | { status: 403 | 409; error: string };
+
+router.get("/events/:code/ready", async (req, res): Promise<void> => {
+  const seat = await resolveEventSeat(req.params.code, req.query.token);
+  if (!seat) { res.status(403).json({ error: "Invalid event seat token" }); return; }
+  res.json(GetEventReadyResponse.parse({ ready: seat.ready }));
+});
 
 router.post("/events/:code/ready", async (req, res): Promise<void> => {
   const body = req.body as { token?: string; ready?: boolean };

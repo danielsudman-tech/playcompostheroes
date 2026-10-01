@@ -123,6 +123,10 @@ export interface EventReadyInput {
   ready: boolean;
 }
 
+export interface EventReadyStatus {
+  ready: boolean;
+}
+
 export interface EventPresenceInput {
   token: string;
 }
@@ -765,6 +769,10 @@ export type GetGameParams = {
 
 export type StreamFacilitatorEventParams = {
   ticket: string;
+};
+
+export type GetEventReadyParams = {
+  token: string;
 };
 
 export type RecoverHostToken200 = {

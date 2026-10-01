@@ -2,7 +2,7 @@ import { useState, useEffect, useLayoutEffect, useCallback, useRef } from "react
 import { createPortal } from "react-dom";
 import { useGameSounds } from "@/hooks/use-game-sounds";
 import { useCurrentUser } from "@/components/AppGate";
-import { forgetEventSeat, getGameEventCode, rememberedEventSeat, useEventPresence, useGuestEvent, useReadyEvent } from "@/hooks/use-events";
+import { forgetEventSeat, getGameEventCode, rememberedEventSeat, useEventPresence, useEventReadyStatus, useGuestEvent, useSetEventReady } from "@/hooks/use-events";
 import { useParams, useLocation } from "wouter";
 import { motion, AnimatePresence } from "framer-motion";
 import confetti from "canvas-confetti";
@@ -39,6 +39,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { useToast } from "@/hooks/use-toast";
 import type { PlayerState, Card } from "@workspace/api-client-react";
+import { isEventSeatReadyFromServer } from "@/hooks/event-readiness";
 import {
   Layers,
   RefreshCcw,
@@ -151,15 +152,18 @@ export default function FacilitatedGame() {
   const eventCode = gameId ? getGameEventCode(gameId) : null;
   const eventSeat = eventCode ? rememberedEventSeat(eventCode) : null;
   useEventPresence(eventCode ?? "", eventSeat, isFacilitated && !!eventSeat && !!localToken);
-  const { data: guestEvent } = useGuestEvent(isFacilitated ? eventCode ?? "" : "");
-  const eventReady = useReadyEvent(eventCode ?? "");
+  const { data: guestEvent, isLoading: guestEventLoading } = useGuestEvent(eventCode ?? "");
+  const eventReadiness = useEventReadyStatus(
+    eventCode ?? "",
+    eventSeat,
+    isFacilitated && gameState?.phase === "waiting" && !!eventSeat && !!localToken,
+  );
+  const eventReady = useSetEventReady(eventCode ?? "");
   const eventClosing = guestEvent?.status === "ending" || guestEvent?.status === "completed";
-  const [eventMarkedReady, setEventMarkedReady] = useState(() => {
-    try { return !!gameId && localStorage.getItem(`compost_event_ready_${gameId}`) === "yes"; } catch { return false; }
-  });
-  useEffect(() => {
-    try { setEventMarkedReady(isFacilitated && !!gameId && localStorage.getItem(`compost_event_ready_${gameId}`) === "yes"); } catch { setEventMarkedReady(false); }
-  }, [gameId, isFacilitated]);
+  const eventReadinessLoading = eventReadiness.isFetching;
+  const eventMarkedReady = !eventReadinessLoading &&
+    !eventReadiness.isError &&
+    isEventSeatReadyFromServer(eventReadiness.data);
   const hostIsSpectator = (gameState as any)?.hostIsSpectator === true;
 
   const handleKicked = useCallback(() => {
@@ -344,6 +348,15 @@ export default function FacilitatedGame() {
     );
   }
 
+  if (!gameState && eventCode && guestEventLoading) {
+    return (
+      <div className="min-h-screen bg-background flex flex-col items-center justify-center">
+        <Loader2 className="w-10 h-10 text-primary animate-spin mb-3" />
+        <h2 className="text-xl font-display text-foreground">Checking this event…</h2>
+      </div>
+    );
+  }
+
   if (error || !gameState) {
     return (
       <div className="min-h-screen bg-background flex flex-col items-center justify-center p-4 text-center">
@@ -427,7 +440,14 @@ export default function FacilitatedGame() {
             <Loader2 className="w-8 h-8 text-primary animate-spin mx-auto mb-4" />
             <h2 className="text-2xl font-display font-bold mb-2">You're at the table!</h2>
              <p className="text-muted-foreground mb-6">Waiting for your facilitator to start the game.</p>
-              {isFacilitated && eventCode && eventSeat && <div className="flex flex-col sm:flex-row gap-2 mb-4"><Button className="flex-1" variant="outline" disabled={eventClosing || eventMarkedReady || eventReady.isPending} onClick={() => { if (!eventClosing) eventReady.mutate(eventSeat, { onSuccess: () => { try { localStorage.setItem(`compost_event_ready_${eventSeat.gameId}`, "yes"); } catch {} setEventMarkedReady(true); logUpdate("Ready sent", "notice", "Your host knows you're ready."); }, onError: e => toast({ title: "Couldn't mark ready", description: e.message, variant: "destructive" }) }); }} data-testid="button-table-event-ready">{eventClosing ? "Event closing" : eventMarkedReady ? "You're ready" : "I'm ready"}</Button><Button className="flex-1" variant="outline" onClick={() => setLocation(`/event/${eventCode}`)} data-testid="button-back-event-lobby">Event lobby</Button></div>}
+               {isFacilitated && eventCode && eventSeat && <div className="space-y-2 mb-4">
+                 {eventReadiness.isError && <p role="status" className="text-xs text-destructive">Couldn't load your saved ready status. You can still update it below.</p>}
+                 {eventMarkedReady ? <div className="rounded-xl bg-muted px-3 py-2 space-y-2">
+                   <p role="status" className="text-sm font-medium text-muted-foreground">You're ready — your host will start the game.</p>
+                   <Button className="w-full" variant="outline" disabled={eventClosing || eventReady.isPending} onClick={() => eventReady.mutate({ seat: eventSeat, ready: false }, { onError: e => toast({ title: "Couldn't update readiness", description: e.message, variant: "destructive" }) })} data-testid="button-table-event-ready">Not ready yet</Button>
+                 </div> : <Button className="w-full" variant="outline" disabled={eventClosing || eventReady.isPending || eventReadinessLoading} onClick={() => eventReady.mutate({ seat: eventSeat, ready: true }, { onSuccess: () => logUpdate("Ready sent", "notice", "Your host knows you're ready."), onError: e => toast({ title: "Couldn't mark ready", description: e.message, variant: "destructive" }) })} data-testid="button-table-event-ready">{eventClosing ? "Event closing" : eventReadinessLoading ? "Checking readiness…" : eventReady.isPending ? "Saving…" : "I'm ready"}</Button>}
+                 <Button className="w-full" variant="outline" onClick={() => setLocation(`/event/${eventCode}`)} data-testid="button-back-event-lobby">Event lobby</Button>
+               </div>}
             <div className="bg-muted rounded-2xl p-4 text-left">
               <p className="text-xs font-bold uppercase tracking-wider text-muted-foreground mb-2">Players seated</p>
               <div className="space-y-1.5">

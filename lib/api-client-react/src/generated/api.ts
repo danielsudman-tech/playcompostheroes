@@ -31,6 +31,7 @@ import type {
   EventJoinResult,
   EventPresenceInput,
   EventReadyInput,
+  EventReadyStatus,
   EventStreamTicket,
   EventStreamTicketInput,
   EventSummary,
@@ -48,6 +49,7 @@ import type {
   GameSeatClaimInput,
   GameSeatClaimResult,
   GameState,
+  GetEventReadyParams,
   GetGameParams,
   HealthStatus,
   HostBroadcast,
@@ -1848,6 +1850,115 @@ export const useJoinEvent = <
 > => {
   return useMutation(getJoinEventMutationOptions(options));
 };
+
+/**
+ * @summary Read the authenticated event seat's ready state
+ */
+export const getGetEventReadyUrl = (
+  code: string,
+  params: GetEventReadyParams,
+) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? "null" : value.toString());
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0
+    ? `/api/events/${code}/ready?${stringifiedParams}`
+    : `/api/events/${code}/ready`;
+};
+
+export const getEventReady = async (
+  code: string,
+  params: GetEventReadyParams,
+  options?: RequestInit,
+): Promise<EventReadyStatus> => {
+  return customFetch<EventReadyStatus>(getGetEventReadyUrl(code, params), {
+    ...options,
+    method: "GET",
+  });
+};
+
+export const getGetEventReadyQueryKey = (
+  code: string,
+  params?: GetEventReadyParams,
+) => {
+  return [`/api/events/${code}/ready`, ...(params ? [params] : [])] as const;
+};
+
+export const getGetEventReadyQueryOptions = <
+  TData = Awaited<ReturnType<typeof getEventReady>>,
+  TError = ErrorType<ErrorResponse>,
+>(
+  code: string,
+  params: GetEventReadyParams,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof getEventReady>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey =
+    queryOptions?.queryKey ?? getGetEventReadyQueryKey(code, params);
+
+  const queryFn: QueryFunction<Awaited<ReturnType<typeof getEventReady>>> = ({
+    signal,
+  }) => getEventReady(code, params, { signal, ...requestOptions });
+
+  return {
+    queryKey,
+    queryFn,
+    enabled: !!code,
+    ...queryOptions,
+  } as UseQueryOptions<
+    Awaited<ReturnType<typeof getEventReady>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type GetEventReadyQueryResult = NonNullable<
+  Awaited<ReturnType<typeof getEventReady>>
+>;
+export type GetEventReadyQueryError = ErrorType<ErrorResponse>;
+
+/**
+ * @summary Read the authenticated event seat's ready state
+ */
+
+export function useGetEventReady<
+  TData = Awaited<ReturnType<typeof getEventReady>>,
+  TError = ErrorType<ErrorResponse>,
+>(
+  code: string,
+  params: GetEventReadyParams,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof getEventReady>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getGetEventReadyQueryOptions(code, params, options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
 
 /**
  * @summary Set the authenticated event seat's ready state

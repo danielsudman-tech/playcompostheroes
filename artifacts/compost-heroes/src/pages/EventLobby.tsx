@@ -1,10 +1,11 @@
 import { useEffect, useState } from "react";
 import { useLocation, useParams } from "wouter";
-import { ArrowLeft, ArrowRight, Check, CircleAlert, Users } from "lucide-react";
+import { ArrowLeft, ArrowRight, CircleAlert, Users } from "lucide-react";
 import compostHeroesLogo from "@assets/Compost_Heroes_Logo_no_background_1773537933517.png";
 import { useToast } from "@/hooks/use-toast";
 import { joinEvent } from "@workspace/api-client-react";
-import { type EventJoin, rememberedEventSeat, rememberEventSeat, useEventPresence, useGuestEvent, useJoinEvent, useReadyEvent } from "@/hooks/use-events";
+import { type EventJoin, rememberedEventSeat, rememberEventSeat, useEventPresence, useGuestEvent, useJoinEvent } from "@/hooks/use-events";
+import { eventTablePath } from "@/hooks/event-readiness";
 
 export default function EventLobby() {
   const { code: rawCode = "" } = useParams<{ code: string }>();
@@ -13,18 +14,12 @@ export default function EventLobby() {
   const { toast } = useToast();
   const { data: event, isLoading, isError, refetch } = useGuestEvent(code);
   const join = useJoinEvent(code);
-  const ready = useReadyEvent(code);
   const [name, setName] = useState("");
   const [tableNumber, setTableNumber] = useState<number | undefined>();
   const [seat, setSeat] = useState<EventJoin | null>(() => rememberedEventSeat(code));
-  const [locallyReady, setLocallyReady] = useState(() => {
-    const saved = rememberedEventSeat(code);
-    try { return !!saved && localStorage.getItem(`compost_event_ready_${saved.gameId}`) === "yes"; } catch { return false; }
-  });
   useEffect(() => {
     const saved = rememberedEventSeat(code);
     setSeat(saved);
-    try { setLocallyReady(!!saved && localStorage.getItem(`compost_event_ready_${saved.gameId}`) === "yes"); } catch { setLocallyReady(false); }
     if (!saved) return;
     let cancelled = false;
     joinEvent(code, { name: saved.playerName ?? "Guest", existingToken: saved.token })
@@ -34,15 +29,13 @@ export default function EventLobby() {
   }, [code]);
   useEventPresence(code, seat, !!seat);
   const table = event?.tables.find(t => t.tableNumber === seat?.tableNumber);
-  const ownSeat = (table?.seats ?? table?.players ?? []).find(s => s.playerId === seat?.playerId || (!!seat?.playerName && (s.name ?? s.playerName) === seat.playerName));
-  const isReady = locallyReady || ownSeat?.ready === true;
   const max = event?.playersPerTable ?? event?.maxPlayersPerTable ?? 4;
-  const enter = () => { if (seat) navigate(`/game/${seat.gameId}/table`); };
+  const backToMyTable = () => { if (seat) navigate(eventTablePath(seat.gameId)); };
   const handleJoin = (e: React.FormEvent) => {
     e.preventDefault();
     if (!name.trim() || event?.status === "ending" || event?.status === "completed") return;
     join.mutate({ name: name.trim(), ...(event?.assignmentMode === "auto" ? {} : tableNumber !== undefined ? { tableNumber } : {}) }, {
-      onSuccess: result => { setSeat(result); toast({ title: "You're in", description: "Let your host know when you're ready." }); },
+      onSuccess: result => navigate(eventTablePath(result.gameId)),
       onError: err => toast({ title: "Couldn't join this event", description: err.message, variant: "destructive" }),
     });
   };
@@ -63,12 +56,9 @@ export default function EventLobby() {
           {seat ? <div className="event-panel overflow-hidden">
             <div className="bg-[#dfeadb] px-6 py-5"><p className="event-kicker">Your seat is saved</p><h2 className="font-display text-3xl mt-1">Welcome, {seat.playerName ?? "player"}.</h2><p className="text-sm text-[#56705b] mt-1">Your seat is at table {table?.tableNumber ?? seat.tableNumber ?? ""}.</p></div>
             <div className="p-6 space-y-4">
-              <div className="flex items-center justify-between rounded-xl border border-[#d9ddca] p-4"><div><p className="font-extrabold text-sm">{table?.label ?? table?.name ?? `Table ${table?.tableNumber ?? seat.tableNumber ?? ""}`}</p><p className="text-xs text-[#71826a] mt-1">{table?.playerCount ?? table?.seats?.length ?? 0}/{table?.maxPlayers ?? max} seated</p></div><span className={`text-xs font-extrabold px-3 py-1.5 rounded-full ${isReady ? "bg-[#e2efde] text-[#397445]" : "bg-[#f3ebd9] text-[#916a32]"}`}>{isReady ? "Ready" : "Not ready yet"}</span></div>
-              <p className="text-sm text-[#637365]">{event.status === "completed" ? "This event has ended." : event.status === "ending" ? "Your host is ending the event. New joins and readiness are closed." : "Say you're ready, then head to the table. Your host will start play when your group is settled."}</p>
-              {event.status !== "completed" && event.status !== "ending" && <div className="flex flex-col sm:flex-row gap-2">
-                <button className="event-button event-button-soft flex-1" disabled={isReady || ready.isPending} data-testid="button-event-ready" onClick={() => { if (event.status !== "ending" && event.status !== "completed") ready.mutate(seat, { onSuccess: () => { try { localStorage.setItem(`compost_event_ready_${seat.gameId}`, "yes"); } catch {} setLocallyReady(true); toast({ title: "Your host knows you're ready" }); }, onError: err => toast({ title: "Couldn't mark you ready", description: err.message, variant: "destructive" }) }); }}><Check size={16} /> {isReady ? "You're ready" : "I'm ready"}</button>
-                <button className="event-button event-button-primary flex-1" onClick={enter} data-testid="button-enter-event-table">Enter table <ArrowRight size={16} /></button>
-              </div>}
+              <div className="rounded-xl border border-[#d9ddca] p-4"><p className="font-extrabold text-sm">{table?.label ?? table?.name ?? `Table ${table?.tableNumber ?? seat.tableNumber ?? ""}`}</p><p className="text-xs text-[#71826a] mt-1">{table?.playerCount ?? table?.seats?.length ?? 0}/{table?.maxPlayers ?? max} seated</p></div>
+              <p className="text-sm text-[#637365]">{event.status === "completed" ? "This event has ended." : event.status === "ending" ? "Your host is ending this event." : "Your saved seat takes you straight to your table."}</p>
+              <button className="event-button event-button-primary w-full" onClick={backToMyTable} data-testid="button-back-to-my-table">Back to my table <ArrowRight size={16} /></button>
             </div>
           </div> : <form onSubmit={handleJoin} className="event-panel p-6 sm:p-8 space-y-5">
             <div><p className="event-kicker">Step 01 / Join the group</p><h2 className="font-display text-3xl mt-2">Find your seat.</h2><p className="text-sm text-[#71826a] mt-1">No account needed. Your seat stays with this browser.</p></div>

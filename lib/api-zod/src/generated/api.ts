@@ -880,6 +880,21 @@ export const JoinEventResponse = zod.object({
 });
 
 /**
+ * @summary Read the authenticated event seat's ready state
+ */
+export const GetEventReadyParams = zod.object({
+  code: zod.coerce.string(),
+});
+
+export const GetEventReadyQueryParams = zod.object({
+  token: zod.coerce.string(),
+});
+
+export const GetEventReadyResponse = zod.object({
+  ready: zod.boolean(),
+});
+
+/**
  * @summary Set the authenticated event seat's ready state
  */
 export const SetEventReadyParams = zod.object({

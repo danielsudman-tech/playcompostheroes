@@ -1,12 +1,13 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { getStoredToken, storeToken } from "@/hooks/use-game";
+import { eventReadinessQueryKey, type EventSeatReference } from "@/hooks/event-readiness";
 import { createEventPresenceScheduler, withBoundedSafeRetry } from "@/hooks/event-presence";
 import {
   applyEventStreamSnapshot, eventSnapshotGenerationKey, isCurrentEventSnapshot,
 } from "@/hooks/event-dashboard-realtime";
 import {
-  getFacilitatorEvents, createFacilitatorEvent, getFacilitatorEvent, updateFacilitatorEvent,
+  getEventReady, getFacilitatorEvents, createFacilitatorEvent, getFacilitatorEvent, updateFacilitatorEvent,
   createFacilitatorEventStreamTicket,
   controlFacilitatorEvent, controlFacilitatorEventTable, getPublicEvent, joinEvent, setEventReady,
   heartbeatEventPresence,
@@ -87,8 +88,6 @@ export const transferRememberedEventSeat = (
     if (localStorage.getItem(`compost_game_event_code_${sourceGameId}`)?.toLowerCase() === code) {
       localStorage.removeItem(`compost_game_event_code_${sourceGameId}`);
     }
-    localStorage.removeItem(`compost_event_ready_${sourceGameId}`);
-
     // The player ID normally survives a transfer, but the server may assign a
     // new ID if that ID is already present in the destination room. Resolve the
     // authoritative destination identity with the transferred token.
@@ -131,7 +130,7 @@ export const updateRememberedEventSeatIdentity = (
 };
 export const getGameEventCode = (gameId: string) => { try { return localStorage.getItem(`compost_game_event_code_${gameId}`); } catch { return null; } };
 export const getGameEventId = (gameId: string) => { try { return localStorage.getItem(`compost_game_event_id_${gameId}`); } catch { return null; } };
-export const forgetEventSeat = (gameId: string) => { try { const code = getGameEventCode(gameId); if (code) localStorage.removeItem(`compost_event_${code}`); localStorage.removeItem(`compost_game_event_code_${gameId}`); localStorage.removeItem(`compost_event_ready_${gameId}`); } catch {} };
+export const forgetEventSeat = (gameId: string) => { try { const code = getGameEventCode(gameId); if (code) localStorage.removeItem(`compost_event_${code}`); localStorage.removeItem(`compost_game_event_code_${gameId}`); } catch {} };
 const normalizeTable = (t: EventDetail["tables"][number]): EventTable => ({
   ...t, seats: t.players.map(p => ({ ...p, name: p.playerName })), maxPlayers: t.capacity,
   playerCount: t.players.length, readyCount: t.players.filter(p => p.ready).length,
@@ -202,12 +201,54 @@ export function useJoinEvent(code: string) {
   const qc = useQueryClient();
   return useMutation({ mutationFn: (data: { name: string; tableNumber?: number; existingToken?: string }): Promise<EventJoin> => joinEvent(code, data), onSuccess: (seat) => { rememberEventSeat(code, seat); qc.invalidateQueries({ queryKey: guestEventKey(code) }); } });
 }
-export function useReadyEvent(code: string) {
+export function useEventReadyStatus(code: string, seat: EventJoin | null, enabled: boolean) {
+  const emptySeat: EventSeatReference = { gameId: "" };
+  const requestToken = seat ? getStoredToken(seat.gameId) ?? seat.token : null;
+  const queryKey = eventReadinessQueryKey(code, seat ?? emptySeat, requestToken);
+  return useQuery({
+    queryKey,
+    queryFn: ({ signal }) => {
+      if (!seat || !requestToken) throw new Error("Event seat credential is missing");
+      return getEventReady(code, { token: requestToken }, { signal });
+    },
+    enabled: !!code && !!seat && enabled,
+    refetchInterval: false,
+    staleTime: 0,
+    refetchOnWindowFocus: true,
+    refetchOnReconnect: true,
+  });
+}
+export function useSetEventReady(code: string) {
   const qc = useQueryClient();
-  return useMutation({ mutationFn: (seat: EventJoin) => withBoundedSafeRetry(
-    () => setEventReady(code, { token: getStoredToken(seat.gameId) ?? seat.token, ready: true }),
-    { safety: "ready" },
-  ), onSuccess: () => qc.invalidateQueries({ queryKey: guestEventKey(code) }) });
+  type ReadyVariables = { seat: EventJoin; ready: boolean };
+  const requestTokens = useRef(new WeakMap<ReadyVariables, string>());
+  return useMutation({
+    mutationFn: (variables: ReadyVariables) => {
+      const requestToken = requestTokens.current.get(variables);
+      if (!requestToken) throw new Error("Event seat credential is missing");
+      return withBoundedSafeRetry(
+        () => setEventReady(code, { token: requestToken, ready: variables.ready }),
+        { safety: "ready" },
+      );
+    },
+    onMutate: async (variables) => {
+      const requestToken = getStoredToken(variables.seat.gameId) ?? variables.seat.token;
+      const queryKey = eventReadinessQueryKey(code, variables.seat, requestToken);
+      requestTokens.current.set(variables, requestToken);
+      await qc.cancelQueries({ queryKey, exact: true });
+      return { queryKey };
+    },
+    onSuccess: (_result, variables, context) => {
+      if (context) qc.setQueryData(context.queryKey, { ready: variables.ready });
+      qc.invalidateQueries({ queryKey: guestEventKey(code) });
+    },
+    onError: (_error, _variables, context) => {
+      if (context) qc.invalidateQueries({ queryKey: context.queryKey });
+    },
+    onSettled: (_result, _error, variables) => {
+      requestTokens.current.delete(variables);
+    },
+  });
 }
 export function useEventPresence(code: string, seat: EventJoin | null, enabled: boolean) {
   useEffect(() => {
