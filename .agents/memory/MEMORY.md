@@ -7,3 +7,4 @@
 - [Event mutation consistency](event-mutation-consistency.md) — event joins and ordinary game actions share database locks; development event tables must be added without a destructive generic push.
 - [Event results privacy](event-results-privacy.md) — share table phases publicly, but require a guest seat token for individual results; face-up discards remain public game state.
 - [Fresh browser diagnostics](fresh-browser-diagnostics.md) — distinguish stale hook warnings from live edits from reproducible errors in a fresh post-restart context.
+- [Long browser waits](long-browser-waits.md) — avoid a single >45-second wait in workshop browser checks; it can reset saved contexts.
