@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { getStoredToken, storeToken } from "@/hooks/use-game";
+import { createEventPresenceScheduler } from "@/hooks/event-presence";
 import {
   getFacilitatorEvents, createFacilitatorEvent, getFacilitatorEvent, updateFacilitatorEvent,
   createFacilitatorEventStreamTicket,
@@ -186,14 +187,18 @@ export function useReadyEvent(code: string) {
 export function useEventPresence(code: string, seat: EventJoin | null, enabled: boolean) {
   useEffect(() => {
     if (!code || !seat || !enabled) return;
-    const send = () => {
-      if (document.visibilityState === "visible") void heartbeatEventPresence(code, { token: getStoredToken(seat.gameId) ?? seat.token }).catch(() => {});
+    const scheduler = createEventPresenceScheduler({
+      send: () => heartbeatEventPresence(code, { token: getStoredToken(seat.gameId) ?? seat.token }),
+      isVisible: () => document.visibilityState === "visible",
+    });
+    const onVisibilityChange = () => scheduler.requestImmediate();
+    document.addEventListener("visibilitychange", onVisibilityChange);
+    window.addEventListener("online", scheduler.requestImmediate);
+    return () => {
+      scheduler.stop();
+      document.removeEventListener("visibilitychange", onVisibilityChange);
+      window.removeEventListener("online", scheduler.requestImmediate);
     };
-    send();
-    const timer = window.setInterval(send, 15000);
-    document.addEventListener("visibilitychange", send);
-    window.addEventListener("online", send);
-    return () => { window.clearInterval(timer); document.removeEventListener("visibilitychange", send); window.removeEventListener("online", send); };
   }, [code, seat?.gameId, seat?.token, enabled]);
 }
 export function useEventStream(id: string) {

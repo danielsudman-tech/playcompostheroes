@@ -21,6 +21,10 @@ import {
 } from "../lib/gameStore.js";
 import { extractBearerToken, getUserByToken, isApprovedFacilitator } from "../lib/userStore.js";
 import { consumeEventStreamTicket, issueEventStreamTicket } from "../lib/eventStreamTickets.js";
+import {
+  EVENT_PRESENCE_SWEEP_INTERVAL_MS, EventPresenceSweepCursor,
+  updateEventPresenceAndPublishTransition,
+} from "../lib/eventPresence.js";
 import { serializeState } from "./game.js";
 
 const router: IRouter = Router();
@@ -149,6 +153,44 @@ onGameBroadcast((gameId) => {
       }
     }).catch(() => undefined);
 });
+
+let presenceSweepInFlight = false;
+const presenceSweepCursor = new EventPresenceSweepCursor();
+async function sweepEventPresence() {
+  if (presenceSweepInFlight) return;
+  presenceSweepInFlight = true;
+  try {
+    await presenceSweepCursor.run(async (previousSuccessfulSweepAt) => {
+      const sweep = await pool.query(
+        `WITH sweep_clock AS MATERIALIZED (
+           SELECT NOW() AS swept_at
+         ), crossed AS (
+           SELECT DISTINCT s.event_id
+             FROM compost_event_seats s
+             JOIN compost_events e ON e.id = s.event_id
+             CROSS JOIN sweep_clock c
+            WHERE e.status <> 'completed'
+              AND s.last_seen_at < c.swept_at - INTERVAL '45 seconds'
+              AND ($1::timestamptz IS NULL OR
+                   s.last_seen_at > $1::timestamptz - INTERVAL '46 seconds')
+         )
+         SELECT c.swept_at, crossed.event_id
+           FROM sweep_clock c LEFT JOIN crossed ON TRUE`,
+        [previousSuccessfulSweepAt === null ? null : new Date(previousSuccessfulSweepAt)],
+      );
+      for (const row of sweep.rows) {
+        if (row.event_id) pushEvent(row.event_id, await buildDetail(row.event_id));
+      }
+      return new Date(sweep.rows[0].swept_at).getTime();
+    });
+  } catch {
+    // Retain the previous successful cutoff so the next sweep retries this full interval.
+  } finally {
+    presenceSweepInFlight = false;
+  }
+}
+const presenceSweepTimer = setInterval(() => { void sweepEventPresence(); }, EVENT_PRESENCE_SWEEP_INTERVAL_MS);
+presenceSweepTimer.unref();
 
 router.get("/facilitator/events", async (req, res): Promise<void> => {
   const userToken = extractBearerToken(req.get("authorization"));
@@ -529,11 +571,27 @@ router.post("/events/:code/presence", async (req, res): Promise<void> => {
   if (!parsedBody.success) { res.status(400).json({ error: parsedBody.error.message }); return; }
   const seat = await resolveEventSeat(req.params.code, parsedBody.data.token);
   if (!seat) { res.status(403).json({ error: "Invalid event seat token" }); return; }
-  await withGameMutationLocks([seat.game_id], async () => {
-    const refreshed = await resolveEventSeat(req.params.code, parsedBody.data.token);
-    if (!refreshed) return;
-    await pool.query(`UPDATE compost_event_seats SET last_seen_at=NOW() WHERE game_id=$1 AND player_id=$2`, [refreshed.game_id, refreshed.player_id]);
-    pushEvent(refreshed.event_id, await buildDetail(refreshed.event_id));
+  await updateEventPresenceAndPublishTransition(async () => {
+    const result = await pool.query(
+      `WITH prior AS MATERIALIZED (
+         SELECT id,last_seen_at
+           FROM compost_event_seats
+          WHERE event_id=$1 AND game_id=$2 AND player_id=$3
+          FOR UPDATE
+       ), touched AS (
+         UPDATE compost_event_seats seat
+            SET last_seen_at=NOW()
+           FROM prior
+          WHERE seat.id=prior.id
+         RETURNING seat.id
+       )
+       SELECT prior.last_seen_at
+         FROM prior JOIN touched USING (id)`,
+      [seat.event_id, seat.game_id, seat.player_id],
+    );
+    return result.rows.length ? result.rows[0].last_seen_at ?? null : undefined;
+  }, async () => {
+    pushEvent(seat.event_id, await buildDetail(seat.event_id));
   });
   res.json(HeartbeatEventPresenceResponse.parse({ ok: true }));
 });
