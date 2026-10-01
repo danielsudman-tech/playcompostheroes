@@ -59,15 +59,13 @@ export function updateFromEffect(
   const personal = level === "personal";
   const events = getPresentedEffectEvents(effect, localPlayerId);
   const lines = events.length ? events.map((e) => e.text) : effect.outcome ?? [];
-  const title = personal && effect.playedById !== localPlayerId
-    ? getEffectAnnouncementHeading(effect, localPlayerId)
-    : `${effect.playedByName} played ${effect.cardName}`;
+  const title = getEffectAnnouncementHeading(effect, localPlayerId);
   return {
     id: `effect:${effect.id}`,
     tone: personal ? "personal" : "effect",
-    title: personal && effect.playedById !== localPlayerId ? `${title} with ${effect.cardName}` : title,
+    title,
     detail: lines.slice(0, 3).join(" / ") || undefined,
-    lines: [...lines, ...(effect.privateEvents ?? [])],
+    lines: [...lines, ...(effect.privateFacts?.length ? [] : effect.privateEvents ?? [])],
     sig: effectSignature(effect),
     at,
     personal,

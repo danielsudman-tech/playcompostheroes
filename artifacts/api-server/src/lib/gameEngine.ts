@@ -138,6 +138,38 @@ export interface EffectEvent {
   playerIds?: string[];
   /** Human-readable one-liner, safe to show to everyone (never reveals hidden hands). */
   text: string;
+  /** Machine-readable outcome. Card details are only present for public cards. */
+  fact?: EffectFact;
+}
+
+export interface EffectFact {
+  kind:
+    | "draw"
+    | "hand_discard"
+    | "hand_transfer"
+    | "hand_loss"
+    | "pile_gain"
+    | "pile_loss"
+    | "pile_transfer"
+    | "compost_to_hand"
+    | "discard_to_hand"
+    | "skip"
+    | "pile_shift"
+    | "slot_change"
+    | "ongoing_set"
+    | "ongoing_removed";
+  /** Seat that played or activated the originating effect. */
+  actorId: string;
+  /** Affected players, or source then recipient for a transfer. */
+  playerIds: string[];
+  count: number;
+  /** Names and functions are allowed only for cards already public in a pile/discard. */
+  cardName?: string;
+  function?: string;
+  previousFunction?: string;
+  previousCardName?: string;
+  sourcePlayerId?: string;
+  targetPlayerId?: string;
 }
 
 export interface EffectAnnouncement {
@@ -149,6 +181,10 @@ export interface EffectAnnouncement {
   imageKey: string | null;
   playedById: string;
   playedByName: string;
+  /** Action taken; absent in announcements persisted by older versions. */
+  verb?: "played" | "activated" | "moved";
+  /** Public seat labels used to phrase structured facts for each viewer. */
+  players?: Array<{ id: string; name: string }>;
   /** Safe public outcome lines; raw game-log entries are never copied here. */
   outcome: string[];
   events: EffectEvent[];
@@ -156,6 +192,25 @@ export interface EffectAnnouncement {
   privateEventsByPlayerId?: Record<string, string[]>;
   /** Private detail populated by the per-viewer serializer. */
   privateEvents?: string[];
+  /** Instance identities/functions stay scoped to each affected hand owner. */
+  privateFactsByPlayerId?: Record<string, EffectFact[]>;
+  privateFacts?: EffectFact[];
+  /** Server-only provenance that named discard-to-hand facts came from an explicit pick. */
+  trustedExplicitDiscardToHand?: true;
+}
+
+/** Per-call engine facts used only while building the immediate effect announcement. */
+export interface EngineOperationTrace {
+  draws: Array<{ playerId: string; cardIds: string[] }>;
+  handDiscards: Array<{ playerId: string; card: Card }>;
+  discardToHand: Array<{ playerId: string; card: Card }>;
+}
+
+interface ActiveEngineOperationTrace extends EngineOperationTrace {
+  trackedHandOwners: Map<string, string>;
+  trackedCards: Map<string, Card>;
+  playedCardIds: Set<string>;
+  recordedHandDiscardIds: Set<string>;
 }
 
 type integer = number;
@@ -173,13 +228,100 @@ function addLog(state: GameState, msg: string): void {
   state.log = [...state.log.slice(-49), msg];
 }
 
+let activeEngineOperationTrace: ActiveEngineOperationTrace | null = null;
+
+function recordHandCardDiscard(playerId: string, card: Card): void {
+  const trace = activeEngineOperationTrace;
+  if (!trace || trace.playedCardIds.has(card.id) || trace.recordedHandDiscardIds.has(card.id)) return;
+  trace.handDiscards.push({ playerId, card });
+  trace.recordedHandDiscardIds.add(card.id);
+}
+
+function recordDiscardedHandCardsPresent(state: GameState): void {
+  const trace = activeEngineOperationTrace;
+  if (!trace) return;
+  const discardIds = new Set(state.discardPile.map((card) => card.id));
+  for (const cardId of trace.recordedHandDiscardIds) {
+    if (!discardIds.has(cardId)) trace.recordedHandDiscardIds.delete(cardId);
+  }
+  for (const [cardId, playerId] of trace.trackedHandOwners) {
+    if (!discardIds.has(cardId)) continue;
+    const card = trace.trackedCards.get(cardId);
+    if (card) recordHandCardDiscard(playerId, card);
+  }
+}
+
+/** Explicit public choice from the discard pile; random reshuffles never use this path. */
+function recordExplicitDiscardToHand(playerId: string, card: Card): void {
+  const trace = activeEngineOperationTrace;
+  if (!trace) return;
+  trace.discardToHand.push({ playerId, card });
+  trace.recordedHandDiscardIds.delete(card.id);
+  trace.trackedHandOwners.set(card.id, playerId);
+  trace.trackedCards.set(card.id, card);
+}
+
+/**
+ * Captures ephemeral operations for one synchronous engine action. The trace
+ * is returned separately and is never added to, saved with, or broadcast from
+ * GameState.
+ */
+export function captureEngineOperations<T extends { state: GameState; error?: string }>(
+  before: GameState,
+  operation: () => T,
+  options: { playedCardId?: string } = {},
+): { result: T; trace: EngineOperationTrace } {
+  const trace: ActiveEngineOperationTrace = {
+    draws: [],
+    handDiscards: [],
+    discardToHand: [],
+    trackedHandOwners: new Map(before.players.flatMap((player) =>
+      player.hand.map((card) => [card.id, player.id] as const))),
+    trackedCards: new Map(before.players.flatMap((player) =>
+      player.hand.map((card) => [card.id, card] as const))),
+    playedCardIds: new Set(options.playedCardId ? [options.playedCardId] : []),
+    recordedHandDiscardIds: new Set(),
+  };
+  const previousTrace = activeEngineOperationTrace;
+  activeEngineOperationTrace = trace;
+  try {
+    const result = operation();
+    if (!result.error) recordDiscardedHandCardsPresent(result.state);
+    return {
+      result,
+      trace: {
+        draws: trace.draws.map((draw) => ({ playerId: draw.playerId, cardIds: [...draw.cardIds] })),
+        handDiscards: [...trace.handDiscards],
+        discardToHand: [...trace.discardToHand],
+      },
+    };
+  } finally {
+    activeEngineOperationTrace = previousTrace;
+  }
+}
+
+/** Combines the user action trace with a subsequent bot-completion trace. */
+export function mergeEngineOperationTraces(
+  ...traces: Array<EngineOperationTrace | undefined>
+): EngineOperationTrace {
+  return {
+    draws: traces.flatMap((trace) => trace?.draws ?? []),
+    handDiscards: traces.flatMap((trace) => trace?.handDiscards ?? []),
+    discardToHand: traces.flatMap((trace) => trace?.discardToHand ?? []),
+  };
+}
+
 function drawCard(
   state: GameState,
   player: PlayerState,
   count = 1
 ): GameState {
   let s = { ...state };
+  const drawnCardIds: string[] = [];
   for (let i = 0; i < count; i++) {
+    // Observe hidden-hand cards in discard before a reshuffle can put one back
+    // into the same owner's hand and erase its final-state transition.
+    recordDiscardedHandCardsPresent(s);
     if (s.deck.length === 0) {
       if (s.discardPile.length === 0) {
         addLog(s, "Deck and discard pile are both empty — no card to draw.");
@@ -194,6 +336,12 @@ function drawCard(
       addLog(s, "Deck empty — reshuffled discard pile into deck.");
     }
     const [card, ...rest] = s.deck;
+    drawnCardIds.push(card.id);
+    if (activeEngineOperationTrace) {
+      activeEngineOperationTrace.recordedHandDiscardIds.delete(card.id);
+      activeEngineOperationTrace.trackedHandOwners.set(card.id, player.id);
+      activeEngineOperationTrace.trackedCards.set(card.id, card);
+    }
     const updatedPlayer = {
       ...player,
       hand: [...player.hand, card],
@@ -204,6 +352,9 @@ function drawCard(
       deck: rest,
       players: s.players.map((p) => (p.id === player.id ? updatedPlayer : p)),
     };
+  }
+  if (drawnCardIds.length > 0) {
+    activeEngineOperationTrace?.draws.push({ playerId: player.id, cardIds: drawnCardIds });
   }
   return s;
 }
@@ -227,6 +378,7 @@ function enforceHandSize(state: GameState): GameState {
     let currentPlayer = s.players.find((p) => p.id === originalPlayer.id)!;
     while (currentPlayer.hand.length > currentPlayer.maxHandSize) {
       const discarded = currentPlayer.hand[currentPlayer.hand.length - 1];
+      recordHandCardDiscard(currentPlayer.id, discarded);
       const updatedPlayer = {
         ...currentPlayer,
         hand: currentPlayer.hand.slice(0, -1),
@@ -780,6 +932,30 @@ function pushSoggyDecision(state: GameState, cardId: string, order: string[], in
   };
 }
 
+function tagPendingEffectOrigin(
+  state: GameState,
+  actorId: string,
+  originVerb: "played" | "activated" | "moved",
+): GameState {
+  const decision = state.pendingDecision;
+  if (!decision) return state;
+  return {
+    ...state,
+    pendingDecision: {
+      ...decision,
+      meta: {
+        ...decision.meta,
+        originActorId: decision.meta?.originActorId ?? actorId,
+        ...(decision.meta?.originVerb
+          ? { originVerb: decision.meta.originVerb }
+          : originVerb !== "played"
+            ? { originVerb }
+            : {}),
+      },
+    },
+  };
+}
+
 // Shared tail: simultaneously remove the chosen cards and hand each to the
 // player on the left.
 function applyWormPasses(state: GameState, passCards: Array<{ fromId: string; card: Card }>): GameState {
@@ -1187,6 +1363,13 @@ export function playCard(
     }
   }
 
+  if (cardInHand.type === "action" && state.actionPlayedThisTurn) {
+    return { state, error: "You may only play one action card per turn." };
+  }
+  // The play cost is not an effect discard. Mark every valid play within the
+  // current trace (including bot/autoresolved plays), not just the route root.
+  if (cardInHand.type === "action") activeEngineOperationTrace?.playedCardIds.add(cardId);
+
   // Remove card from hand
   let updatedPlayer = {
     ...player,
@@ -1229,7 +1412,7 @@ export function playCard(
           const winnerPlayer = getPlayer(s, winner)!;
           addLog(s, `🎉 ${winnerPlayer.name} wins! They collected one hero from each function!`);
         }
-        return { state: s };
+        return { state: tagPendingEffectOrigin(s, player.id, "played") };
       }
       addLog(s, `${player.name} played ${cardInHand.name} — choose which function slot to fill.`);
       s = {
@@ -1244,7 +1427,7 @@ export function playCard(
         },
       };
       s = updatePlayer(s, updatedPlayer);
-      return { state: s };
+      return { state: tagPendingEffectOrigin(s, player.id, "played") };
     }
 
     // Add to compost pile
@@ -1268,11 +1451,6 @@ export function playCard(
     s = triggerQuencher(s, player.id, cardInHand);
   } else {
     // Action card — limit to 1 action card per turn (regardless of whether a hero was played)
-    if (state.actionPlayedThisTurn) {
-      // Undo the hand removal before returning the error
-      s = updatePlayer(state, player);
-      return { state: s, error: "You may only play one action card per turn." };
-    }
     if (cardInHand.effectType === "ongoing") {
       // Move old ongoing action card to discard if one was active
       const prevOngoing = s.ongoingActionCard;
@@ -1311,13 +1489,13 @@ export function playCard(
     addLog(s, `🎉 ${winnerPlayer.name} wins! They collected one hero from each function!`);
   }
 
-  return { state: s };
+  return { state: tagPendingEffectOrigin(s, player.id, "played") };
 }
 
 // ─────────────────────────────────────────────
 // RESOLVE DECISION
 // ─────────────────────────────────────────────
-export function resolveDecision(
+function resolveDecisionCore(
   state: GameState,
   playerId: string,
   decisionData: Record<string, unknown>
@@ -1376,6 +1554,7 @@ export function resolveDecision(
       const card = s.discardPile.find((c) => c.id === chosenCardId);
       if (!card) return { state, error: "Card not found in discard" };
 
+      recordExplicitDiscardToHand(playerId, card);
       const updatedPlayer = {
         ...player,
         hand: [...player.hand, card],
@@ -1832,6 +2011,7 @@ export function resolveDecision(
       const discardCard = s.discardPile.find((c) => c.id === chosenId);
       if (!discardCard) return { state, error: "Card not in discard" };
 
+      recordExplicitDiscardToHand(playerId, discardCard);
       const updatedPlayer = {
         ...player,
         hand: [...player.hand, discardCard],
@@ -2030,6 +2210,7 @@ export function resolveDecision(
           cardId: "rot_regrow",
           prompt: `${player.name}: Choose 1 card to take from the discard pile.`,
           options: s.discardPile.map((c) => ({ cardId: c.id, cardName: c.name })),
+          ...(decision.meta?.originVerb ? { meta: { originVerb: decision.meta.originVerb } } : {}),
         },
       };
       return { state: s };
@@ -2041,6 +2222,7 @@ export function resolveDecision(
       const card = s.discardPile.find((c) => c.id === chosenId);
       if (!card) return { state, error: "Card not found in discard pile" };
 
+      recordExplicitDiscardToHand(playerId, card);
       const updatedPlayer = { ...player, hand: [...player.hand, card] };
       s = { ...s, discardPile: removeOneById(s.discardPile, chosenId) };
       s = updatePlayer(s, updatedPlayer);
@@ -2153,6 +2335,50 @@ export function resolveDecision(
     default:
       return { state, error: `Unknown decision type: ${decision.type}` };
   }
+}
+
+export function resolveDecision(
+  state: GameState,
+  playerId: string,
+  decisionData: Record<string, unknown>,
+): { state: GameState; error?: string } {
+  const result = resolveDecisionCore(state, playerId, decisionData);
+  const nextDecision = result.state.pendingDecision;
+  if (result.error || !nextDecision) return result;
+
+  // Pending choices can move from the original actor to another seat (Worm
+  // Party, Soggy Pile). Carry the initiating context forward, not the resolver.
+  // For legacy saved decisions, currentPlayerIndex remains the original turn
+  // owner throughout the pending chain and is the safe actor fallback.
+  const sourceDecision = state.pendingDecision;
+  const storedOriginActorId = sourceDecision?.meta?.originActorId;
+  const originActorId =
+    typeof storedOriginActorId === "string" &&
+    state.players.some((player) => player.id === storedOriginActorId)
+      ? storedOriginActorId
+      : state.players[state.currentPlayerIndex]?.id;
+  const storedOriginVerb = sourceDecision?.meta?.originVerb;
+  const originVerb =
+    storedOriginVerb === "played" ||
+    storedOriginVerb === "activated" ||
+    storedOriginVerb === "moved"
+      ? storedOriginVerb
+      : undefined;
+
+  return {
+    ...result,
+    state: {
+      ...result.state,
+      pendingDecision: {
+        ...nextDecision,
+        meta: {
+          ...nextDecision.meta,
+          ...(originActorId ? { originActorId } : {}),
+          ...(originVerb ? { originVerb } : {}),
+        },
+      },
+    },
+  };
 }
 
 // ─────────────────────────────────────────────
@@ -2385,7 +2611,7 @@ export function activateOngoing(
           cardId: "rot_regrow",
           prompt: `${player.name}: Rot & Regrow — select 3 cards from your hand to discard.`,
           options: player.hand.map((c) => ({ cardId: c.id, cardName: c.name })),
-          meta: { count: 3 },
+          meta: { count: 3, originVerb: "activated", originActorId: playerId },
         },
       };
       return { state: s };
@@ -2404,7 +2630,7 @@ export function activateOngoing(
           cardId: "nitrogen_boost",
           prompt: `${player.name}: Nitrogen Boost — discard 1 Nitrogen card from your hand to draw 2 cards.`,
           options: nitrogenCards.map((c) => ({ cardId: c.id, cardName: c.name })),
-          meta: { optional: true },
+          meta: { optional: true, originVerb: "activated", originActorId: playerId },
         },
       };
       return { state: s };
@@ -2481,7 +2707,7 @@ export function moveCardLayer(
       cardId,
       prompt: `${player.name}: Choose a new category slot for ${card.name}.`,
       options: availableTargets.map((fn) => ({ function: fn })),
-      meta: { moveCardId: cardId },
+      meta: { moveCardId: cardId, originVerb: "moved", originActorId: playerId },
     },
   };
   return { state: s };

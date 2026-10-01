@@ -1460,6 +1460,54 @@ components:
         - cardId
         - prompt
 
+    EffectFact:
+      type: object
+      description: >
+        Structured effect details. Card names and functions are populated only
+        for cards that are already public in compost or discard zones. Hidden
+        hand-card identities are provided only through viewer-scoped privateFacts.
+      properties:
+        kind:
+          type: string
+          enum:
+            - draw
+            - hand_discard
+            - hand_transfer
+            - hand_loss
+            - pile_gain
+            - pile_loss
+            - pile_transfer
+            - compost_to_hand
+            - discard_to_hand
+            - skip
+            - pile_shift
+            - slot_change
+            - ongoing_set
+            - ongoing_removed
+        actorId:
+          type: string
+        playerIds:
+          type: array
+          description: Affected players, or source followed by recipient for a transfer.
+          items:
+            type: string
+        count:
+          type: integer
+          minimum: 0
+        cardName:
+          type: string
+        function:
+          type: string
+        previousFunction:
+          type: string
+        previousCardName:
+          type: string
+        sourcePlayerId:
+          type: string
+        targetPlayerId:
+          type: string
+      required: [kind, actorId, playerIds, count]
+
     EffectEvent:
       type: object
       properties:
@@ -1472,6 +1520,8 @@ components:
             type: string
         text:
           type: string
+        fact:
+          $ref: "#/components/schemas/EffectFact"
       required:
         - kind
         - text
@@ -1494,6 +1544,20 @@ components:
           type: string
         playedByName:
           type: string
+        verb:
+          type: string
+          enum: [played, activated, moved]
+          description: Missing in announcements saved by older versions.
+        players:
+          type: array
+          items:
+            type: object
+            properties:
+              id:
+                type: string
+              name:
+                type: string
+            required: [id, name]
         outcome:
           type: array
           items:
@@ -1503,6 +1567,13 @@ components:
           type: array
           items:
             type: string
+        privateFacts:
+          description: >
+            Structured hand-card details visible only to the viewer whose seat
+            owns the affected hand. Never present to a spectator or other seat.
+          type: array
+          items:
+            $ref: "#/components/schemas/EffectFact"
         events:
           type: array
           items:

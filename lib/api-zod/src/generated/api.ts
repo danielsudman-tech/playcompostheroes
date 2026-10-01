@@ -143,6 +143,10 @@ export const GetGameQueryParams = zod.object({
     ),
 });
 
+export const getGameResponseLastEffectPrivateFactsItemCountMin = 0;
+
+export const getGameResponseLastEffectEventsItemFactCountMin = 0;
+
 export const GetGameResponse = zod.object({
   gameId: zod.string(),
   eventId: zod
@@ -249,12 +253,68 @@ export const GetGameResponse = zod.object({
       imageKey: zod.string().nullable(),
       playedById: zod.string(),
       playedByName: zod.string(),
+      verb: zod
+        .enum(["played", "activated", "moved"])
+        .optional()
+        .describe("Missing in announcements saved by older versions."),
+      players: zod
+        .array(
+          zod.object({
+            id: zod.string(),
+            name: zod.string(),
+          }),
+        )
+        .optional(),
       outcome: zod.array(zod.string()),
       privateEvents: zod
         .array(zod.string())
         .optional()
         .describe(
           "Private effect details visible only to the viewer whose token owns the affected hand.",
+        ),
+      privateFacts: zod
+        .array(
+          zod
+            .object({
+              kind: zod.enum([
+                "draw",
+                "hand_discard",
+                "hand_transfer",
+                "hand_loss",
+                "pile_gain",
+                "pile_loss",
+                "pile_transfer",
+                "compost_to_hand",
+                "discard_to_hand",
+                "skip",
+                "pile_shift",
+                "slot_change",
+                "ongoing_set",
+                "ongoing_removed",
+              ]),
+              actorId: zod.string(),
+              playerIds: zod
+                .array(zod.string())
+                .describe(
+                  "Affected players, or source followed by recipient for a transfer.",
+                ),
+              count: zod
+                .number()
+                .min(getGameResponseLastEffectPrivateFactsItemCountMin),
+              cardName: zod.string().optional(),
+              function: zod.string().optional(),
+              previousFunction: zod.string().optional(),
+              previousCardName: zod.string().optional(),
+              sourcePlayerId: zod.string().optional(),
+              targetPlayerId: zod.string().optional(),
+            })
+            .describe(
+              "Structured effect details. Card names and functions are populated only for cards that are already public in compost or discard zones. Hidden hand-card identities are provided only through viewer-scoped privateFacts.\n",
+            ),
+        )
+        .optional()
+        .describe(
+          "Structured hand-card details visible only to the viewer whose seat owns the affected hand. Never present to a spectator or other seat.\n",
         ),
       events: zod.array(
         zod.object({
@@ -270,6 +330,44 @@ export const GetGameResponse = zod.object({
           ]),
           playerIds: zod.array(zod.string()).optional(),
           text: zod.string(),
+          fact: zod
+            .object({
+              kind: zod.enum([
+                "draw",
+                "hand_discard",
+                "hand_transfer",
+                "hand_loss",
+                "pile_gain",
+                "pile_loss",
+                "pile_transfer",
+                "compost_to_hand",
+                "discard_to_hand",
+                "skip",
+                "pile_shift",
+                "slot_change",
+                "ongoing_set",
+                "ongoing_removed",
+              ]),
+              actorId: zod.string(),
+              playerIds: zod
+                .array(zod.string())
+                .describe(
+                  "Affected players, or source followed by recipient for a transfer.",
+                ),
+              count: zod
+                .number()
+                .min(getGameResponseLastEffectEventsItemFactCountMin),
+              cardName: zod.string().optional(),
+              function: zod.string().optional(),
+              previousFunction: zod.string().optional(),
+              previousCardName: zod.string().optional(),
+              sourcePlayerId: zod.string().optional(),
+              targetPlayerId: zod.string().optional(),
+            })
+            .optional()
+            .describe(
+              "Structured effect details. Card names and functions are populated only for cards that are already public in compost or discard zones. Hidden hand-card identities are provided only through viewer-scoped privateFacts.\n",
+            ),
         }),
       ),
     })
@@ -818,6 +916,10 @@ export const SendHostMessageBody = zod.object({
   text: zod.string(),
 });
 
+export const sendHostMessageResponseLastEffectPrivateFactsItemCountMin = 0;
+
+export const sendHostMessageResponseLastEffectEventsItemFactCountMin = 0;
+
 export const SendHostMessageResponse = zod.object({
   gameId: zod.string(),
   eventId: zod
@@ -924,12 +1026,68 @@ export const SendHostMessageResponse = zod.object({
       imageKey: zod.string().nullable(),
       playedById: zod.string(),
       playedByName: zod.string(),
+      verb: zod
+        .enum(["played", "activated", "moved"])
+        .optional()
+        .describe("Missing in announcements saved by older versions."),
+      players: zod
+        .array(
+          zod.object({
+            id: zod.string(),
+            name: zod.string(),
+          }),
+        )
+        .optional(),
       outcome: zod.array(zod.string()),
       privateEvents: zod
         .array(zod.string())
         .optional()
         .describe(
           "Private effect details visible only to the viewer whose token owns the affected hand.",
+        ),
+      privateFacts: zod
+        .array(
+          zod
+            .object({
+              kind: zod.enum([
+                "draw",
+                "hand_discard",
+                "hand_transfer",
+                "hand_loss",
+                "pile_gain",
+                "pile_loss",
+                "pile_transfer",
+                "compost_to_hand",
+                "discard_to_hand",
+                "skip",
+                "pile_shift",
+                "slot_change",
+                "ongoing_set",
+                "ongoing_removed",
+              ]),
+              actorId: zod.string(),
+              playerIds: zod
+                .array(zod.string())
+                .describe(
+                  "Affected players, or source followed by recipient for a transfer.",
+                ),
+              count: zod
+                .number()
+                .min(sendHostMessageResponseLastEffectPrivateFactsItemCountMin),
+              cardName: zod.string().optional(),
+              function: zod.string().optional(),
+              previousFunction: zod.string().optional(),
+              previousCardName: zod.string().optional(),
+              sourcePlayerId: zod.string().optional(),
+              targetPlayerId: zod.string().optional(),
+            })
+            .describe(
+              "Structured effect details. Card names and functions are populated only for cards that are already public in compost or discard zones. Hidden hand-card identities are provided only through viewer-scoped privateFacts.\n",
+            ),
+        )
+        .optional()
+        .describe(
+          "Structured hand-card details visible only to the viewer whose seat owns the affected hand. Never present to a spectator or other seat.\n",
         ),
       events: zod.array(
         zod.object({
@@ -945,6 +1103,44 @@ export const SendHostMessageResponse = zod.object({
           ]),
           playerIds: zod.array(zod.string()).optional(),
           text: zod.string(),
+          fact: zod
+            .object({
+              kind: zod.enum([
+                "draw",
+                "hand_discard",
+                "hand_transfer",
+                "hand_loss",
+                "pile_gain",
+                "pile_loss",
+                "pile_transfer",
+                "compost_to_hand",
+                "discard_to_hand",
+                "skip",
+                "pile_shift",
+                "slot_change",
+                "ongoing_set",
+                "ongoing_removed",
+              ]),
+              actorId: zod.string(),
+              playerIds: zod
+                .array(zod.string())
+                .describe(
+                  "Affected players, or source followed by recipient for a transfer.",
+                ),
+              count: zod
+                .number()
+                .min(sendHostMessageResponseLastEffectEventsItemFactCountMin),
+              cardName: zod.string().optional(),
+              function: zod.string().optional(),
+              previousFunction: zod.string().optional(),
+              previousCardName: zod.string().optional(),
+              sourcePlayerId: zod.string().optional(),
+              targetPlayerId: zod.string().optional(),
+            })
+            .optional()
+            .describe(
+              "Structured effect details. Card names and functions are populated only for cards that are already public in compost or discard zones. Hidden hand-card identities are provided only through viewer-scoped privateFacts.\n",
+            ),
         }),
       ),
     })
@@ -1035,6 +1231,10 @@ export const ResolveQuestionBody = zod.object({
   token: zod.string(),
   userToken: zod.string(),
 });
+
+export const resolveQuestionResponseLastEffectPrivateFactsItemCountMin = 0;
+
+export const resolveQuestionResponseLastEffectEventsItemFactCountMin = 0;
 
 export const ResolveQuestionResponse = zod.object({
   gameId: zod.string(),
@@ -1142,12 +1342,68 @@ export const ResolveQuestionResponse = zod.object({
       imageKey: zod.string().nullable(),
       playedById: zod.string(),
       playedByName: zod.string(),
+      verb: zod
+        .enum(["played", "activated", "moved"])
+        .optional()
+        .describe("Missing in announcements saved by older versions."),
+      players: zod
+        .array(
+          zod.object({
+            id: zod.string(),
+            name: zod.string(),
+          }),
+        )
+        .optional(),
       outcome: zod.array(zod.string()),
       privateEvents: zod
         .array(zod.string())
         .optional()
         .describe(
           "Private effect details visible only to the viewer whose token owns the affected hand.",
+        ),
+      privateFacts: zod
+        .array(
+          zod
+            .object({
+              kind: zod.enum([
+                "draw",
+                "hand_discard",
+                "hand_transfer",
+                "hand_loss",
+                "pile_gain",
+                "pile_loss",
+                "pile_transfer",
+                "compost_to_hand",
+                "discard_to_hand",
+                "skip",
+                "pile_shift",
+                "slot_change",
+                "ongoing_set",
+                "ongoing_removed",
+              ]),
+              actorId: zod.string(),
+              playerIds: zod
+                .array(zod.string())
+                .describe(
+                  "Affected players, or source followed by recipient for a transfer.",
+                ),
+              count: zod
+                .number()
+                .min(resolveQuestionResponseLastEffectPrivateFactsItemCountMin),
+              cardName: zod.string().optional(),
+              function: zod.string().optional(),
+              previousFunction: zod.string().optional(),
+              previousCardName: zod.string().optional(),
+              sourcePlayerId: zod.string().optional(),
+              targetPlayerId: zod.string().optional(),
+            })
+            .describe(
+              "Structured effect details. Card names and functions are populated only for cards that are already public in compost or discard zones. Hidden hand-card identities are provided only through viewer-scoped privateFacts.\n",
+            ),
+        )
+        .optional()
+        .describe(
+          "Structured hand-card details visible only to the viewer whose seat owns the affected hand. Never present to a spectator or other seat.\n",
         ),
       events: zod.array(
         zod.object({
@@ -1163,6 +1419,44 @@ export const ResolveQuestionResponse = zod.object({
           ]),
           playerIds: zod.array(zod.string()).optional(),
           text: zod.string(),
+          fact: zod
+            .object({
+              kind: zod.enum([
+                "draw",
+                "hand_discard",
+                "hand_transfer",
+                "hand_loss",
+                "pile_gain",
+                "pile_loss",
+                "pile_transfer",
+                "compost_to_hand",
+                "discard_to_hand",
+                "skip",
+                "pile_shift",
+                "slot_change",
+                "ongoing_set",
+                "ongoing_removed",
+              ]),
+              actorId: zod.string(),
+              playerIds: zod
+                .array(zod.string())
+                .describe(
+                  "Affected players, or source followed by recipient for a transfer.",
+                ),
+              count: zod
+                .number()
+                .min(resolveQuestionResponseLastEffectEventsItemFactCountMin),
+              cardName: zod.string().optional(),
+              function: zod.string().optional(),
+              previousFunction: zod.string().optional(),
+              previousCardName: zod.string().optional(),
+              sourcePlayerId: zod.string().optional(),
+              targetPlayerId: zod.string().optional(),
+            })
+            .optional()
+            .describe(
+              "Structured effect details. Card names and functions are populated only for cards that are already public in compost or discard zones. Hidden hand-card identities are provided only through viewer-scoped privateFacts.\n",
+            ),
         }),
       ),
     })
@@ -1236,6 +1530,10 @@ export const EndSessionBody = zod.object({
   token: zod.string(),
   userToken: zod.string(),
 });
+
+export const endSessionResponseLastEffectPrivateFactsItemCountMin = 0;
+
+export const endSessionResponseLastEffectEventsItemFactCountMin = 0;
 
 export const EndSessionResponse = zod.object({
   gameId: zod.string(),
@@ -1343,12 +1641,68 @@ export const EndSessionResponse = zod.object({
       imageKey: zod.string().nullable(),
       playedById: zod.string(),
       playedByName: zod.string(),
+      verb: zod
+        .enum(["played", "activated", "moved"])
+        .optional()
+        .describe("Missing in announcements saved by older versions."),
+      players: zod
+        .array(
+          zod.object({
+            id: zod.string(),
+            name: zod.string(),
+          }),
+        )
+        .optional(),
       outcome: zod.array(zod.string()),
       privateEvents: zod
         .array(zod.string())
         .optional()
         .describe(
           "Private effect details visible only to the viewer whose token owns the affected hand.",
+        ),
+      privateFacts: zod
+        .array(
+          zod
+            .object({
+              kind: zod.enum([
+                "draw",
+                "hand_discard",
+                "hand_transfer",
+                "hand_loss",
+                "pile_gain",
+                "pile_loss",
+                "pile_transfer",
+                "compost_to_hand",
+                "discard_to_hand",
+                "skip",
+                "pile_shift",
+                "slot_change",
+                "ongoing_set",
+                "ongoing_removed",
+              ]),
+              actorId: zod.string(),
+              playerIds: zod
+                .array(zod.string())
+                .describe(
+                  "Affected players, or source followed by recipient for a transfer.",
+                ),
+              count: zod
+                .number()
+                .min(endSessionResponseLastEffectPrivateFactsItemCountMin),
+              cardName: zod.string().optional(),
+              function: zod.string().optional(),
+              previousFunction: zod.string().optional(),
+              previousCardName: zod.string().optional(),
+              sourcePlayerId: zod.string().optional(),
+              targetPlayerId: zod.string().optional(),
+            })
+            .describe(
+              "Structured effect details. Card names and functions are populated only for cards that are already public in compost or discard zones. Hidden hand-card identities are provided only through viewer-scoped privateFacts.\n",
+            ),
+        )
+        .optional()
+        .describe(
+          "Structured hand-card details visible only to the viewer whose seat owns the affected hand. Never present to a spectator or other seat.\n",
         ),
       events: zod.array(
         zod.object({
@@ -1364,6 +1718,44 @@ export const EndSessionResponse = zod.object({
           ]),
           playerIds: zod.array(zod.string()).optional(),
           text: zod.string(),
+          fact: zod
+            .object({
+              kind: zod.enum([
+                "draw",
+                "hand_discard",
+                "hand_transfer",
+                "hand_loss",
+                "pile_gain",
+                "pile_loss",
+                "pile_transfer",
+                "compost_to_hand",
+                "discard_to_hand",
+                "skip",
+                "pile_shift",
+                "slot_change",
+                "ongoing_set",
+                "ongoing_removed",
+              ]),
+              actorId: zod.string(),
+              playerIds: zod
+                .array(zod.string())
+                .describe(
+                  "Affected players, or source followed by recipient for a transfer.",
+                ),
+              count: zod
+                .number()
+                .min(endSessionResponseLastEffectEventsItemFactCountMin),
+              cardName: zod.string().optional(),
+              function: zod.string().optional(),
+              previousFunction: zod.string().optional(),
+              previousCardName: zod.string().optional(),
+              sourcePlayerId: zod.string().optional(),
+              targetPlayerId: zod.string().optional(),
+            })
+            .optional()
+            .describe(
+              "Structured effect details. Card names and functions are populated only for cards that are already public in compost or discard zones. Hidden hand-card identities are provided only through viewer-scoped privateFacts.\n",
+            ),
         }),
       ),
     })
@@ -1438,6 +1830,10 @@ export const PauseGameBody = zod.object({
   userToken: zod.string(),
   paused: zod.boolean(),
 });
+
+export const pauseGameResponseLastEffectPrivateFactsItemCountMin = 0;
+
+export const pauseGameResponseLastEffectEventsItemFactCountMin = 0;
 
 export const PauseGameResponse = zod.object({
   gameId: zod.string(),
@@ -1545,12 +1941,68 @@ export const PauseGameResponse = zod.object({
       imageKey: zod.string().nullable(),
       playedById: zod.string(),
       playedByName: zod.string(),
+      verb: zod
+        .enum(["played", "activated", "moved"])
+        .optional()
+        .describe("Missing in announcements saved by older versions."),
+      players: zod
+        .array(
+          zod.object({
+            id: zod.string(),
+            name: zod.string(),
+          }),
+        )
+        .optional(),
       outcome: zod.array(zod.string()),
       privateEvents: zod
         .array(zod.string())
         .optional()
         .describe(
           "Private effect details visible only to the viewer whose token owns the affected hand.",
+        ),
+      privateFacts: zod
+        .array(
+          zod
+            .object({
+              kind: zod.enum([
+                "draw",
+                "hand_discard",
+                "hand_transfer",
+                "hand_loss",
+                "pile_gain",
+                "pile_loss",
+                "pile_transfer",
+                "compost_to_hand",
+                "discard_to_hand",
+                "skip",
+                "pile_shift",
+                "slot_change",
+                "ongoing_set",
+                "ongoing_removed",
+              ]),
+              actorId: zod.string(),
+              playerIds: zod
+                .array(zod.string())
+                .describe(
+                  "Affected players, or source followed by recipient for a transfer.",
+                ),
+              count: zod
+                .number()
+                .min(pauseGameResponseLastEffectPrivateFactsItemCountMin),
+              cardName: zod.string().optional(),
+              function: zod.string().optional(),
+              previousFunction: zod.string().optional(),
+              previousCardName: zod.string().optional(),
+              sourcePlayerId: zod.string().optional(),
+              targetPlayerId: zod.string().optional(),
+            })
+            .describe(
+              "Structured effect details. Card names and functions are populated only for cards that are already public in compost or discard zones. Hidden hand-card identities are provided only through viewer-scoped privateFacts.\n",
+            ),
+        )
+        .optional()
+        .describe(
+          "Structured hand-card details visible only to the viewer whose seat owns the affected hand. Never present to a spectator or other seat.\n",
         ),
       events: zod.array(
         zod.object({
@@ -1566,6 +2018,44 @@ export const PauseGameResponse = zod.object({
           ]),
           playerIds: zod.array(zod.string()).optional(),
           text: zod.string(),
+          fact: zod
+            .object({
+              kind: zod.enum([
+                "draw",
+                "hand_discard",
+                "hand_transfer",
+                "hand_loss",
+                "pile_gain",
+                "pile_loss",
+                "pile_transfer",
+                "compost_to_hand",
+                "discard_to_hand",
+                "skip",
+                "pile_shift",
+                "slot_change",
+                "ongoing_set",
+                "ongoing_removed",
+              ]),
+              actorId: zod.string(),
+              playerIds: zod
+                .array(zod.string())
+                .describe(
+                  "Affected players, or source followed by recipient for a transfer.",
+                ),
+              count: zod
+                .number()
+                .min(pauseGameResponseLastEffectEventsItemFactCountMin),
+              cardName: zod.string().optional(),
+              function: zod.string().optional(),
+              previousFunction: zod.string().optional(),
+              previousCardName: zod.string().optional(),
+              sourcePlayerId: zod.string().optional(),
+              targetPlayerId: zod.string().optional(),
+            })
+            .optional()
+            .describe(
+              "Structured effect details. Card names and functions are populated only for cards that are already public in compost or discard zones. Hidden hand-card identities are provided only through viewer-scoped privateFacts.\n",
+            ),
         }),
       ),
     })
@@ -1639,6 +2129,10 @@ export const FacilitatorResolveBody = zod.object({
   token: zod.string(),
   userToken: zod.string(),
 });
+
+export const facilitatorResolveResponseLastEffectPrivateFactsItemCountMin = 0;
+
+export const facilitatorResolveResponseLastEffectEventsItemFactCountMin = 0;
 
 export const FacilitatorResolveResponse = zod.object({
   gameId: zod.string(),
@@ -1746,12 +2240,70 @@ export const FacilitatorResolveResponse = zod.object({
       imageKey: zod.string().nullable(),
       playedById: zod.string(),
       playedByName: zod.string(),
+      verb: zod
+        .enum(["played", "activated", "moved"])
+        .optional()
+        .describe("Missing in announcements saved by older versions."),
+      players: zod
+        .array(
+          zod.object({
+            id: zod.string(),
+            name: zod.string(),
+          }),
+        )
+        .optional(),
       outcome: zod.array(zod.string()),
       privateEvents: zod
         .array(zod.string())
         .optional()
         .describe(
           "Private effect details visible only to the viewer whose token owns the affected hand.",
+        ),
+      privateFacts: zod
+        .array(
+          zod
+            .object({
+              kind: zod.enum([
+                "draw",
+                "hand_discard",
+                "hand_transfer",
+                "hand_loss",
+                "pile_gain",
+                "pile_loss",
+                "pile_transfer",
+                "compost_to_hand",
+                "discard_to_hand",
+                "skip",
+                "pile_shift",
+                "slot_change",
+                "ongoing_set",
+                "ongoing_removed",
+              ]),
+              actorId: zod.string(),
+              playerIds: zod
+                .array(zod.string())
+                .describe(
+                  "Affected players, or source followed by recipient for a transfer.",
+                ),
+              count: zod
+                .number()
+                .min(
+                  facilitatorResolveResponseLastEffectPrivateFactsItemCountMin,
+                ),
+              cardName: zod.string().optional(),
+              function: zod.string().optional(),
+              previousFunction: zod.string().optional(),
+              previousCardName: zod.string().optional(),
+              sourcePlayerId: zod.string().optional(),
+              targetPlayerId: zod.string().optional(),
+            })
+            .describe(
+              "Structured effect details. Card names and functions are populated only for cards that are already public in compost or discard zones. Hidden hand-card identities are provided only through viewer-scoped privateFacts.\n",
+            ),
+        )
+        .optional()
+        .describe(
+          "Structured hand-card details visible only to the viewer whose seat owns the affected hand. Never present to a spectator or other seat.\n",
         ),
       events: zod.array(
         zod.object({
@@ -1767,6 +2319,46 @@ export const FacilitatorResolveResponse = zod.object({
           ]),
           playerIds: zod.array(zod.string()).optional(),
           text: zod.string(),
+          fact: zod
+            .object({
+              kind: zod.enum([
+                "draw",
+                "hand_discard",
+                "hand_transfer",
+                "hand_loss",
+                "pile_gain",
+                "pile_loss",
+                "pile_transfer",
+                "compost_to_hand",
+                "discard_to_hand",
+                "skip",
+                "pile_shift",
+                "slot_change",
+                "ongoing_set",
+                "ongoing_removed",
+              ]),
+              actorId: zod.string(),
+              playerIds: zod
+                .array(zod.string())
+                .describe(
+                  "Affected players, or source followed by recipient for a transfer.",
+                ),
+              count: zod
+                .number()
+                .min(
+                  facilitatorResolveResponseLastEffectEventsItemFactCountMin,
+                ),
+              cardName: zod.string().optional(),
+              function: zod.string().optional(),
+              previousFunction: zod.string().optional(),
+              previousCardName: zod.string().optional(),
+              sourcePlayerId: zod.string().optional(),
+              targetPlayerId: zod.string().optional(),
+            })
+            .optional()
+            .describe(
+              "Structured effect details. Card names and functions are populated only for cards that are already public in compost or discard zones. Hidden hand-card identities are provided only through viewer-scoped privateFacts.\n",
+            ),
         }),
       ),
     })
@@ -1858,6 +2450,10 @@ export const PerformActionBody = zod.object({
   targetCardId: zod.string().nullish(),
   decisionData: zod.record(zod.string(), zod.unknown()).nullish(),
 });
+
+export const performActionResponseLastEffectPrivateFactsItemCountMin = 0;
+
+export const performActionResponseLastEffectEventsItemFactCountMin = 0;
 
 export const PerformActionResponse = zod.object({
   gameId: zod.string(),
@@ -1965,12 +2561,68 @@ export const PerformActionResponse = zod.object({
       imageKey: zod.string().nullable(),
       playedById: zod.string(),
       playedByName: zod.string(),
+      verb: zod
+        .enum(["played", "activated", "moved"])
+        .optional()
+        .describe("Missing in announcements saved by older versions."),
+      players: zod
+        .array(
+          zod.object({
+            id: zod.string(),
+            name: zod.string(),
+          }),
+        )
+        .optional(),
       outcome: zod.array(zod.string()),
       privateEvents: zod
         .array(zod.string())
         .optional()
         .describe(
           "Private effect details visible only to the viewer whose token owns the affected hand.",
+        ),
+      privateFacts: zod
+        .array(
+          zod
+            .object({
+              kind: zod.enum([
+                "draw",
+                "hand_discard",
+                "hand_transfer",
+                "hand_loss",
+                "pile_gain",
+                "pile_loss",
+                "pile_transfer",
+                "compost_to_hand",
+                "discard_to_hand",
+                "skip",
+                "pile_shift",
+                "slot_change",
+                "ongoing_set",
+                "ongoing_removed",
+              ]),
+              actorId: zod.string(),
+              playerIds: zod
+                .array(zod.string())
+                .describe(
+                  "Affected players, or source followed by recipient for a transfer.",
+                ),
+              count: zod
+                .number()
+                .min(performActionResponseLastEffectPrivateFactsItemCountMin),
+              cardName: zod.string().optional(),
+              function: zod.string().optional(),
+              previousFunction: zod.string().optional(),
+              previousCardName: zod.string().optional(),
+              sourcePlayerId: zod.string().optional(),
+              targetPlayerId: zod.string().optional(),
+            })
+            .describe(
+              "Structured effect details. Card names and functions are populated only for cards that are already public in compost or discard zones. Hidden hand-card identities are provided only through viewer-scoped privateFacts.\n",
+            ),
+        )
+        .optional()
+        .describe(
+          "Structured hand-card details visible only to the viewer whose seat owns the affected hand. Never present to a spectator or other seat.\n",
         ),
       events: zod.array(
         zod.object({
@@ -1986,6 +2638,44 @@ export const PerformActionResponse = zod.object({
           ]),
           playerIds: zod.array(zod.string()).optional(),
           text: zod.string(),
+          fact: zod
+            .object({
+              kind: zod.enum([
+                "draw",
+                "hand_discard",
+                "hand_transfer",
+                "hand_loss",
+                "pile_gain",
+                "pile_loss",
+                "pile_transfer",
+                "compost_to_hand",
+                "discard_to_hand",
+                "skip",
+                "pile_shift",
+                "slot_change",
+                "ongoing_set",
+                "ongoing_removed",
+              ]),
+              actorId: zod.string(),
+              playerIds: zod
+                .array(zod.string())
+                .describe(
+                  "Affected players, or source followed by recipient for a transfer.",
+                ),
+              count: zod
+                .number()
+                .min(performActionResponseLastEffectEventsItemFactCountMin),
+              cardName: zod.string().optional(),
+              function: zod.string().optional(),
+              previousFunction: zod.string().optional(),
+              previousCardName: zod.string().optional(),
+              sourcePlayerId: zod.string().optional(),
+              targetPlayerId: zod.string().optional(),
+            })
+            .optional()
+            .describe(
+              "Structured effect details. Card names and functions are populated only for cards that are already public in compost or discard zones. Hidden hand-card identities are provided only through viewer-scoped privateFacts.\n",
+            ),
         }),
       ),
     })
@@ -2065,6 +2755,10 @@ export const ReorderWaitingPlayersBody = zod.object({
   userToken: zod.string(),
   playerIds: zod.array(zod.string()),
 });
+
+export const reorderWaitingPlayersResponseLastEffectPrivateFactsItemCountMin = 0;
+
+export const reorderWaitingPlayersResponseLastEffectEventsItemFactCountMin = 0;
 
 export const ReorderWaitingPlayersResponse = zod.object({
   gameId: zod.string(),
@@ -2172,12 +2866,70 @@ export const ReorderWaitingPlayersResponse = zod.object({
       imageKey: zod.string().nullable(),
       playedById: zod.string(),
       playedByName: zod.string(),
+      verb: zod
+        .enum(["played", "activated", "moved"])
+        .optional()
+        .describe("Missing in announcements saved by older versions."),
+      players: zod
+        .array(
+          zod.object({
+            id: zod.string(),
+            name: zod.string(),
+          }),
+        )
+        .optional(),
       outcome: zod.array(zod.string()),
       privateEvents: zod
         .array(zod.string())
         .optional()
         .describe(
           "Private effect details visible only to the viewer whose token owns the affected hand.",
+        ),
+      privateFacts: zod
+        .array(
+          zod
+            .object({
+              kind: zod.enum([
+                "draw",
+                "hand_discard",
+                "hand_transfer",
+                "hand_loss",
+                "pile_gain",
+                "pile_loss",
+                "pile_transfer",
+                "compost_to_hand",
+                "discard_to_hand",
+                "skip",
+                "pile_shift",
+                "slot_change",
+                "ongoing_set",
+                "ongoing_removed",
+              ]),
+              actorId: zod.string(),
+              playerIds: zod
+                .array(zod.string())
+                .describe(
+                  "Affected players, or source followed by recipient for a transfer.",
+                ),
+              count: zod
+                .number()
+                .min(
+                  reorderWaitingPlayersResponseLastEffectPrivateFactsItemCountMin,
+                ),
+              cardName: zod.string().optional(),
+              function: zod.string().optional(),
+              previousFunction: zod.string().optional(),
+              previousCardName: zod.string().optional(),
+              sourcePlayerId: zod.string().optional(),
+              targetPlayerId: zod.string().optional(),
+            })
+            .describe(
+              "Structured effect details. Card names and functions are populated only for cards that are already public in compost or discard zones. Hidden hand-card identities are provided only through viewer-scoped privateFacts.\n",
+            ),
+        )
+        .optional()
+        .describe(
+          "Structured hand-card details visible only to the viewer whose seat owns the affected hand. Never present to a spectator or other seat.\n",
         ),
       events: zod.array(
         zod.object({
@@ -2193,6 +2945,46 @@ export const ReorderWaitingPlayersResponse = zod.object({
           ]),
           playerIds: zod.array(zod.string()).optional(),
           text: zod.string(),
+          fact: zod
+            .object({
+              kind: zod.enum([
+                "draw",
+                "hand_discard",
+                "hand_transfer",
+                "hand_loss",
+                "pile_gain",
+                "pile_loss",
+                "pile_transfer",
+                "compost_to_hand",
+                "discard_to_hand",
+                "skip",
+                "pile_shift",
+                "slot_change",
+                "ongoing_set",
+                "ongoing_removed",
+              ]),
+              actorId: zod.string(),
+              playerIds: zod
+                .array(zod.string())
+                .describe(
+                  "Affected players, or source followed by recipient for a transfer.",
+                ),
+              count: zod
+                .number()
+                .min(
+                  reorderWaitingPlayersResponseLastEffectEventsItemFactCountMin,
+                ),
+              cardName: zod.string().optional(),
+              function: zod.string().optional(),
+              previousFunction: zod.string().optional(),
+              previousCardName: zod.string().optional(),
+              sourcePlayerId: zod.string().optional(),
+              targetPlayerId: zod.string().optional(),
+            })
+            .optional()
+            .describe(
+              "Structured effect details. Card names and functions are populated only for cards that are already public in compost or discard zones. Hidden hand-card identities are provided only through viewer-scoped privateFacts.\n",
+            ),
         }),
       ),
     })

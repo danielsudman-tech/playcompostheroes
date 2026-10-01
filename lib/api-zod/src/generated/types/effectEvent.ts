@@ -6,9 +6,11 @@
  * OpenAPI spec version: 0.1.0
  */
 import type { EffectEventKind } from "./effectEventKind";
+import type { EffectFact } from "./effectFact";
 
 export interface EffectEvent {
   kind: EffectEventKind;
   playerIds?: string[];
   text: string;
+  fact?: EffectFact;
 }

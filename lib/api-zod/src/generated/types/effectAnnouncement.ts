@@ -5,7 +5,10 @@
  * Compost Heroes Game API
  * OpenAPI spec version: 0.1.0
  */
+import type { EffectAnnouncementPlayersItem } from "./effectAnnouncementPlayersItem";
+import type { EffectAnnouncementVerb } from "./effectAnnouncementVerb";
 import type { EffectEvent } from "./effectEvent";
+import type { EffectFact } from "./effectFact";
 
 export interface EffectAnnouncement {
   id: string;
@@ -15,8 +18,14 @@ export interface EffectAnnouncement {
   imageKey: string | null;
   playedById: string;
   playedByName: string;
+  /** Missing in announcements saved by older versions. */
+  verb?: EffectAnnouncementVerb;
+  players?: EffectAnnouncementPlayersItem[];
   outcome: string[];
   /** Private effect details visible only to the viewer whose token owns the affected hand. */
   privateEvents?: string[];
+  /** Structured hand-card details visible only to the viewer whose seat owns the affected hand. Never present to a spectator or other seat.
+   */
+  privateFacts?: EffectFact[];
   events: EffectEvent[];
 }

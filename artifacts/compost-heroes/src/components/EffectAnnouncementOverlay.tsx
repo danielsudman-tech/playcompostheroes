@@ -7,6 +7,7 @@ import {
   getEffectAnnouncementHeading,
   getEffectAnnouncementLevel,
   getPresentedEffectEvents,
+  getPresentedPrivateFacts,
   type EffectAnnouncementData,
   type EffectAnnouncementEvent,
 } from "@/lib/effectAnnouncements";
@@ -78,6 +79,7 @@ export function EffectAnnouncementOverlay({ effect, localPlayerId }: EffectAnnou
   const routine = level === "routine";
   const eventLimit = personal ? 5 : 4;
   const presentedEvents = getPresentedEffectEvents(current, localPlayerId);
+  const privateFacts = getPresentedPrivateFacts(current, localPlayerId);
   const personalEvents = presentedEvents.filter((event) => event.affectsLocalPlayer);
   const otherEvents = presentedEvents.filter((event) => !event.affectsLocalPlayer);
   const visibleEvents = personal
@@ -107,13 +109,8 @@ export function EffectAnnouncementOverlay({ effect, localPlayerId }: EffectAnnou
           )}>
             <Sparkles className="w-3.5 h-3.5 shrink-0" />
             <div className="min-w-0 flex-1 text-xs font-bold uppercase tracking-widest truncate">
-              {personal ? getEffectAnnouncementHeading(current, localPlayerId) : level === "shared" ? "Shared effect" : "Card effect"}
+              {getEffectAnnouncementHeading(current, localPlayerId)}
             </div>
-            {!personal && (
-              <span className="text-[10px] font-semibold text-muted-foreground normal-case tracking-normal">
-                {current.playedByName}
-              </span>
-            )}
           </div>
 
           <div className={cn("flex gap-3", routine ? "p-2.5" : "p-3")}>
@@ -140,7 +137,7 @@ export function EffectAnnouncementOverlay({ effect, localPlayerId }: EffectAnnou
                   Because of <span className="text-foreground">{current.cardName}</span>
                 </p>
               )}
-              {personal && current.privateEvents && current.privateEvents.length > 0 && (
+              {personal && privateFacts.length === 0 && current.privateEvents && current.privateEvents.length > 0 && (
                 <ul className="mt-1 space-y-0.5 rounded-md bg-primary/5 px-2 py-1.5 text-[11px] font-medium text-foreground">
                   {current.privateEvents.map((detail, index) => <li key={`private-${index}`}>{detail}</li>)}
                 </ul>
@@ -149,7 +146,7 @@ export function EffectAnnouncementOverlay({ effect, localPlayerId }: EffectAnnou
                 <div className={cn("space-y-1.5", routine ? "mt-1" : "mt-1.5")}>
                   {personalEvents.length > 0 && (
                     <div>
-                      <p className="mb-0.5 text-[9px] font-bold uppercase tracking-wider text-primary">Your impact</p>
+                      <p className="mb-0.5 text-[9px] font-bold uppercase tracking-wider text-primary">Your outcome</p>
                       <ul className="space-y-1">
                         {personalEvents.map(({ event, text }, index) => {
                           const Icon = EVENT_ICON[event.kind] ?? Info;
@@ -165,7 +162,7 @@ export function EffectAnnouncementOverlay({ effect, localPlayerId }: EffectAnnou
                   )}
                   {otherEvents.length > 0 && (
                     <div>
-                      {personal && <p className="mb-0.5 text-[9px] font-bold uppercase tracking-wider text-muted-foreground">Other effects</p>}
+                      {personal && <p className="mb-0.5 text-[9px] font-bold uppercase tracking-wider text-muted-foreground">Other outcomes</p>}
                       <ul className="space-y-1">
                         {(personal ? otherEvents.slice(0, 3) : visibleEvents).map(({ event, text }, index) => {
                           const Icon = EVENT_ICON[event.kind] ?? Info;

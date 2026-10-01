@@ -379,6 +379,57 @@ export interface PendingDecision {
   meta?: PendingDecisionMeta;
 }
 
+/**
+ * Missing in announcements saved by older versions.
+ */
+export type EffectAnnouncementVerb =
+  (typeof EffectAnnouncementVerb)[keyof typeof EffectAnnouncementVerb];
+
+export const EffectAnnouncementVerb = {
+  played: "played",
+  activated: "activated",
+  moved: "moved",
+} as const;
+
+export type EffectFactKind =
+  (typeof EffectFactKind)[keyof typeof EffectFactKind];
+
+export const EffectFactKind = {
+  draw: "draw",
+  hand_discard: "hand_discard",
+  hand_transfer: "hand_transfer",
+  hand_loss: "hand_loss",
+  pile_gain: "pile_gain",
+  pile_loss: "pile_loss",
+  pile_transfer: "pile_transfer",
+  compost_to_hand: "compost_to_hand",
+  discard_to_hand: "discard_to_hand",
+  skip: "skip",
+  pile_shift: "pile_shift",
+  slot_change: "slot_change",
+  ongoing_set: "ongoing_set",
+  ongoing_removed: "ongoing_removed",
+} as const;
+
+/**
+ * Structured effect details. Card names and functions are populated only for cards that are already public in compost or discard zones. Hidden hand-card identities are provided only through viewer-scoped privateFacts.
+
+ */
+export interface EffectFact {
+  kind: EffectFactKind;
+  actorId: string;
+  /** Affected players, or source followed by recipient for a transfer. */
+  playerIds: string[];
+  /** @minimum 0 */
+  count: number;
+  cardName?: string;
+  function?: string;
+  previousFunction?: string;
+  previousCardName?: string;
+  sourcePlayerId?: string;
+  targetPlayerId?: string;
+}
+
 export type EffectEventKind =
   (typeof EffectEventKind)[keyof typeof EffectEventKind];
 
@@ -397,7 +448,13 @@ export interface EffectEvent {
   kind: EffectEventKind;
   playerIds?: string[];
   text: string;
+  fact?: EffectFact;
 }
+
+export type EffectAnnouncementPlayersItem = {
+  id: string;
+  name: string;
+};
 
 export interface EffectAnnouncement {
   id: string;
@@ -407,9 +464,15 @@ export interface EffectAnnouncement {
   imageKey: string | null;
   playedById: string;
   playedByName: string;
+  /** Missing in announcements saved by older versions. */
+  verb?: EffectAnnouncementVerb;
+  players?: EffectAnnouncementPlayersItem[];
   outcome: string[];
   /** Private effect details visible only to the viewer whose token owns the affected hand. */
   privateEvents?: string[];
+  /** Structured hand-card details visible only to the viewer whose seat owns the affected hand. Never present to a spectator or other seat.
+   */
+  privateFacts?: EffectFact[];
   events: EffectEvent[];
 }
 

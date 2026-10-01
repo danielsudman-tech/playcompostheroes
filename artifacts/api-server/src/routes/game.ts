@@ -7,15 +7,18 @@ import {
   addPlayerToRoom,
   createGameState,
   createWaitingRoom,
+  captureEngineOperations,
   drawCardAction,
   endTurn,
   launchGame,
+  mergeEngineOperationTraces,
   moveCardLayer,
   playCard,
   removePlayerFromRoom,
   resolveDecision,
   runBotTurnsIfNeeded,
   type BotSkillLevel,
+  type EngineOperationTrace,
   type GameState,
 } from "../lib/gameEngine.js";
 import { getAllCards } from "../lib/cards.js";
@@ -178,6 +181,13 @@ export function serializeState(state: GameState, viewerIndex?: number) {
     if (viewerId !== pendingDecision.playerId) {
       pendingDecision = { ...pendingDecision, options: [], meta: undefined };
     }
+  }
+  if (pendingDecision?.meta?.originActorId) {
+    const { originActorId: _serverOnlyOriginActorId, ...publicMeta } = pendingDecision.meta;
+    pendingDecision = {
+      ...pendingDecision,
+      meta: Object.keys(publicMeta).length > 0 ? publicMeta : undefined,
+    };
   }
 
   // Questions are facilitator-directed: the host sees them all;
@@ -960,6 +970,7 @@ router.post("/games/:gameId/action", async (req, res) => {
   }
 
   let result: { state: typeof state; error?: string };
+  let effectOperations: EngineOperationTrace | undefined;
 
   try {
     switch (type) {
@@ -972,7 +983,13 @@ router.post("/games/:gameId/action", async (req, res) => {
           res.status(400).json({ error: "cardId required for play_card" });
           return;
         }
-        result = playCard(state, playerId, cardId);
+        const captured = captureEngineOperations(
+          state,
+          () => playCard(state, playerId, cardId),
+          { playedCardId: cardId },
+        );
+        result = captured.result;
+        effectOperations = captured.trace;
         break;
       }
       case "end_turn": {
@@ -984,11 +1001,25 @@ router.post("/games/:gameId/action", async (req, res) => {
         if (targetPlayerId) data.targetPlayerId = targetPlayerId;
         if (targetCardId) data.targetCardId = targetCardId;
         if (cardId) data.cardId = cardId;
-        result = resolveDecision(state, playerId, data);
+        const pendingDecision = state.pendingDecision;
+        const captured = captureEngineOperations(
+          state,
+          () => resolveDecision(state, playerId, data),
+          {
+            playedCardId: pendingDecision?.meta?.rotRoulettePlay ? data.cardId as string : undefined,
+          },
+        );
+        result = captured.result;
+        effectOperations = captured.trace;
         break;
       }
       case "activate_ongoing": {
-        result = activateOngoing(state, playerId);
+        const captured = captureEngineOperations(
+          state,
+          () => activateOngoing(state, playerId),
+        );
+        result = captured.result;
+        effectOperations = captured.trace;
         break;
       }
       case "move_card_layer": {
@@ -997,7 +1028,13 @@ router.post("/games/:gameId/action", async (req, res) => {
           return;
         }
         const targetFunction = (req.body as any).targetFunction as string | undefined;
-        result = moveCardLayer(state, playerId, cardId, targetFunction);
+        const captured = captureEngineOperations(
+          state,
+          () => moveCardLayer(state, playerId, cardId, targetFunction),
+          { playedCardId: cardId },
+        );
+        result = captured.result;
+        effectOperations = captured.trace;
         break;
       }
       case "reset_game": {
@@ -1061,7 +1098,16 @@ router.post("/games/:gameId/action", async (req, res) => {
   // Run bot turns/decisions FIRST, then build the facilitated announcement over
   // the FULL transition (pre-action → after bots) so viewers see the completed
   // effect — not just the human's intermediate step of a bot-completed chain.
-  let stateAfterBots = { ...runBotTurnsIfNeeded(result.state), lastMeaningfulActivityAt: Date.now() };
+  const botOperationsCapture = captureEngineOperations(
+    result.state,
+    () => ({ state: runBotTurnsIfNeeded(result.state) }),
+  );
+  const botOperations = botOperationsCapture.trace;
+  const announcementOperations = mergeEngineOperationTraces(effectOperations, botOperations);
+  let stateAfterBots = {
+    ...botOperationsCapture.result.state,
+    lastMeaningfulActivityAt: Date.now(),
+  };
 
   // Rich effect announcements were built for facilitated mode but are
   // spectator-safe (no hidden hand contents), so every mode gets them.
@@ -1079,7 +1125,31 @@ router.post("/games/:gameId/action", async (req, res) => {
         type === "activate_ongoing" ? state.ongoingActionCard?.id :
         cardId;
       const effectCard = findEffectCard(state, stateAfterBots, effectCardId);
-      const announcement = buildEffectAnnouncement(state, stateAfterBots, effectCard, playerId);
+      const pendingOriginVerb = state.pendingDecision?.meta?.originVerb;
+      const storedOriginActorId = state.pendingDecision?.meta?.originActorId;
+      const effectActorId =
+        type === "resolve_decision"
+          ? typeof storedOriginActorId === "string" &&
+            state.players.some((player) => player.id === storedOriginActorId)
+            ? storedOriginActorId
+            : state.players[state.currentPlayerIndex]?.id ?? playerId
+          : playerId;
+      const verb = type === "activate_ongoing"
+        ? "activated"
+        : type === "move_card_layer"
+          ? "moved"
+          : type === "resolve_decision" &&
+              (pendingOriginVerb === "activated" || pendingOriginVerb === "moved")
+            ? pendingOriginVerb
+            : "played";
+      const announcement = buildEffectAnnouncement(
+        state,
+        stateAfterBots,
+        effectCard,
+        effectActorId,
+        verb,
+        announcementOperations,
+      );
       stateAfterBots = { ...stateAfterBots, lastEffect: announcement };
     } else if ((type === "end_turn" || type === "draw_card") && stateAfterBots !== result.state) {
       // Bots took autonomous turns after this action. If a bot played an action
@@ -1097,7 +1167,18 @@ router.post("/games/:gameId/action", async (req, res) => {
           result.state.players[result.state.currentPlayerIndex]?.isBot
             ? result.state.players[result.state.currentPlayerIndex].id
             : playerId;
-        const announcement = buildEffectAnnouncement(result.state, stateAfterBots, botCard, botActor);
+        const botActivatedOngoing =
+          stateAfterBots.ongoingBenefitUsedThisTurn &&
+          !result.state.ongoingBenefitUsedThisTurn &&
+          stateAfterBots.ongoingActionCard?.id === botCard?.id;
+        const announcement = buildEffectAnnouncement(
+          result.state,
+          stateAfterBots,
+          botCard,
+          botActor,
+          botActivatedOngoing ? "activated" : "played",
+          botOperations,
+        );
         if (announcement) stateAfterBots = { ...stateAfterBots, lastEffect: announcement };
       }
     }
