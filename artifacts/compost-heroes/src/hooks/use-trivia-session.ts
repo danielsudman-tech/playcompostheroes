@@ -40,7 +40,7 @@ export function useTriviaSession({
   }, [controller, sessionKey]);
 
   const close = useCallback(() => controller.close(), [controller]);
-  const choose = useCallback((choice: number) => controller.choose(choice), [controller]);
+  const choose = useCallback((choiceId: string) => controller.choose(choiceId), [controller]);
   const check = useCallback(() => controller.check(), [controller]);
   const next = useCallback(() => controller.next(), [controller]);
 

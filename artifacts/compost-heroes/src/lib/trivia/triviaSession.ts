@@ -1,4 +1,4 @@
-import type { TriviaProgress, TriviaQuestion, TriviaStorage } from "./triviaTypes";
+import { triviaOptionId, type TriviaProgress, type TriviaQuestion, type TriviaStorage } from "./triviaTypes";
 
 export const TRIVIA_STORAGE_KEY = "compost-heroes.trivia.seen.v1";
 const memorySeenByStorageKey = new Map<string, Set<string>>();
@@ -51,7 +51,11 @@ export function readBrowserTriviaStorage(): TriviaStorage | null {
 }
 
 function copyProgress(progress: TriviaProgress): TriviaProgress {
-  return { ...progress, seenQuestionIds: [...progress.seenQuestionIds] };
+  return {
+    ...progress,
+    choiceOrder: [...progress.choiceOrder],
+    seenQuestionIds: [...progress.seenQuestionIds],
+  };
 }
 
 export class TriviaSessionController {
@@ -69,7 +73,8 @@ export class TriviaSessionController {
       sessionKey,
       open: false,
       currentQuestionId: null,
-      chosenChoice: null,
+      chosenChoiceId: null,
+      choiceOrder: [],
       checked: false,
       seenQuestionIds: this.seenQuestions.getSeenIds(),
     };
@@ -94,8 +99,21 @@ export class TriviaSessionController {
   }
 
   open(): void {
-    if (!this.progress.currentQuestionId) this.selectNextQuestion();
-    this.commit({ ...this.progress, open: true });
+    if (this.progress.open) return;
+    if (!this.progress.currentQuestionId) {
+      this.selectNextQuestion();
+      this.commit({ ...this.progress, open: true });
+      return;
+    }
+
+    const question = this.currentQuestion();
+    this.commit({
+      ...this.progress,
+      choiceOrder: question
+        ? this.shuffleChoiceOrder(question.choices.length)
+        : this.progress.choiceOrder,
+      open: true,
+    });
   }
 
   close(): void {
@@ -111,15 +129,15 @@ export class TriviaSessionController {
     if (!available || requiredDecision) this.close();
   }
 
-  choose(choice: number): void {
+  choose(choiceId: string): void {
     const current = this.questions.get(this.progress.currentQuestionId ?? "");
-    if (!current || this.progress.checked || !Number.isInteger(choice) ||
-      choice < 0 || choice >= current.choices.length) return;
-    this.commit({ ...this.progress, chosenChoice: choice });
+    if (!current || this.progress.checked ||
+      !this.progress.choiceOrder.some((index) => triviaOptionId(current.id, index) === choiceId)) return;
+    this.commit({ ...this.progress, chosenChoiceId: choiceId });
   }
 
   check(): void {
-    if (this.progress.checked || this.progress.chosenChoice === null) return;
+    if (this.progress.checked || this.progress.chosenChoiceId === null) return;
     this.commit({ ...this.progress, checked: true });
   }
 
@@ -143,15 +161,31 @@ export class TriviaSessionController {
     }
     const index = Math.min(unseen.length - 1, Math.floor(this.random() * unseen.length));
     const currentQuestionId = unseen[index];
+    const currentQuestion = this.questions.get(currentQuestionId);
+    const choiceOrder = currentQuestion
+      ? this.shuffleChoiceOrder(currentQuestion.choices.length)
+      : [];
     seen.add(currentQuestionId);
     this.seenQuestions.markSeen(currentQuestionId);
     this.commit({
       ...this.progress,
       currentQuestionId,
-      chosenChoice: null,
+      chosenChoiceId: null,
+      choiceOrder,
       checked: false,
       seenQuestionIds: [...seen],
     });
+  }
+
+  private shuffleChoiceOrder(length: number): number[] {
+    const order = Array.from({ length }, (_, index) => index);
+    // Fisher–Yates creates one presentation order when a question is selected.
+    // The order then lives in progress until another question is selected.
+    for (let index = order.length - 1; index > 0; index--) {
+      const randomIndex = Math.max(0, Math.min(index, Math.floor(this.random() * (index + 1))));
+      [order[index], order[randomIndex]] = [order[randomIndex], order[index]];
+    }
+    return order;
   }
 
   private commit(progress: TriviaProgress): void {

@@ -8,6 +8,7 @@ import {
   resetTriviaSessionsForTests,
 } from "./triviaSession";
 import { getTriviaSession } from "./triviaSession";
+import { isCorrectTriviaOption, triviaOptionId } from "./triviaTypes";
 
 const expectedCardIds = [
   "fresh_air_friend", "branch_buddy", "biochar", "major_brown",
@@ -65,7 +66,7 @@ test("choosing, checking, explaining, and navigating the local bundle makes no n
     for (let index = 0; index < 5; index++) {
       const question = controller.currentQuestion();
       assert.ok(question);
-      controller.choose(question.correctChoice);
+      controller.choose(triviaOptionId(question.id, question.correctChoice));
       controller.check();
       assert.equal(controller.getSnapshot().checked, true);
       assert.ok(question.explanation);
@@ -147,6 +148,75 @@ test("question selection remembers seen questions and cycles without immediately
   assert.equal(controller.getSnapshot().seenQuestionIds.length, 1);
 });
 
+test("each question presentation shuffles choices while checked progress resumes by option ID", () => {
+  const randomValues = [
+    0, 0.99, 0.99, // Initial presentation: correct option stays first.
+    0.5, 0, // Reopen: correct option moves to the middle.
+    0, 0.99, // Reopen again: correct option moves to the end.
+  ];
+  const controller = new TriviaSessionController(
+    "shuffle-answer-options",
+    new SeenQuestionRepository(null, "shuffle-options-test"),
+    () => randomValues.shift() ?? 0,
+  );
+  const question = triviaQuestions[0];
+  controller.setQuestions([question]);
+  controller.open();
+
+  const correctPositions = new Set<number>();
+  for (let presentation = 0; presentation < 3; presentation++) {
+    const order = [...controller.getSnapshot().choiceOrder];
+
+    assert.deepEqual([...order].sort((left, right) => left - right),
+      question.choices.map((_, index) => index), "shuffled order must be a permutation");
+    const correctOptionId = triviaOptionId(question.id, question.correctChoice);
+    const correctPosition = order.findIndex((index) =>
+      triviaOptionId(question.id, index) === correctOptionId
+    );
+    correctPositions.add(correctPosition);
+    assert.equal(isCorrectTriviaOption(question, correctOptionId), true);
+    const incorrectChoiceIndex = order.find((index) =>
+      triviaOptionId(question.id, index) !== correctOptionId
+    );
+    assert.notEqual(incorrectChoiceIndex, undefined);
+    const incorrectOptionId = triviaOptionId(question.id, incorrectChoiceIndex!);
+    assert.equal(isCorrectTriviaOption(question, incorrectOptionId), false);
+
+    if (presentation === 0) {
+      // Choosing and checking the displayed correct option must grade correctly
+      // even when its position differs from its canonical choice index.
+      controller.choose(correctOptionId);
+      controller.check();
+    }
+    assert.equal(controller.getSnapshot().chosenChoiceId, correctOptionId);
+    assert.equal(controller.getSnapshot().checked, true);
+    assert.deepEqual(controller.getSnapshot().choiceOrder, order);
+    assert.equal(controller.currentQuestion()?.explanation, question.explanation);
+
+    // Calling open on an already-open question doesn't reshuffle its display.
+    controller.open();
+    assert.deepEqual(controller.getSnapshot().choiceOrder, order);
+    assert.equal(controller.getSnapshot().chosenChoiceId, correctOptionId);
+    assert.equal(controller.getSnapshot().checked, true);
+
+    // Auto-close preserves answer feedback; reopening the same question makes
+    // a fresh shuffle without changing the selected option's identity.
+    if (presentation < 2) {
+      controller.syncAvailability(false, false);
+      assert.equal(controller.getSnapshot().open, false);
+      assert.equal(controller.getSnapshot().chosenChoiceId, correctOptionId);
+      assert.equal(controller.getSnapshot().checked, true);
+      controller.open();
+      assert.notDeepEqual(controller.getSnapshot().choiceOrder, order);
+      assert.equal(controller.getSnapshot().chosenChoiceId, correctOptionId);
+      assert.equal(controller.getSnapshot().checked, true);
+    }
+  }
+
+  assert.deepEqual([...correctPositions].sort(), [0, 1, 2],
+    "the correct option must be shown in different positions");
+});
+
 test("closing for a turn or a required choice keeps the question, answer, and explanation place", () => {
   const controller = new TriviaSessionController(
     "auto-close-progress",
@@ -158,20 +228,20 @@ test("closing for a turn or a required choice keeps the question, answer, and ex
 
   const question = controller.currentQuestion();
   assert.ok(question);
-  const answeredChoice = question.correctChoice;
+  const answeredChoice = triviaOptionId(question.id, question.correctChoice);
   controller.choose(answeredChoice);
   controller.check();
   controller.syncAvailability(false, false);
   assert.equal(controller.getSnapshot().open, false);
   assert.equal(controller.getSnapshot().currentQuestionId, question.id);
-  assert.equal(controller.getSnapshot().chosenChoice, answeredChoice);
+  assert.equal(controller.getSnapshot().chosenChoiceId, answeredChoice);
   assert.equal(controller.getSnapshot().checked, true);
 
   controller.open();
   controller.syncAvailability(true, true);
   assert.equal(controller.getSnapshot().open, false);
   assert.equal(controller.getSnapshot().currentQuestionId, question.id);
-  assert.equal(controller.getSnapshot().chosenChoice, answeredChoice);
+  assert.equal(controller.getSnapshot().chosenChoiceId, answeredChoice);
   assert.equal(controller.getSnapshot().checked, true);
 });
 

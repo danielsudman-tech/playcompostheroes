@@ -3,6 +3,7 @@ import { createPortal } from "react-dom";
 import { BookOpen, Check, ChevronRight, Lightbulb, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import type { useTriviaSession } from "@/hooks/use-trivia-session";
+import { isCorrectTriviaOption, triviaOptionId } from "@/lib/trivia/triviaTypes";
 
 type TriviaSessionView = ReturnType<typeof useTriviaSession>;
 
@@ -37,13 +38,14 @@ function TriviaChoices({ session }: { session: TriviaSessionView }) {
 
       <fieldset disabled={session.progress.checked} className="space-y-2">
         <legend className="sr-only">Choose one answer</legend>
-        {question.choices.map((choice, index) => {
-          const isSelected = session.progress.chosenChoice === index;
-          const isCorrect = session.progress.checked && index === question.correctChoice;
+        {session.progress.choiceOrder.map((canonicalIndex) => {
+          const choiceId = triviaOptionId(question.id, canonicalIndex);
+          const isSelected = session.progress.chosenChoiceId === choiceId;
+          const isCorrect = session.progress.checked && isCorrectTriviaOption(question, choiceId);
           const isIncorrectSelection = session.progress.checked && isSelected && !isCorrect;
           return (
             <label
-              key={`${question.id}-${index}`}
+              key={choiceId}
               className={`flex min-h-10 cursor-pointer items-center gap-3 rounded-xl border px-3 py-2 text-sm transition-colors focus-within:ring-2 focus-within:ring-primary ${
                 isCorrect
                   ? "border-primary bg-primary/10 font-semibold"
@@ -57,12 +59,12 @@ function TriviaChoices({ session }: { session: TriviaSessionView }) {
               <input
                 type="radio"
                 name={`trivia-${question.id}`}
-                value={index}
+                value={choiceId}
                 checked={isSelected}
-                onChange={() => session.choose(index)}
+                onChange={() => session.choose(choiceId)}
                 className="h-4 w-4 accent-primary"
               />
-              <span className="flex-1">{choice}</span>
+              <span className="flex-1">{question.choices[canonicalIndex]}</span>
               {isCorrect && <Check className="h-4 w-4 text-primary" aria-label="Correct answer" />}
             </label>
           );
@@ -74,7 +76,10 @@ function TriviaChoices({ session }: { session: TriviaSessionView }) {
           <Lightbulb className="mt-0.5 h-4 w-4 shrink-0 text-primary" />
           <p>
             <strong className="mr-1">
-              {session.progress.chosenChoice === question.correctChoice ? "Nice finding." : "Here’s the answer."}
+              {session.progress.chosenChoiceId !== null &&
+                isCorrectTriviaOption(question, session.progress.chosenChoiceId)
+                ? "Nice finding."
+                : "Here’s the answer."}
             </strong>
             {question.explanation}
           </p>
@@ -90,7 +95,7 @@ function TriviaChoices({ session }: { session: TriviaSessionView }) {
           <Button
             type="button"
             onClick={session.check}
-            disabled={session.progress.chosenChoice === null}
+            disabled={session.progress.chosenChoiceId === null}
             size="sm"
           >
             Check answer
