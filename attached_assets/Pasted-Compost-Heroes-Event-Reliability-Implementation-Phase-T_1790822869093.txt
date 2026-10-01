@@ -1,0 +1,159 @@
+Compost Heroes Event Reliability — Implementation Phase
+
+The read-only audit confirms that we should address the Event reliability issues before proceeding with the larger shared-gameplay/UI work.
+Please now implement the reliability improvements recommended, incrementally and with tests after each major change.
+
+1. Make Event presence lightweight
+Refactor presence so routine player check-ins do not acquire the game mutation lock or rebuild/push the complete Event detail unnecessarily.
+The normal check-in should primarily update the participant's last seen/presence information.
+Preserve:
+- connected/disconnected status;
+- disconnected duration;
+- Event Attention behavior;
+- recovery when a participant reconnects.
+Only push a dashboard update when presence state meaningfully changes where practical.
+Add reasonable jitter to synchronized presence timers and online/visibility-triggered requests so 16–32 clients do not all check in simultaneously.
+Preserve an appropriate poll/sweep mechanism so the system can still detect the absence of check-ins.
+
+2. Eliminate nested database connection acquisition under game locks
+This is the highest-priority correctness fix.
+Refactor locked Event operations so work performed while holding a game/advisory lock uses the already-held database client rather than returning to pool.query() and attempting to acquire additional connections.
+Apply this carefully to the affected paths identified in the audit, including game mutations (the game-route middleware that locks every non-GET request on Event-linked games), Event controls (Start All, pause/resume all, end, announcements, per-table control), ready state, waiting-room transfer, joining, kick/remove, reorder and related operations.
+For multi-game operations, use a safe locking strategy that does not consume unnecessary pool connections.
+Release the Event join connection before performing work that does not require it, including buildDetail where appropriate.
+Do not solve this simply by increasing the pool size.
+
+3. Add database and lock timeouts
+Add sensible safeguards so database contention becomes a recoverable error rather than an indefinite application hang.
+Implement appropriate:
+- connection acquisition timeout;
+- advisory-lock/lock timeout;
+- statement timeout.
+Approximately 5 seconds for connection acquisition is reasonable unless the current architecture suggests a better value.
+When temporary contention occurs, return an appropriate recoverable response and have the client retry with bounded backoff where safe.
+If releasing an advisory lock fails, do not return a potentially lock-holding connection to the pool.
+
+4. Improve Event dashboard updates
+Stop unnecessarily refetching/rebuilding the complete Event detail after every pushed update.
+Where safe, have the dashboard consume the pushed Event data directly.
+Coalesce rapid Event pushes if appropriate—approximately 300–500 ms is acceptable.
+Eliminate the one-host-token-query-per-table pattern where possible by retrieving the necessary information efficiently.
+The Event Control Center should remain effectively live to the facilitator.
+
+5. Add a real readiness/health check
+The current health endpoint can report ok while the entire database pool is deadlocked.
+Add an appropriate readiness check that verifies database responsiveness with a short timeout.
+Include useful diagnostic information for testing/logging such as:
+- pool total;
+- pool idle;
+- pool waiting.
+Do not expose sensitive database information publicly.
+
+6. Correct cache behavior
+Change game persistence so the database write succeeds before the corresponding in-memory cache is updated.
+A failed database write must not leave players seeing game state that was never persisted.
+Add a reasonable cache eviction strategy, particularly for completed/old games, so an always-on Reserved VM does not accumulate game-state cache entries forever.
+
+7. Leave the mockup sandbox alone for now
+The mockup sandbox is not served in production and may still be useful for upcoming UI development.
+Do not remove it as part of this reliability work.
+
+Required regression/concurrency testing
+Run all relevant existing tests and add concurrency tests for the changed locking/database behavior.
+Pay particular attention to:
+- Event join;
+- ready/presence;
+- player actions;
+- Start Table;
+- Start All;
+- pause/resume;
+- Event announcements;
+- facilitator controls;
+- player kick/remove;
+- reorder;
+- waiting-room transfer;
+- disconnect/reconnect.
+
+Then perform/simulate realistic Event load scenarios at:
+Scenario A: 4 tables / 16 players
+Scenario B: 8 tables / 32 players
+Include burst conditions rather than testing only steady traffic:
+- simultaneous Event joins;
+- simultaneous presence requests;
+- simulated venue Wi-Fi reconnect;
+- multiple browser visibility/unlock events;
+- dropped/reconnecting SSE connections;
+- simultaneous player actions across different tables;
+- Start All during normal participant activity;
+- host dashboard active throughout;
+- disconnect/reconnect;
+- multiple tables completing around the same time.
+
+Pass/fail targets
+For both 16- and 32-player scenarios:
+Reliability
+- zero deadlocks;
+- zero indefinite requests;
+- zero lost/corrupted game-state updates;
+- zero cross-table state contamination;
+- database pool returns to normal after each burst.
+Database
+- no connection waits exceeding 1 second under the target test load under normal operation;
+- no sustained pool exhaustion;
+- timeout safeguards should be tested intentionally to verify graceful recovery rather than hanging.
+Responsiveness
+- target p95 normal player-action API latency under 1 second;
+- target p95 presence request latency under 500 ms;
+- Event Control Center reflects meaningful table/presence changes within 2 seconds under normal Event load.
+If these latency targets are unrealistic because of the Replit/database environment, report the measured results and explain the limiting factor rather than weakening the target silently.
+Recovery
+- participant reconnect restores current authoritative game state;
+- dropped SSE reconnects cleanly;
+- disconnected status/duration remains accurate;
+- a temporary database timeout produces a recoverable error rather than freezing the application.
+
+Important architecture constraint
+We are intentionally targeting a single persistent application instance at this stage rather than redesigning Compost Heroes for horizontally scaled realtime infrastructure.
+Do not introduce Redis, distributed SSE, or another major infrastructure system in this phase.
+
+Additional requirements for this phase
+
+Test environment
+- Run all load and concurrency testing against the development workspace and development database only. Do not touch the production database or published deployment. Clean up test Events, games, and seats afterward.
+- Before applying fix #2, run the burst test against the current code and confirm it reproduces the hang or pool exhaustion. Report what you observed. This proves the test can detect the problem.
+
+Retries
+- Automatic client retry is allowed only for presence, ready, read requests, and requests where the server confirms nothing was applied (e.g., timed out before acquiring the lock).
+- Do not blindly retry gameplay actions. Either return a clear "not applied, try again" response or add a client request ID so the server can detect a repeat.
+
+Locking
+- Presence may drop the game lock. Ready state must stay under the lock (it controls start eligibility), but should use the held connection.
+
+Targets clarification
+- The 2-second dashboard target applies to changes caused by a request (join, ready, action, pause, message, reconnect).
+- A disconnect should appear on the dashboard within 60 seconds (45-second threshold plus poll or sweep). Report the measured value.
+
+Cache eviction
+- Evict only finished games and games idle well beyond normal play. Never evict waiting or in-progress Event games.
+
+Readiness endpoint
+- The public response is pass/fail only. Pool diagnostics require the existing x-admin-key.
+
+Deliverables
+- Save the load test as a reusable script in the scripts/ package, with instructions to run Scenario A and B, so it can be rerun on the Reserved VM.
+- Make each numbered section its own commit.
+- Note that development-environment latency may differ from a Reserved VM. Results there are preliminary until rerun on the VM.
+- Do not change the deployment target or publish.
+
+Once these fixes and tests are complete, provide:
+1. exact changes made;
+2. concurrency problems eliminated;
+3. new safeguards/timeouts;
+4. regression/concurrency tests added;
+5. results for the 16-player tests;
+6. results for the 32-player tests;
+7. measured p95 latency and pool behavior;
+8. any remaining reliability concerns;
+9. whether you recommend the shared or dedicated Reserved VM based on those results.
+
+Keep this infrastructure/reliability work separate from the upcoming shared-gameplay and UI changes. Do not begin the larger shared-gameplay migration yet. Finish and validate this reliability phase first.

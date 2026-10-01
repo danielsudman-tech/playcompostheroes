@@ -19,3 +19,17 @@ mtime_ms = 1790709335995
 storage_uri = "gcs://replit-rams-assets-riker/rams/assets/repl:3f7f0763-f997-4313-8244-efe50696cc1e/fdf57f13-b114-4ed5-85e2-70feb10d6433/279a17cd-30f1-46de-ac75-33e1bbb8d5f1"
 storage_version_token = "1790709342484824"
 content_type = "application/octet-stream"
+
+[[outputs]]
+id = "rW5Ad9LGQb1HUYWdVEIwr"
+uri = "file://docs/event-reliability-validation.html"
+type = "html"
+title = "Event reliability: final development report"
+description = "Seven changes, full 16/32-player results, timeout fault measurements, regression coverage, cleanup and Reserved VM recommendation."
+logical_id = "a677f6f1-54ad-4314-9bd5-f7a999a81cb7"
+content_hash = "sha256:79d5acc859dc5fc9973f9f2921ee3ac8aeeddea70a1f3ed0cbb6191bc88e5e3b"
+size = 14500
+mtime_ms = 1790830200086
+storage_uri = "gcs://replit-rams-assets-riker/rams/assets/repl:3f7f0763-f997-4313-8244-efe50696cc1e/a677f6f1-54ad-4314-9bd5-f7a999a81cb7/b028d6af-bd13-409b-b769-b3f4338de3c4"
+storage_version_token = "1790830231211021"
+content_type = "text/html"
