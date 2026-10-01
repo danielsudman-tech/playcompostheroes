@@ -16,8 +16,7 @@ import {
 import { WIN_FUNCTIONS } from "../lib/cards.js";
 import {
   broadcastToGame, createGameId, getEventForGame, getGame,
-  isEventGameReadyToStart,
-  onGameBroadcast, updateGameStateCache, withGameMutationLocks, withClientTransaction,
+  isEventGameReadyToStart, onGameBroadcast, updateGameStateCache, withGameMutationLocks, withClientTransaction,
   type PgClient, type PgQueryable,
 } from "../lib/gameStore.js";
 import { extractBearerToken, getUserByToken, isApprovedFacilitator } from "../lib/userStore.js";
@@ -27,6 +26,7 @@ import {
   updateEventPresenceAndPublishTransition,
 } from "../lib/eventPresence.js";
 import { serializeState } from "./game.js";
+import { EventDetailCoalescer, loadHostTokens } from "../lib/eventDashboard.js";
 import {
   acquireDatabaseClient,
   asDatabaseSafeguardError,
@@ -68,17 +68,31 @@ function pushEvent(eventId: string, payload: unknown) {
   for (const send of streams.get(eventId) ?? []) send(payload);
 }
 
-async function buildDetail(eventId: string, includeTokens = false) {
-  const event = await eventRecord(eventId);
-  if (!event) return null;
-  const tables = await tableRecords(eventId);
-  const seats = (await pool.query(
+async function buildDetail(eventId: string, includeTokens = false, client: PgQueryable = pool) {
+  const eventTables = await client.query(
+    `SELECT e.id, e.code, e.name, e.status, e.assignment_mode, e.idle_seconds,
+            EXTRACT(EPOCH FROM e.last_meaningful_activity_at) * 1000 AS last_activity,
+            t.game_id, t.table_number, t.capacity
+       FROM compost_events e
+       LEFT JOIN compost_event_tables t ON t.event_id = e.id
+      WHERE e.id = $1
+      ORDER BY t.table_number`,
+    [eventId],
+  );
+  if (!eventTables.rows.length) return null;
+  const event = eventTables.rows[0];
+  const tables = eventTables.rows
+    .filter((row: any) => row.game_id != null)
+    .map((row: any) => ({ game_id: row.game_id, table_number: row.table_number, capacity: row.capacity }));
+  const seats = (await client.query(
     `SELECT game_id, player_id, ready, last_seen_at FROM compost_event_seats WHERE event_id = $1`,
     [eventId],
   )).rows as Array<{ game_id: string; player_id: string; ready: boolean; last_seen_at: Date | null }>;
   const summaries = [];
-  for (const table of tables) {
-    const state = await getGame(table.game_id);
+  const stateClient = client === pool ? undefined : client;
+  const tableStates = await Promise.all(tables.map((table) => getGame(table.game_id, stateClient)));
+  for (const [index, table] of tables.entries()) {
+    const state = tableStates[index];
     if (!state) continue;
     const guestSeats = seats.filter((s) => s.game_id === table.game_id);
     const guestById = new Map(guestSeats.map((s) => [s.player_id, s]));
@@ -132,33 +146,51 @@ async function buildDetail(eventId: string, includeTokens = false) {
     idleSeconds: event.idle_seconds, tableCount: tables.length, tables: summaries,
   };
   if (includeTokens) {
-    const hostTokens: Record<string, string> = {};
-    for (const table of tables) {
-      const row = await pool.query(
-        `SELECT token FROM compost_game_tokens WHERE game_id = $1 AND player_index = -1 LIMIT 1`,
-        [table.game_id],
-      );
-      if (row.rows[0]) hostTokens[table.game_id] = row.rows[0].token;
-    }
-    detail.hostTokens = hostTokens;
+    detail.hostTokens = await loadHostTokens(client, tables.map((table) => table.game_id));
   }
   return detail;
 }
 
+const eventDetailCoalescer = new EventDetailCoalescer(
+  (eventId) => (streams.get(eventId)?.size ?? 0) > 0,
+  (eventId) => buildDetail(eventId),
+  pushEvent,
+  undefined,
+  (error) => console.error("[event dashboard detail push]", error),
+);
+const enqueueEventDetail = (eventId: string) => eventDetailCoalescer.enqueue(eventId);
+
 onGameBroadcast((gameId) => {
-  void pool.query(`SELECT event_id FROM compost_event_tables WHERE game_id = $1`, [gameId])
-    .then(async (result) => {
-      for (const row of result.rows) {
-        const tables = await tableRecords(row.event_id);
-        const states = await Promise.all(tables.map((table) => getGame(table.game_id)));
-        if (states.length && states.every((state) => state?.phase === "game_over")) {
-          await pool.query(`UPDATE compost_events SET status='completed' WHERE id=$1`, [row.event_id]);
-        } else if (states.some((state) => state && state.phase !== "waiting" && state.phase !== "game_over")) {
-          await pool.query(`UPDATE compost_events SET status='active' WHERE id=$1 AND status='upcoming'`, [row.event_id]);
-        }
-        pushEvent(row.event_id, await buildDetail(row.event_id));
-      }
-    }).catch(() => undefined);
+  void pool.query(
+    `WITH phases AS (
+       SELECT t.event_id, COUNT(*) AS table_count,
+              BOOL_AND(g.state->>'phase' = 'game_over') AS all_completed,
+              BOOL_OR(g.state->>'phase' NOT IN ('waiting', 'game_over')) AS any_active
+         FROM compost_event_tables t
+         JOIN compost_games g ON g.game_id = t.game_id
+        WHERE EXISTS (
+          SELECT 1 FROM compost_event_tables changed
+           WHERE changed.event_id = t.event_id AND changed.game_id = $1
+        )
+        GROUP BY t.event_id
+     ), status_update AS (
+       UPDATE compost_events e
+          SET status = CASE
+            WHEN p.table_count > 0 AND p.all_completed THEN 'completed'
+            WHEN p.any_active AND e.status = 'upcoming' THEN 'active'
+            ELSE e.status
+          END
+         FROM phases p
+        WHERE e.id = p.event_id
+          AND ((p.table_count > 0 AND p.all_completed AND e.status <> 'completed')
+            OR (p.any_active AND e.status = 'upcoming'))
+       RETURNING e.id
+     )
+     SELECT event_id FROM phases`,
+    [gameId],
+  ).then((result) => {
+    for (const row of result.rows) enqueueEventDetail(row.event_id);
+  }).catch((error) => console.error("[event status broadcast]", error));
 });
 
 let presenceSweepInFlight = false;
@@ -186,7 +218,7 @@ async function sweepEventPresence() {
         [previousSuccessfulSweepAt === null ? null : new Date(previousSuccessfulSweepAt)],
       );
       for (const row of sweep.rows) {
-        if (row.event_id) pushEvent(row.event_id, await buildDetail(row.event_id));
+        if (row.event_id) enqueueEventDetail(row.event_id);
       }
       return new Date(sweep.rows[0].swept_at).getTime();
     });
@@ -309,7 +341,7 @@ router.patch("/facilitator/events/:eventId", async (req, res): Promise<void> => 
   if (body.idleSeconds !== undefined && (!Number.isInteger(body.idleSeconds) || body.idleSeconds < 30 || body.idleSeconds > 3600)) { res.status(400).json({ error: "idleSeconds must be between 30 and 3600" }); return; }
   await pool.query(`UPDATE compost_events SET name = COALESCE($2,name), idle_seconds = COALESCE($3,idle_seconds), assignment_mode = COALESCE($4,assignment_mode) WHERE id = $1`,
     [req.params.eventId, body.name?.trim() ?? null, body.idleSeconds ?? null, body.assignmentMode ?? null]);
-  pushEvent(req.params.eventId, await buildDetail(req.params.eventId));
+  enqueueEventDetail(req.params.eventId);
   const detail = await buildDetail(req.params.eventId, true);
   res.json(UpdateFacilitatorEventResponse.parse(detail));
 });
@@ -407,7 +439,7 @@ router.post("/facilitator/events/:eventId/control", async (req, res): Promise<vo
   if (typeof outcome.failure === "number") { res.status(outcome.failure).json({ error: outcome.error }); return; }
   for (const state of outcome.changed) broadcastToGame(state.gameId, state, serializeState);
   res.json(ControlFacilitatorEventResponse.parse({ eventId, action, results: outcome.results }));
-  pushEvent(eventId, await buildDetail(eventId));
+  enqueueEventDetail(eventId);
 });
 
 router.post("/facilitator/events/:eventId/tables/:gameId/control", async (req, res): Promise<void> => {
@@ -430,7 +462,7 @@ router.post("/facilitator/events/:eventId/tables/:gameId/control", async (req, r
   if (outcome.result.nextState) broadcastToGame(gameId, outcome.result.nextState, serializeState);
   const { success, error } = outcome.result;
   res.json(ControlFacilitatorEventTableResponse.parse({ gameId, success, error }));
-  pushEvent(eventId, await buildDetail(eventId));
+  enqueueEventDetail(eventId);
 });
 
 router.post("/facilitator/events/:eventId/stream-ticket", async (req, res): Promise<void> => {
@@ -460,13 +492,59 @@ router.get("/facilitator/events/:eventId/stream", async (req, res): Promise<void
   res.setHeader("Connection", "keep-alive");
   res.setHeader("X-Accel-Buffering", "no");
   res.flushHeaders();
-  const write = (data: unknown) => { if (!res.writableEnded) res.write(`data: ${JSON.stringify(data)}\n\n`); };
-  write(await buildDetail(req.params.eventId));
   const eventId = req.params.eventId;
-  if (!streams.has(eventId)) streams.set(eventId, new Set());
-  streams.get(eventId)!.add(write);
-  const ping = setInterval(() => res.write(": ping\n\n"), 15_000);
-  req.on("close", () => { clearInterval(ping); streams.get(eventId)?.delete(write); });
+  let initialSnapshotSent = false;
+  let updateDuringInitialSnapshot = false;
+  const write = (data: unknown) => {
+    if (res.destroyed || res.writableEnded) return;
+    if (!initialSnapshotSent) {
+      updateDuringInitialSnapshot = true;
+      return;
+    }
+    res.write(`data: ${JSON.stringify(data)}\n\n`);
+  };
+  const subscribers = streams.get(eventId) ?? new Set<(data: unknown) => void>();
+  subscribers.add(write);
+  streams.set(eventId, subscribers);
+  let cleanedUp = false;
+  let ping: ReturnType<typeof setInterval>;
+  const cleanup = () => {
+    if (cleanedUp) return;
+    cleanedUp = true;
+    clearInterval(ping);
+    const current = streams.get(eventId);
+    current?.delete(write);
+    if (current?.size === 0) streams.delete(eventId);
+  };
+  ping = setInterval(() => {
+    if (!res.destroyed && !res.writableEnded) res.write(": ping\n\n");
+    else cleanup();
+  }, 15_000);
+  res.on("close", cleanup);
+  if (res.destroyed || res.writableEnded) {
+    cleanup();
+    return;
+  }
+  let initialDetail: Awaited<ReturnType<typeof buildDetail>>;
+  try {
+    initialDetail = await buildDetail(eventId, true);
+  } catch {
+    cleanup();
+    res.end();
+    return;
+  }
+  if (res.destroyed || res.writableEnded) {
+    cleanup();
+    return;
+  }
+  if (!initialDetail) {
+    cleanup();
+    res.end();
+    return;
+  }
+  res.write(`data: ${JSON.stringify(initialDetail)}\n\n`);
+  initialSnapshotSent = true;
+  if (updateDuringInitialSnapshot) enqueueEventDetail(eventId);
 });
 
 router.get("/events/:code", async (req, res): Promise<void> => {
@@ -624,7 +702,7 @@ router.post("/events/:code/join", async (req, res): Promise<void> => {
     playerName: committedJoin.playerName,
     tableNumber: committedJoin.tableNumber,
   }));
-  pushEvent(committedJoin.eventId, await buildDetail(committedJoin.eventId));
+  enqueueEventDetail(committedJoin.eventId);
 });
 
 async function resolveEventSeat(code: string, token: unknown, client: PgQueryable = pool) {
@@ -671,7 +749,7 @@ router.post("/events/:code/ready", async (req, res): Promise<void> => {
   });
   if (result.status !== 200) { res.status(result.status).json({ error: result.error }); return; }
   res.json(SetEventReadyResponse.parse({ ok: true }));
-  pushEvent(result.eventId, await buildDetail(result.eventId));
+  enqueueEventDetail(result.eventId);
 });
 
 router.post("/events/:code/presence", async (req, res): Promise<void> => {
@@ -706,7 +784,7 @@ router.post("/events/:code/presence", async (req, res): Promise<void> => {
     matchedEventId = result.rows[0].event_id as string;
     return result.rows[0].last_seen_at ?? null;
   }, async () => {
-    if (matchedEventId) pushEvent(matchedEventId, await buildDetail(matchedEventId));
+    if (matchedEventId) enqueueEventDetail(matchedEventId);
   });
   if (!matchedEventId) { res.status(403).json({ error: "Invalid event seat token" }); return; }
   res.json(HeartbeatEventPresenceResponse.parse({ ok: true }));

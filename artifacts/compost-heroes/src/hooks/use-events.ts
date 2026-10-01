@@ -3,6 +3,9 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { getStoredToken, storeToken } from "@/hooks/use-game";
 import { createEventPresenceScheduler, withBoundedSafeRetry } from "@/hooks/event-presence";
 import {
+  applyEventStreamSnapshot, eventSnapshotGenerationKey, isCurrentEventSnapshot,
+} from "@/hooks/event-dashboard-realtime";
+import {
   getFacilitatorEvents, createFacilitatorEvent, getFacilitatorEvent, updateFacilitatorEvent,
   createFacilitatorEventStreamTicket,
   controlFacilitatorEvent, controlFacilitatorEventTable, getPublicEvent, joinEvent, setEventReady,
@@ -38,7 +41,9 @@ const eventAuthCacheScope = () => {
   return hash.toString(16);
 };
 const facilitatorEventsKey = () => [...getGetFacilitatorEventsQueryKey(), eventAuthCacheScope()] as const;
-export const eventKey = (id: string) => [...getGetFacilitatorEventQueryKey(id), eventAuthCacheScope()] as const;
+const eventKeyForScope = (id: string, scope: string) => [...getGetFacilitatorEventQueryKey(id), scope] as const;
+export const eventKey = (id: string) => eventKeyForScope(id, eventAuthCacheScope());
+const eventSnapshotGenerations = new Map<string, number>();
 export const rememberedEventSeat = (code: string): EventJoin | null => {
   try { const value = localStorage.getItem(`compost_event_${code.toLowerCase()}`); return value ? JSON.parse(value) as EventJoin : null; } catch { return null; }
 };
@@ -151,7 +156,25 @@ export function useEvents() {
   return useQuery({ queryKey: facilitatorEventsKey(), queryFn: async () => (await getFacilitatorEvents({ headers: { Authorization: `Bearer ${userToken()}` } })).map(normalizeSummary), refetchInterval: 10000 });
 }
 export function useEvent(id: string) {
-  return useQuery({ queryKey: eventKey(id), queryFn: async () => rememberHostEvent(normalizeEvent(await getFacilitatorEvent(id, { headers: { Authorization: `Bearer ${userToken()}` } }))), enabled: !!id, refetchInterval: 10000 });
+  const scope = eventAuthCacheScope();
+  const snapshotKey = eventSnapshotGenerationKey(scope, id);
+  return useQuery({
+    queryKey: eventKeyForScope(id, scope),
+    queryFn: async ({ signal }) => {
+      const requestGeneration = eventSnapshotGenerations.get(snapshotKey) ?? 0;
+      const detail = await getFacilitatorEvent(id, {
+        headers: { Authorization: `Bearer ${userToken()}` },
+        signal,
+      });
+      if (eventAuthCacheScope() !== scope ||
+          !isCurrentEventSnapshot(requestGeneration, eventSnapshotGenerations.get(snapshotKey) ?? 0)) {
+        throw new DOMException("A newer event snapshot superseded this response", "AbortError");
+      }
+      return rememberHostEvent(normalizeEvent(detail));
+    },
+    enabled: !!id,
+    refetchInterval: 10000,
+  });
 }
 export function useGuestEvent(code: string) {
   return useQuery({ queryKey: guestEventKey(code), queryFn: async () => normalizeGuest(await getPublicEvent(code)), enabled: !!code, refetchInterval: 5000 });
@@ -170,11 +193,10 @@ export function useUpdateEvent(id: string) {
 export interface ControlResult { results: EventTableResult[] }
 export function useEventControl(id: string) {
   const qc = useQueryClient();
-  return useMutation({ mutationFn: (data: { action: "start" | "message" | "pause" | "resume" | "end"; text?: string }): Promise<EventControlResult> => controlFacilitatorEvent(id, { action: data.action === "pause" ? "pause_all" : data.action === "resume" ? "resume_all" : data.action, text: data.text, userToken: userToken() }), onSuccess: () => { qc.invalidateQueries({ queryKey: eventKey(id) }); qc.invalidateQueries({ queryKey: facilitatorEventsKey() }); } });
+  return useMutation({ mutationFn: (data: { action: "start" | "message" | "pause" | "resume" | "end"; text?: string }): Promise<EventControlResult> => controlFacilitatorEvent(id, { action: data.action === "pause" ? "pause_all" : data.action === "resume" ? "resume_all" : data.action, text: data.text, userToken: userToken() }), onSuccess: () => { qc.invalidateQueries({ queryKey: facilitatorEventsKey() }); } });
 }
 export function useTableControl(id: string) {
-  const qc = useQueryClient();
-  return useMutation({ mutationFn: (data: { gameId: string; action: "message" | "pause" | "resume"; text?: string }): Promise<EventTableResult> => controlFacilitatorEventTable(id, data.gameId, { action: data.action, text: data.text, userToken: userToken() }), onSuccess: () => qc.invalidateQueries({ queryKey: eventKey(id) }) });
+  return useMutation({ mutationFn: (data: { gameId: string; action: "message" | "pause" | "resume"; text?: string }): Promise<EventTableResult> => controlFacilitatorEventTable(id, data.gameId, { action: data.action, text: data.text, userToken: userToken() }) });
 }
 export function useJoinEvent(code: string) {
   const qc = useQueryClient();
@@ -210,32 +232,53 @@ export function useEventPresence(code: string, seat: EventJoin | null, enabled: 
 export function useEventStream(id: string) {
   const qc = useQueryClient();
   const [connected, setConnected] = useState(false);
+  const authScope = eventAuthCacheScope();
   useEffect(() => {
-    if (!id || !userToken()) return;
+    const streamUserToken = userToken();
     let stopped = false;
     let source: EventSource | null = null;
     let retryTimer: number | undefined;
+    const queryKey = eventKeyForScope(id, authScope);
+    const snapshotKey = eventSnapshotGenerationKey(authScope, id);
+    const isCurrent = () => !stopped && eventAuthCacheScope() === authScope;
+    if (!id || !streamUserToken || !isCurrent()) return;
+    const scheduleReconnect = () => {
+      if (isCurrent()) retryTimer = window.setTimeout(() => { void reconnect(); }, 750 + Math.floor(Math.random() * 750));
+    };
     const reconnect = async () => {
       try {
-        const issued = await createFacilitatorEventStreamTicket(id, { userToken: userToken() });
-        if (stopped) return;
+        const issued = await createFacilitatorEventStreamTicket(id, { userToken: streamUserToken });
+        if (!isCurrent()) return;
         const nextSource = new EventSource(
           `/api/facilitator/events/${encodeURIComponent(id)}/stream?ticket=${encodeURIComponent(issued.ticket)}`,
         );
         source = nextSource;
-        nextSource.onopen = () => setConnected(true);
-        nextSource.onmessage = () => { qc.invalidateQueries({ queryKey: eventKey(id) }); };
+        nextSource.onopen = () => {
+          if (isCurrent()) setConnected(true);
+        };
+        nextSource.onmessage = (message) => {
+          if (!isCurrent()) return;
+          let payload: unknown;
+          try { payload = JSON.parse(message.data); } catch { return; }
+          const generation = (eventSnapshotGenerations.get(snapshotKey) ?? 0) + 1;
+          eventSnapshotGenerations.set(snapshotKey, generation);
+          void applyEventStreamSnapshot(
+            qc, queryKey, id, payload, generation,
+            () => isCurrent() ? eventSnapshotGenerations.get(snapshotKey) ?? 0 : -1,
+            (detail) => rememberHostEvent(normalizeEvent(detail)),
+          );
+        };
         nextSource.onerror = () => {
           nextSource.close();
           if (source === nextSource) source = null;
+          if (!isCurrent()) return;
           setConnected(false);
-          qc.invalidateQueries({ queryKey: eventKey(id) });
-          if (!stopped) retryTimer = window.setTimeout(() => { void reconnect(); }, 3000);
+          scheduleReconnect();
         };
       } catch {
+        if (!isCurrent()) return;
         setConnected(false);
-        qc.invalidateQueries({ queryKey: eventKey(id) });
-        if (!stopped) retryTimer = window.setTimeout(() => { void reconnect(); }, 3000);
+        scheduleReconnect();
       }
     };
     void reconnect();
@@ -243,8 +286,9 @@ export function useEventStream(id: string) {
       stopped = true;
       if (retryTimer !== undefined) window.clearTimeout(retryTimer);
       source?.close();
+      void qc.cancelQueries({ queryKey, exact: true });
       setConnected(false);
     };
-  }, [id, qc]);
+  }, [id, qc, authScope]);
   return connected;
 }
