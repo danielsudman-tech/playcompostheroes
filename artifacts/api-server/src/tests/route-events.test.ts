@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
 import { pool } from "@workspace/db";
 import app from "../app.js";
-import { getGame, storeGame } from "../lib/gameStore.js";
+import { getGame, storeGame, transferWaitingPlayer } from "../lib/gameStore.js";
 
 const server = app.listen(0);
 const base = `http://127.0.0.1:${(server.address() as { port: number }).port}/api`;
@@ -15,7 +15,10 @@ const eventIds: string[] = [];
 const gameIds: string[] = [];
 
 async function request(path: string, init?: RequestInit) {
-  const response = await fetch(`${base}${path}`, init);
+  const response = await fetch(`${base}${path}`, {
+    ...init,
+    signal: init?.signal ?? AbortSignal.timeout(20_000),
+  });
   return { status: response.status, json: await response.json() as any };
 }
 async function getAsHost(path: string, token = userToken) {
@@ -23,6 +26,21 @@ async function getAsHost(path: string, token = userToken) {
 }
 function post(body: unknown): RequestInit {
   return { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) };
+}
+async function waitForBlockedQuery(queryFragment: string): Promise<void> {
+  const deadline = Date.now() + 10_000;
+  while (Date.now() < deadline) {
+    const blocked = await pool.query(
+      `SELECT 1 FROM pg_stat_activity
+        WHERE pid<>pg_backend_pid() AND datname=current_database()
+          AND wait_event_type='Lock' AND query LIKE $1
+        LIMIT 1`,
+      [`%${queryFragment}%`],
+    );
+    if (blocked.rows.length) return;
+    await new Promise((resolve) => setTimeout(resolve, 20));
+  }
+  throw new Error(`Timed out waiting for a blocked database query: ${queryFragment}`);
 }
 
 try {
@@ -298,6 +316,197 @@ try {
     oppositeDetail.json.tables.map((table: any) => table.players.map((player: any) => player.playerName)),
     [["Right Guest"], ["Left Guest"]],
   );
+
+  const readyTransferEvent = await request("/facilitator/events", post({
+    userToken, name: "Ready Transfer Lock Race", tableCount: 2,
+    tableCapacities: [2, 2], assignmentMode: "choose",
+  }));
+  const readyTransferId = readyTransferEvent.json.eventId as string;
+  const readyTransferCode = (readyTransferEvent.json.code as string).toLowerCase();
+  const readySourceId = readyTransferEvent.json.tables[0].gameId as string;
+  const readyTargetId = readyTransferEvent.json.tables[1].gameId as string;
+  eventIds.push(readyTransferId);
+  gameIds.push(readySourceId, readyTargetId);
+  const readyTransferGuest = await request(`/events/${readyTransferCode}/join`, post({
+    name: "Ready Transfer Guest", tableNumber: 1,
+  }));
+  assert.equal(readyTransferGuest.status, 201);
+  const heldGameLock = await pool.connect();
+  await heldGameLock.query(`SELECT pg_advisory_lock(7419, hashtext($1))`, [readySourceId]);
+  const blockedReadyRequest = request(`/events/${readyTransferCode}/ready`, post({
+    token: readyTransferGuest.json.token, ready: true,
+  }));
+  try {
+    await waitForBlockedQuery("pg_advisory_lock(7419, hashtext(lock_targets.game_id))");
+    const transferred = await transferWaitingPlayer(
+      readySourceId,
+      readyTargetId,
+      readyTransferGuest.json.playerId,
+    );
+    assert.ok(transferred, "direct seat transfer commits while ready waits for the old game lock");
+  } finally {
+    await heldGameLock.query(`SELECT pg_advisory_unlock(7419, hashtext($1))`, [readySourceId]);
+    heldGameLock.release();
+  }
+  const blockedReadyResponse = await blockedReadyRequest;
+  assert.equal(blockedReadyResponse.status, 503,
+    "ready rejects a refreshed seat that moved away from the game it locked");
+  assert.equal(blockedReadyResponse.json.notApplied, true,
+    "the transfer race response explicitly confirms the ready mutation was not applied");
+  const movedSeatReady = await pool.query(
+    `SELECT ready FROM compost_event_seats WHERE event_id=$1 AND player_id=$2`,
+    [readyTransferId, readyTransferGuest.json.playerId],
+  );
+  assert.equal(movedSeatReady.rows[0]?.ready, false,
+    "ready never mutates a transferred seat whose game lock was not acquired");
+
+  const presenceReorderEvent = await request("/facilitator/events", post({
+    userToken, name: "Presence Reorder Race", tableCount: 1, tableCapacities: [3],
+  }));
+  const presenceReorderId = presenceReorderEvent.json.eventId as string;
+  const presenceReorderCode = (presenceReorderEvent.json.code as string).toLowerCase();
+  const presenceReorderGameId = presenceReorderEvent.json.tables[0].gameId as string;
+  eventIds.push(presenceReorderId);
+  gameIds.push(presenceReorderGameId);
+  const [presenceGuestA, presenceGuestB] = await Promise.all([
+    request(`/events/${presenceReorderCode}/join`, post({ name: "Presence A" })),
+    request(`/events/${presenceReorderCode}/join`, post({ name: "Presence B" })),
+  ]);
+  assert.equal(presenceGuestA.status, 201);
+  assert.equal(presenceGuestB.status, 201);
+  const reorderState = (await getGame(presenceReorderGameId))!;
+  const aIndex = reorderState.players.findIndex((player) => player.id === presenceGuestA.json.playerId);
+  const bIndex = reorderState.players.findIndex((player) => player.id === presenceGuestB.json.playerId);
+  assert.ok(aIndex >= 0 && bIndex >= 0 && aIndex !== bIndex);
+  const presenceBeforeReorderRace = await pool.query(
+    `SELECT player_id,last_seen_at FROM compost_event_seats WHERE event_id=$1`,
+    [presenceReorderId],
+  );
+  const previousPresenceByPlayer = new Map<string, number | null>(
+    presenceBeforeReorderRace.rows.map((row) => [
+      row.player_id,
+      row.last_seen_at == null ? null : new Date(row.last_seen_at).getTime(),
+    ]),
+  );
+  const presenceReorderClient = await pool.connect();
+  await presenceReorderClient.query("BEGIN");
+  await presenceReorderClient.query(
+    `SELECT id FROM compost_event_seats
+      WHERE event_id=$1 AND player_id=$2 FOR UPDATE`,
+    [presenceReorderId, presenceGuestA.json.playerId],
+  );
+  const reorderedPresenceRequest = request(`/events/${presenceReorderCode}/presence`, post({
+    token: presenceGuestA.json.token,
+  }));
+  try {
+    await waitForBlockedQuery("WITH candidate AS MATERIALIZED");
+    await presenceReorderClient.query(
+      `UPDATE compost_game_tokens SET player_index=-300001
+        WHERE game_id=$1 AND token=$2`,
+      [presenceReorderGameId, presenceGuestA.json.token],
+    );
+    await presenceReorderClient.query(
+      `UPDATE compost_game_tokens SET player_index=-300002
+        WHERE game_id=$1 AND token=$2`,
+      [presenceReorderGameId, presenceGuestB.json.token],
+    );
+    await presenceReorderClient.query(
+      `UPDATE compost_game_tokens SET player_index=$3
+        WHERE game_id=$1 AND token=$2`,
+      [presenceReorderGameId, presenceGuestA.json.token, bIndex],
+    );
+    await presenceReorderClient.query(
+      `UPDATE compost_game_tokens SET player_index=$3
+        WHERE game_id=$1 AND token=$2`,
+      [presenceReorderGameId, presenceGuestB.json.token, aIndex],
+    );
+    await presenceReorderClient.query(
+      `UPDATE compost_event_seats SET player_index=$3
+        WHERE event_id=$1 AND player_id=$2`,
+      [presenceReorderId, presenceGuestA.json.playerId, bIndex],
+    );
+    await presenceReorderClient.query(
+      `UPDATE compost_event_seats SET player_index=$3
+        WHERE event_id=$1 AND player_id=$2`,
+      [presenceReorderId, presenceGuestB.json.playerId, aIndex],
+    );
+    await presenceReorderClient.query(
+      `UPDATE compost_games SET state=$2,updated_at=NOW() WHERE game_id=$1`,
+      [presenceReorderGameId, JSON.stringify({
+        ...reorderState,
+        players: reorderState.players.map((player, index) =>
+          index === aIndex ? reorderState.players[bIndex] :
+            index === bIndex ? reorderState.players[aIndex] : player),
+      })],
+    );
+    await presenceReorderClient.query("COMMIT");
+  } catch (error) {
+    await presenceReorderClient.query("ROLLBACK").catch(() => undefined);
+    throw error;
+  } finally {
+    presenceReorderClient.release();
+  }
+  const stalePresenceResponse = await reorderedPresenceRequest;
+  assert.equal(stalePresenceResponse.status, 403,
+    "presence does not touch a seat whose authoritative ordering changed while resolving");
+  const reorderedSeatPresence = await pool.query(
+    `SELECT player_id,last_seen_at FROM compost_event_seats WHERE event_id=$1`,
+    [presenceReorderId],
+  );
+  assert.ok(reorderedSeatPresence.rows.every((row) =>
+    (row.last_seen_at == null ? null : new Date(row.last_seen_at).getTime()) ===
+      previousPresenceByPlayer.get(row.player_id)),
+    "a raced reorder never attributes presence to a different guest");
+  const recoveredPresence = await request(`/events/${presenceReorderCode}/presence`, post({
+    token: presenceGuestA.json.token,
+  }));
+  assert.equal(recoveredPresence.status, 200,
+    "the same credential resolves successfully against the completed reordered seat");
+  const recoveredSeatPresence = await pool.query(
+    `SELECT last_seen_at FROM compost_event_seats WHERE event_id=$1 AND player_id=$2`,
+    [presenceReorderId, presenceGuestA.json.playerId],
+  );
+  assert.ok(recoveredSeatPresence.rows[0]?.last_seen_at,
+    "the retry updates the matching player's reordered seat");
+
+  const presenceRemovalEvent = await request("/facilitator/events", post({
+    userToken, name: "Presence Removal Race", tableCount: 1, tableCapacities: [2],
+  }));
+  const presenceRemovalId = presenceRemovalEvent.json.eventId as string;
+  const presenceRemovalCode = (presenceRemovalEvent.json.code as string).toLowerCase();
+  const presenceRemovalGameId = presenceRemovalEvent.json.tables[0].gameId as string;
+  eventIds.push(presenceRemovalId);
+  gameIds.push(presenceRemovalGameId);
+  const presenceRemovedGuest = await request(`/events/${presenceRemovalCode}/join`, post({
+    name: "Presence Removed",
+  }));
+  assert.equal(presenceRemovedGuest.status, 201);
+  const removalClient = await pool.connect();
+  await removalClient.query("BEGIN");
+  await removalClient.query(
+    `SELECT id FROM compost_event_seats
+      WHERE event_id=$1 AND player_id=$2 FOR UPDATE`,
+    [presenceRemovalId, presenceRemovedGuest.json.playerId],
+  );
+  const removedPresenceRequest = request(`/events/${presenceRemovalCode}/presence`, post({
+    token: presenceRemovedGuest.json.token,
+  }));
+  try {
+    await waitForBlockedQuery("WITH candidate AS MATERIALIZED");
+    await removalClient.query(
+      `DELETE FROM compost_event_seats WHERE event_id=$1 AND player_id=$2`,
+      [presenceRemovalId, presenceRemovedGuest.json.playerId],
+    );
+    await removalClient.query("COMMIT");
+  } catch (error) {
+    await removalClient.query("ROLLBACK").catch(() => undefined);
+    throw error;
+  } finally {
+    removalClient.release();
+  }
+  const removedPresenceResponse = await removedPresenceRequest;
+  assert.equal(removedPresenceResponse.status, 403,
+    "presence returns invalid-seat after a concurrent removal instead of touching a stale player ID");
 
   const burstEvent = await request("/facilitator/events", post({
     userToken, name: "Eight Table Join Burst", tableCount: 8,

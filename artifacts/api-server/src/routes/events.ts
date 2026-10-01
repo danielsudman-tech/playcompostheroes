@@ -17,7 +17,7 @@ import { WIN_FUNCTIONS } from "../lib/cards.js";
 import {
   broadcastToGame, createGameId, getEventForGame, getGame,
   isEventGameReadyToStart,
-  onGameBroadcast, updateGameStateCache, withGameMutationLocks,
+  onGameBroadcast, updateGameStateCache, withGameMutationLocks, withClientTransaction,
   type PgClient, type PgQueryable,
 } from "../lib/gameStore.js";
 import { extractBearerToken, getUserByToken, isApprovedFacilitator } from "../lib/userStore.js";
@@ -27,6 +27,12 @@ import {
   updateEventPresenceAndPublishTransition,
 } from "../lib/eventPresence.js";
 import { serializeState } from "./game.js";
+import {
+  acquireDatabaseClient,
+  asDatabaseSafeguardError,
+  classifyDatabaseSafeguardError,
+  DatabaseSafeguardError,
+} from "../lib/databaseSafeguards.js";
 
 const router: IRouter = Router();
 const streams = new Map<string, Set<(data: unknown) => void>>();
@@ -225,7 +231,10 @@ router.post("/facilitator/events", async (req, res): Promise<void> => {
   }
   const eventId = uuid();
   let code = createCode();
-  const client = await pool.connect();
+  const client = await acquireDatabaseClient(() => pool.connect(), "not-started");
+  let clientDestroyed = false;
+  let commitAttempted = false;
+  let committed = false;
   const newStates: GameState[] = [];
   try {
     await client.query("BEGIN");
@@ -259,12 +268,28 @@ router.post("/facilitator/events", async (req, res): Promise<void> => {
       );
       newStates.push(state);
     }
+    commitAttempted = true;
     await client.query("COMMIT");
+    committed = true;
     newStates.forEach(updateGameStateCache);
   } catch (error) {
-    await client.query("ROLLBACK");
-    throw error;
-  } finally { client.release(); }
+    let rollbackSucceeded = false;
+    if (!committed) {
+      try {
+        await client.query("ROLLBACK");
+        rollbackSucceeded = true;
+      } catch (rollbackError) {
+        clientDestroyed = true;
+        client.release(rollbackError instanceof Error ? rollbackError : new Error("Transaction rollback failed"));
+      }
+    }
+    throw asDatabaseSafeguardError(
+      error,
+      rollbackSucceeded && !commitAttempted ? "rolled-back" : "unknown",
+    );
+  } finally {
+    if (!clientDestroyed) client.release();
+  }
   res.status(201).json(GetFacilitatorEventResponse.parse(await buildDetail(eventId, true)));
 });
 
@@ -284,8 +309,8 @@ router.patch("/facilitator/events/:eventId", async (req, res): Promise<void> => 
   if (body.idleSeconds !== undefined && (!Number.isInteger(body.idleSeconds) || body.idleSeconds < 30 || body.idleSeconds > 3600)) { res.status(400).json({ error: "idleSeconds must be between 30 and 3600" }); return; }
   await pool.query(`UPDATE compost_events SET name = COALESCE($2,name), idle_seconds = COALESCE($3,idle_seconds), assignment_mode = COALESCE($4,assignment_mode) WHERE id = $1`,
     [req.params.eventId, body.name?.trim() ?? null, body.idleSeconds ?? null, body.assignmentMode ?? null]);
+  pushEvent(req.params.eventId, await buildDetail(req.params.eventId));
   const detail = await buildDetail(req.params.eventId, true);
-  pushEvent(req.params.eventId, detail);
   res.json(UpdateFacilitatorEventResponse.parse(detail));
 });
 
@@ -330,6 +355,7 @@ async function changeTable(client: PgClient, gameId: string, action: string, tex
     }
     return { gameId, success: true, error: null };
   } catch (error) {
+    if (classifyDatabaseSafeguardError(error)) throw error;
     return { gameId, success: false, error: error instanceof Error ? error.message : "Control failed" };
   }
 }
@@ -380,8 +406,8 @@ router.post("/facilitator/events/:eventId/control", async (req, res): Promise<vo
   });
   if (typeof outcome.failure === "number") { res.status(outcome.failure).json({ error: outcome.error }); return; }
   for (const state of outcome.changed) broadcastToGame(state.gameId, state, serializeState);
-  pushEvent(eventId, await buildDetail(eventId));
   res.json(ControlFacilitatorEventResponse.parse({ eventId, action, results: outcome.results }));
+  pushEvent(eventId, await buildDetail(eventId));
 });
 
 router.post("/facilitator/events/:eventId/tables/:gameId/control", async (req, res): Promise<void> => {
@@ -403,8 +429,8 @@ router.post("/facilitator/events/:eventId/tables/:gameId/control", async (req, r
   if (typeof outcome.failure === "number") { res.status(outcome.failure).json({ error: outcome.error }); return; }
   if (outcome.result.nextState) broadcastToGame(gameId, outcome.result.nextState, serializeState);
   const { success, error } = outcome.result;
-  pushEvent(eventId, await buildDetail(eventId));
   res.json(ControlFacilitatorEventTableResponse.parse({ gameId, success, error }));
+  pushEvent(eventId, await buildDetail(eventId));
 });
 
 router.post("/facilitator/events/:eventId/stream-ticket", async (req, res): Promise<void> => {
@@ -498,7 +524,19 @@ router.post("/events/:code/join", async (req, res): Promise<void> => {
   if (tableNumber !== undefined && (!Number.isInteger(tableNumber) || !tables.some((t) => t.table_number === tableNumber))) {
     res.status(400).json({ error: "Invalid tableNumber" }); return;
   }
-  const client = await pool.connect();
+  const client = await acquireDatabaseClient(() => pool.connect(), "not-started");
+  let clientDestroyed = false;
+  let commitAttempted = false;
+  let committed = false;
+  let committedJoin: {
+    gameId: string;
+    eventId: string;
+    token: string;
+    playerId: string;
+    playerName: string;
+    tableNumber: number;
+    state: GameState;
+  } | null = null;
   try {
     await client.query("BEGIN");
     const lockGameIds = tables.map((table) => table.game_id).sort();
@@ -546,17 +584,47 @@ router.post("/events/:code/join", async (req, res): Promise<void> => {
        VALUES($1,$2,$3,$4,$5,false,NOW())`,
       [uuid(), event.id, table.game_id, player.id, joined.state.players.length - 1],
     );
-    updateGameStateCache(joined.state);
-    broadcastToGame(table.game_id, joined.state, serializeState);
-    pushEvent(event.id, await buildDetail(event.id));
-    res.status(201).json(JoinEventResponse.parse({ gameId: table.game_id, token, playerId: player.id, playerName: player.name, tableNumber: table.table_number }));
+    commitAttempted = true;
     await client.query("COMMIT");
+    committed = true;
+    updateGameStateCache(joined.state);
+    committedJoin = {
+      gameId: table.game_id,
+      eventId: event.id,
+      token,
+      playerId: player.id,
+      playerName: player.name,
+      tableNumber: table.table_number,
+      state: joined.state,
+    };
   } catch (error) {
-    await client.query("ROLLBACK");
-    throw error;
+    let rollbackSucceeded = false;
+    if (!committed) {
+      try {
+        await client.query("ROLLBACK");
+        rollbackSucceeded = true;
+      } catch (rollbackError) {
+        clientDestroyed = true;
+        client.release(rollbackError instanceof Error ? rollbackError : new Error("Transaction rollback failed"));
+      }
+    }
+    throw asDatabaseSafeguardError(
+      error,
+      rollbackSucceeded && !commitAttempted ? "rolled-back" : "unknown",
+    );
   } finally {
-    client.release();
+    if (!clientDestroyed) client.release();
   }
+  if (!committedJoin) return;
+  broadcastToGame(committedJoin.gameId, committedJoin.state, serializeState);
+  res.status(201).json(JoinEventResponse.parse({
+    gameId: committedJoin.gameId,
+    token: committedJoin.token,
+    playerId: committedJoin.playerId,
+    playerName: committedJoin.playerName,
+    tableNumber: committedJoin.tableNumber,
+  }));
+  pushEvent(committedJoin.eventId, await buildDetail(committedJoin.eventId));
 });
 
 async function resolveEventSeat(code: string, token: unknown, client: PgQueryable = pool) {
@@ -591,43 +659,56 @@ router.post("/events/:code/ready", async (req, res): Promise<void> => {
   const result = await withGameMutationLocks<EventReadyResult>([seat.game_id], async (client) => {
     const refreshed = await resolveEventSeat(req.params.code, body.token, client);
     if (!refreshed) return { status: 403, error: "Invalid event seat token" };
+    if (refreshed.game_id !== seat.game_id) {
+      throw new DatabaseSafeguardError("advisory_lock", "not-started");
+    }
     if (["ending", "completed"].includes(refreshed.event_status)) return { status: 409, error: "Event is ending or has ended" };
-    await client.query(`UPDATE compost_event_seats SET ready=$3 WHERE game_id=$1 AND player_id=$2`,
-      [refreshed.game_id, refreshed.player_id, body.ready === true]);
-    return { status: 200, eventId: refreshed.event_id };
+    return withClientTransaction(client, async () => {
+      await client.query(`UPDATE compost_event_seats SET ready=$3 WHERE game_id=$1 AND player_id=$2`,
+        [refreshed.game_id, refreshed.player_id, body.ready === true]);
+      return { status: 200, eventId: refreshed.event_id };
+    });
   });
   if (result.status !== 200) { res.status(result.status).json({ error: result.error }); return; }
-  pushEvent(result.eventId, await buildDetail(result.eventId));
   res.json(SetEventReadyResponse.parse({ ok: true }));
+  pushEvent(result.eventId, await buildDetail(result.eventId));
 });
 
 router.post("/events/:code/presence", async (req, res): Promise<void> => {
   const parsedBody = HeartbeatEventPresenceBody.safeParse(req.body);
   if (!parsedBody.success) { res.status(400).json({ error: parsedBody.error.message }); return; }
-  const seat = await resolveEventSeat(req.params.code, parsedBody.data.token);
-  if (!seat) { res.status(403).json({ error: "Invalid event seat token" }); return; }
+  let matchedEventId: string | undefined;
   await updateEventPresenceAndPublishTransition(async () => {
     const result = await pool.query(
-      `WITH prior AS MATERIALIZED (
-         SELECT id,last_seen_at
-           FROM compost_event_seats
-          WHERE event_id=$1 AND game_id=$2 AND player_id=$3
-          FOR UPDATE
+      `WITH candidate AS MATERIALIZED (
+         SELECT seat.id,seat.event_id,seat.last_seen_at
+           FROM compost_event_seats seat
+           JOIN compost_events e ON e.id=seat.event_id
+           JOIN compost_event_tables t ON t.event_id=e.id AND t.game_id=seat.game_id
+           JOIN compost_game_tokens tok ON tok.game_id=t.game_id
+           JOIN compost_games g ON g.game_id=t.game_id
+          WHERE e.code=$1 AND tok.token=$2 AND tok.player_index>=0
+            AND seat.player_index=tok.player_index
+            AND seat.player_id=g.state::jsonb #>> ARRAY['players',tok.player_index::text,'id']
+          FOR UPDATE OF seat
        ), touched AS (
          UPDATE compost_event_seats seat
             SET last_seen_at=NOW()
-           FROM prior
-          WHERE seat.id=prior.id
+           FROM candidate
+          WHERE seat.id=candidate.id
          RETURNING seat.id
        )
-       SELECT prior.last_seen_at
-         FROM prior JOIN touched USING (id)`,
-      [seat.event_id, seat.game_id, seat.player_id],
+       SELECT candidate.event_id,candidate.last_seen_at
+         FROM candidate JOIN touched USING (id)`,
+      [normalizeCode(req.params.code), parsedBody.data.token],
     );
-    return result.rows.length ? result.rows[0].last_seen_at ?? null : undefined;
+    if (!result.rows.length) return undefined;
+    matchedEventId = result.rows[0].event_id as string;
+    return result.rows[0].last_seen_at ?? null;
   }, async () => {
-    pushEvent(seat.event_id, await buildDetail(seat.event_id));
+    if (matchedEventId) pushEvent(matchedEventId, await buildDetail(matchedEventId));
   });
+  if (!matchedEventId) { res.status(403).json({ error: "Invalid event seat token" }); return; }
   res.json(HeartbeatEventPresenceResponse.parse({ ok: true }));
 });
 

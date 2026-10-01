@@ -4,12 +4,64 @@ import {
   EVENT_PRESENCE_HEARTBEAT_INTERVAL_MS,
   EVENT_PRESENCE_HEARTBEAT_JITTER_MS,
   eventPresenceHeartbeatDelay,
+  withBoundedSafeRetry,
 } from "./event-presence";
 
 assert.equal(eventPresenceHeartbeatDelay(() => 0), 12_000);
 assert.equal(eventPresenceHeartbeatDelay(() => 0.5), EVENT_PRESENCE_HEARTBEAT_INTERVAL_MS);
 assert.equal(eventPresenceHeartbeatDelay(() => 1), 18_000);
 assert.equal(EVENT_PRESENCE_HEARTBEAT_INTERVAL_MS - EVENT_PRESENCE_HEARTBEAT_JITTER_MS, 12_000);
+
+let retryAttempts = 0;
+const retryDelays: number[] = [];
+const retriedReady = await withBoundedSafeRetry(async () => {
+  retryAttempts++;
+  if (retryAttempts < 3) throw Object.assign(new Error("unavailable"), { status: 503 });
+  return "ready";
+}, {
+  safety: "ready",
+  random: () => 0,
+  sleep: async (delay) => { retryDelays.push(delay); },
+});
+assert.equal(retriedReady, "ready");
+assert.equal(retryAttempts, 3, "safe-ready retry count is bounded");
+assert.deepEqual(retryDelays, [125, 250], "safe retries use bounded exponential backoff with jitter");
+
+retryAttempts = 0;
+await assert.rejects(withBoundedSafeRetry(async () => {
+  retryAttempts++;
+  throw Object.assign(new Error("not applied"), { status: 503, data: { notApplied: false } });
+}, {
+  safety: "confirmed-not-applied",
+  random: () => 0.5,
+  sleep: async () => undefined,
+}));
+assert.equal(retryAttempts, 1, "a 503 without explicit notApplied=true is never retried");
+
+retryAttempts = 0;
+const retriedConfirmed = await withBoundedSafeRetry(async () => {
+  retryAttempts++;
+  if (retryAttempts === 1) {
+    throw Object.assign(new Error("not applied"), { status: 503, data: { notApplied: true } });
+  }
+  return "safe";
+}, {
+  safety: "confirmed-not-applied",
+  random: () => 0.5,
+  sleep: async () => undefined,
+});
+assert.equal(retriedConfirmed, "safe");
+assert.equal(retryAttempts, 2, "a server-confirmed not-applied request can retry once");
+
+retryAttempts = 0;
+await assert.rejects(withBoundedSafeRetry(async () => {
+  retryAttempts++;
+  throw Object.assign(new Error("invalid"), { status: 400 });
+}, {
+  safety: "presence",
+  sleep: async () => undefined,
+}));
+assert.equal(retryAttempts, 1, "non-transient client errors are not retried");
 
 let now = 0;
 let nextTimerId = 0;

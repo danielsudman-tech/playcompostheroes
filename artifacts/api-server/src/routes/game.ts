@@ -46,7 +46,7 @@ import {
   setGamePassword,
   storeGame,
   transferWaitingPlayer,
-  releaseGameMutationLock,
+  releaseGameMutationLockSafely,
   withGameMutationLocks,
   type PgClient,
   type PgQueryable,
@@ -89,7 +89,23 @@ router.use("/games/:gameId", (req, res, next) => {
     const release = async () => {
       if (released) return;
       released = true;
-      await releaseGameMutationLock(client, gameId);
+      await releaseGameMutationLockSafely(client, gameId);
+    };
+    const reportReleaseFailure = (error: unknown) => {
+      try {
+        const errorCode = error && typeof error === "object"
+          ? (error as { code?: unknown }).code
+          : undefined;
+        const errorName = error instanceof Error && /^[A-Za-z][A-Za-z0-9]*Error$/.test(error.name)
+          ? error.name
+          : "Error";
+        console.error(JSON.stringify({
+          level: "error",
+          event: "game_mutation_lock_release_failed",
+          errorName,
+          errorCode: typeof errorCode === "string" && /^[A-Z0-9]{5}$/.test(errorCode) ? errorCode : undefined,
+        }));
+      } catch { /* cleanup logging must never create an unhandled rejection */ }
     };
     try {
       const event = await getEventForGame(gameId, client);
@@ -101,11 +117,11 @@ router.use("/games/:gameId", (req, res, next) => {
       const originalEnd = res.end.bind(res);
       (res as any).end = (...args: any[]) => {
         const result = originalEnd(...args);
-        void release();
+        void release().catch(reportReleaseFailure);
         return result;
       };
       res.once("close", () => {
-        if (res.writableFinished) void release();
+        if (res.writableFinished) void release().catch(reportReleaseFailure);
       });
       (req as any).gameMutationClient = client;
       next();

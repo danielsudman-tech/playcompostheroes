@@ -1,7 +1,12 @@
 import express, { type Express } from "express";
 import cors from "cors";
+import "./lib/poolMonitoring.js";
 import router from "./routes";
 import { initializeCardSettingsStore } from "./lib/cardSettingsStore.js";
+import {
+  classifyDatabaseSafeguardError,
+  DatabaseSafeguardError,
+} from "./lib/databaseSafeguards.js";
 import { isServableCardAssetKey, streamCardAsset } from "./lib/cardAssetStorage.js";
 import { join } from "path";
 import { WORKSPACE_ROOT } from "./lib/workspaceRoot.js";
@@ -54,5 +59,22 @@ app.use("/api/assets", async (req, res, next) => {
 app.use("/api/assets", express.static(join(WORKSPACE_ROOT, "artifacts/compost-heroes/public/assets")));
 
 app.use("/api", router);
+
+// Only known database contention/acquisition failures are converted to a
+// sanitized retryable response. Unknown errors retain Express's normal error
+// path; SQL text and driver details are never returned to API clients.
+app.use((error: unknown, _req: express.Request, res: express.Response, next: express.NextFunction) => {
+  if (!classifyDatabaseSafeguardError(error)) {
+    next(error);
+    return;
+  }
+  if (res.headersSent) {
+    res.destroy(error instanceof Error ? error : undefined);
+    return;
+  }
+  res.status(503).json(error instanceof DatabaseSafeguardError
+    ? error.toSafeResponse()
+    : { error: "Database temporarily unavailable" });
+});
 
 export default app;

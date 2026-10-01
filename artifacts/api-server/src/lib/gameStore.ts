@@ -2,10 +2,15 @@ import { pool } from "@workspace/db";
 import { GameState, runBotTurnsIfNeeded, takeOverPlayerAsBot } from "./gameEngine.js";
 import type { Response } from "express";
 import { randomBytes } from "node:crypto";
+import {
+  asDatabaseSafeguardError,
+  rollbackDatabaseTransaction,
+  unlockThenReleaseDatabaseClient,
+} from "./databaseSafeguards.js";
 
 export type PgQueryResult = { rows: any[]; rowCount?: number | null };
 export type PgQueryable = { query: (...args: any[]) => Promise<PgQueryResult> };
-export type PgClient = PgQueryable & { release(error?: Error | boolean): void };
+export type PgClient = PgQueryable & { release: (error?: Error | boolean) => void };
 
 // ── In-memory only: live SSE connections (can't persist HTTP streams) ──────────
 const sseClientsByToken = new Map<string, Map<string, Response>>();
@@ -19,6 +24,7 @@ const gameStateCache = new Map<string, GameState>();
 const tokenIndexCache = new Map<string, Map<string, number>>();
 const gameBroadcastListeners = new Set<(gameId: string) => void>();
 const deferredBroadcastsByClient = new WeakMap<PgClient, Set<string>>();
+const destroyedClients = new WeakSet<PgClient>();
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -28,6 +34,30 @@ function generateId(): string {
 
 function generateToken(): string {
   return randomBytes(32).toString("hex");
+}
+
+function destroyClient(client: PgClient, error: unknown): void {
+  if (destroyedClients.has(client)) return;
+  destroyedClients.add(client);
+  client.release(asError(error));
+}
+
+async function rollbackClientTransaction(client: PgClient): Promise<boolean> {
+  const rolledBack = await rollbackDatabaseTransaction(client, () => client.query("ROLLBACK"));
+  if (!rolledBack) destroyedClients.add(client);
+  return rolledBack;
+}
+
+function safelyClassifyFailedTransaction(error: unknown, rollbackSucceeded: boolean): unknown {
+  return asDatabaseSafeguardError(error, rollbackSucceeded ? "rolled-back" : "unknown");
+}
+
+async function connectDatabaseClient(): Promise<PgClient> {
+  try {
+    return await pool.connect();
+  } catch (error) {
+    throw asDatabaseSafeguardError(error, "not-started");
+  }
 }
 
 export function createGameId(): string {
@@ -107,27 +137,60 @@ export async function reloadGameState(gameId: string, client: PgQueryable = pool
 }
 
 export async function acquireGameMutationLock(gameId: string): Promise<PgClient> {
-  const client = await pool.connect();
-  let locked = false;
+  const client = await connectDatabaseClient();
   try {
     await client.query(`SELECT pg_advisory_lock(7419, hashtext($1))`, [gameId]);
-    locked = true;
     await reloadGameState(gameId, client);
     return client;
   } catch (error) {
-    if (locked) await client.query(`SELECT pg_advisory_unlock(7419, hashtext($1))`, [gameId]).catch(() => undefined);
-    client.release();
-    throw error;
+    let unlockError: unknown;
+    try {
+      await client.query(`SELECT pg_advisory_unlock(7419, hashtext($1))`, [gameId]);
+    } catch (cleanupError) {
+      unlockError = cleanupError;
+    } finally {
+      if (unlockError) destroyClient(client, unlockError);
+      else if (!destroyedClients.has(client)) client.release();
+    }
+    throw asDatabaseSafeguardError(error, "not-started");
   }
 }
 
 export async function releaseGameMutationLock(client: PgClient, gameId: string): Promise<void> {
+  if (destroyedClients.has(client)) return;
+  await unlockThenReleaseDatabaseClient(
+    client,
+    () => client.query(`SELECT pg_advisory_unlock(7419, hashtext($1))`, [gameId]),
+  );
+  flushDeferredBroadcasts(client);
+}
+
+export async function releaseGameMutationLockSafely(
+  client: PgClient,
+  gameId: string,
+  logError: (entry: string) => void = (entry) => console.error(entry),
+): Promise<void> {
   try {
-    await client.query(`SELECT pg_advisory_unlock(7419, hashtext($1))`, [gameId]);
-  } finally {
-    client.release();
-    flushDeferredBroadcasts(client);
+    await releaseGameMutationLock(client, gameId);
+  } catch (error) {
+    const errorCode = error && typeof error === "object"
+      ? (error as { code?: unknown }).code
+      : undefined;
+    const errorName = error instanceof Error && /^[A-Za-z][A-Za-z0-9]*Error$/.test(error.name)
+      ? error.name
+      : "Error";
+    const entry = JSON.stringify({
+      level: "error",
+      event: "game_mutation_lock_release_failed",
+      errorName,
+      errorCode: typeof errorCode === "string" && /^[A-Z0-9]{5}$/.test(errorCode) ? errorCode : undefined,
+    });
+    try { logError(entry); } catch { /* logging must not restore an unhandled cleanup rejection */ }
   }
+}
+
+function asError(error: unknown): Error {
+  return error instanceof Error ? error : new Error(String(error));
 }
 
 function flushDeferredBroadcasts(client: PgClient): void {
@@ -145,12 +208,36 @@ export async function lockGameMutationInTransaction(client: PgClient, gameId: st
   await client.query(`SELECT pg_advisory_xact_lock(7419, hashtext($1))`, [gameId]);
 }
 
+export async function withClientTransaction<T>(
+  client: PgClient,
+  action: () => Promise<T>,
+): Promise<T> {
+  let began = false;
+  let commitAttempted = false;
+  let committed = false;
+  try {
+    await client.query("BEGIN");
+    began = true;
+    const result = await action();
+    commitAttempted = true;
+    await client.query("COMMIT");
+    committed = true;
+    return result;
+  } catch (error) {
+    if (committed) throw safelyClassifyFailedTransaction(error, false);
+    if (!began) throw asDatabaseSafeguardError(error, "not-started");
+    const rollbackSucceeded = await rollbackClientTransaction(client);
+    throw safelyClassifyFailedTransaction(error, rollbackSucceeded && !commitAttempted);
+  }
+}
+
 export async function withGameMutationLocks<T>(
   gameIds: string[],
   action: (client: PgClient) => Promise<T>,
 ): Promise<T> {
-  const client = await pool.connect();
+  const client = await connectDatabaseClient();
   const sortedGameIds = [...new Set(gameIds)].sort();
+  let actionStarted = false;
   try {
     if (sortedGameIds.length) {
       await client.query(
@@ -162,15 +249,25 @@ export async function withGameMutationLocks<T>(
     for (const gameId of sortedGameIds) {
       await reloadGameState(gameId, client);
     }
+    actionStarted = true;
     return await action(client);
+  } catch (error) {
+    throw actionStarted ? error : asDatabaseSafeguardError(error, "not-started");
   } finally {
-    try {
+    if (!destroyedClients.has(client)) {
+      let unlockError: unknown;
       for (const gameId of [...sortedGameIds].reverse()) {
-        await client.query(`SELECT pg_advisory_unlock(7419, hashtext($1))`, [gameId]);
+        try {
+          await client.query(`SELECT pg_advisory_unlock(7419, hashtext($1))`, [gameId]);
+        } catch (error) {
+          unlockError ??= error;
+        }
       }
-    } finally {
+      if (unlockError) {
+        destroyClient(client, unlockError);
+        throw asDatabaseSafeguardError(unlockError, actionStarted ? "unknown" : "not-started");
+      }
       client.release();
-      flushDeferredBroadcasts(client);
     }
   }
 }
@@ -382,7 +479,9 @@ export async function reorderWaitingPlayers(
   heldClient?: PgClient,
 ): Promise<GameState | null> {
   const ownsClient = !heldClient;
-  const client = heldClient ?? await pool.connect();
+  const client = heldClient ?? await connectDatabaseClient();
+  let commitAttempted = false;
+  let committed = false;
   try {
     await client.query("BEGIN");
     const locked = await client.query(
@@ -452,7 +551,9 @@ export async function reorderWaitingPlayers(
       `UPDATE compost_games SET state = $2, updated_at = NOW() WHERE game_id = $1`,
       [gameId, JSON.stringify(nextState)]
     );
+    commitAttempted = true;
     await client.query("COMMIT");
+    committed = true;
     gameStateCache.set(gameId, nextState);
     const nextMap = new Map<string, number>();
     for (const row of tokenRows.rows) {
@@ -469,10 +570,11 @@ export async function reorderWaitingPlayers(
     tokenIndexCache.set(gameId, nextMap);
     return nextState;
   } catch (error) {
-    await client.query("ROLLBACK");
-    throw error;
+    if (committed) throw safelyClassifyFailedTransaction(error, false);
+    const rollbackSucceeded = await rollbackClientTransaction(client);
+    throw safelyClassifyFailedTransaction(error, rollbackSucceeded && !commitAttempted);
   } finally {
-    if (ownsClient) client.release();
+    if (ownsClient && !destroyedClients.has(client)) client.release();
   }
 }
 
@@ -483,7 +585,9 @@ export async function transferWaitingPlayer(
   heldClient?: PgClient,
 ): Promise<{ source: GameState; target: GameState; token: string } | null> {
   const ownsClient = !heldClient;
-  const client = heldClient ?? await pool.connect();
+  const client = heldClient ?? await connectDatabaseClient();
+  let commitAttempted = false;
+  let committed = false;
   try {
     await client.query("BEGIN");
     const ids = [sourceGameId, targetGameId].sort();
@@ -605,7 +709,9 @@ export async function transferWaitingPlayer(
       `UPDATE compost_games SET state = $2, updated_at = NOW() WHERE game_id = $1`,
       [targetGameId, JSON.stringify(nextTarget)]
     );
+    commitAttempted = true;
     await client.query("COMMIT");
+    committed = true;
     gameStateCache.set(sourceGameId, nextSource);
     gameStateCache.set(targetGameId, nextTarget);
     const sourceMap = tokenIndexCache.get(sourceGameId) ?? new Map<string, number>();
@@ -617,10 +723,11 @@ export async function transferWaitingPlayer(
     tokenIndexCache.set(targetGameId, targetMap);
     return { source: nextSource, target: nextTarget, token: movedToken };
   } catch (error) {
-    await client.query("ROLLBACK");
-    throw error;
+    if (committed) throw safelyClassifyFailedTransaction(error, false);
+    const rollbackSucceeded = await rollbackClientTransaction(client);
+    throw safelyClassifyFailedTransaction(error, rollbackSucceeded && !commitAttempted);
   } finally {
-    if (ownsClient) client.release();
+    if (ownsClient && !destroyedClients.has(client)) client.release();
   }
 }
 
@@ -703,7 +810,9 @@ export async function removeEventWaitingPlayer(
   heldClient?: PgClient,
 ): Promise<{ state: GameState; removedToken: string | null } | null> {
   const ownsClient = !heldClient;
-  const client = heldClient ?? await pool.connect();
+  const client = heldClient ?? await connectDatabaseClient();
+  let commitAttempted = false;
+  let committed = false;
   try {
     await client.query("BEGIN");
     const game = await client.query(`SELECT state FROM compost_games WHERE game_id=$1 FOR UPDATE`, [gameId]);
@@ -750,7 +859,9 @@ export async function removeEventWaitingPlayer(
     );
     await client.query(`UPDATE compost_games SET state=$2,updated_at=NOW() WHERE game_id=$1`,
       [gameId, JSON.stringify(nextState)]);
+    commitAttempted = true;
     await client.query("COMMIT");
+    committed = true;
     gameStateCache.set(gameId, nextState);
     const tokenMap = tokenIndexCache.get(gameId);
     if (tokenMap) {
@@ -759,10 +870,11 @@ export async function removeEventWaitingPlayer(
     }
     return { state: nextState, removedToken: (tokenRow?.token as string | undefined) ?? null };
   } catch (error) {
-    await client.query("ROLLBACK");
-    throw error;
+    if (committed) throw safelyClassifyFailedTransaction(error, false);
+    const rollbackSucceeded = await rollbackClientTransaction(client);
+    throw safelyClassifyFailedTransaction(error, rollbackSucceeded && !commitAttempted);
   } finally {
-    if (ownsClient) client.release();
+    if (ownsClient && !destroyedClients.has(client)) client.release();
   }
 }
 
@@ -779,7 +891,9 @@ export async function kickFacilitatedPlayer(
   heldClient?: PgClient,
 ): Promise<{ state: GameState; removedToken: string | null; active: boolean } | null> {
   const ownsClient = !heldClient;
-  const client = heldClient ?? await pool.connect();
+  const client = heldClient ?? await connectDatabaseClient();
+  let commitAttempted = false;
+  let committed = false;
   try {
     await client.query("BEGIN");
     const gameResult = await client.query(
@@ -896,7 +1010,9 @@ export async function kickFacilitatedPlayer(
       `UPDATE compost_games SET state = $2, updated_at = NOW() WHERE game_id = $1`,
       [gameId, JSON.stringify(nextState)]
     );
+    commitAttempted = true;
     await client.query("COMMIT");
+    committed = true;
 
     gameStateCache.set(gameId, nextState);
     const tokenMap = tokenIndexCache.get(gameId);
@@ -910,10 +1026,11 @@ export async function kickFacilitatedPlayer(
     }
     return { state: nextState, removedToken, active };
   } catch (error) {
-    await client.query("ROLLBACK");
-    throw error;
+    if (committed) throw safelyClassifyFailedTransaction(error, false);
+    const rollbackSucceeded = await rollbackClientTransaction(client);
+    throw safelyClassifyFailedTransaction(error, rollbackSucceeded && !commitAttempted);
   } finally {
-    if (ownsClient) client.release();
+    if (ownsClient && !destroyedClients.has(client)) client.release();
   }
 }
 

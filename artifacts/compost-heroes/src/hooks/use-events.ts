@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { getStoredToken, storeToken } from "@/hooks/use-game";
-import { createEventPresenceScheduler } from "@/hooks/event-presence";
+import { createEventPresenceScheduler, withBoundedSafeRetry } from "@/hooks/event-presence";
 import {
   getFacilitatorEvents, createFacilitatorEvent, getFacilitatorEvent, updateFacilitatorEvent,
   createFacilitatorEventStreamTicket,
@@ -182,13 +182,19 @@ export function useJoinEvent(code: string) {
 }
 export function useReadyEvent(code: string) {
   const qc = useQueryClient();
-  return useMutation({ mutationFn: (seat: EventJoin) => setEventReady(code, { token: getStoredToken(seat.gameId) ?? seat.token, ready: true }), onSuccess: () => qc.invalidateQueries({ queryKey: guestEventKey(code) }) });
+  return useMutation({ mutationFn: (seat: EventJoin) => withBoundedSafeRetry(
+    () => setEventReady(code, { token: getStoredToken(seat.gameId) ?? seat.token, ready: true }),
+    { safety: "ready" },
+  ), onSuccess: () => qc.invalidateQueries({ queryKey: guestEventKey(code) }) });
 }
 export function useEventPresence(code: string, seat: EventJoin | null, enabled: boolean) {
   useEffect(() => {
     if (!code || !seat || !enabled) return;
     const scheduler = createEventPresenceScheduler({
-      send: () => heartbeatEventPresence(code, { token: getStoredToken(seat.gameId) ?? seat.token }),
+      send: () => withBoundedSafeRetry(
+        () => heartbeatEventPresence(code, { token: getStoredToken(seat.gameId) ?? seat.token }),
+        { safety: "presence" },
+      ),
       isVisible: () => document.visibilityState === "visible",
     });
     const onVisibilityChange = () => scheduler.requestImmediate();

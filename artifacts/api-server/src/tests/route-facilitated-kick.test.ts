@@ -30,6 +30,7 @@ async function removePlayer(gameId: string, playerId: string, body: unknown) {
     method: "DELETE",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(body),
+    signal: AbortSignal.timeout(20_000),
   });
   return { status: response.status, json: (await response.json()) as any };
 }
