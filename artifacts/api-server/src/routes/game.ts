@@ -18,6 +18,7 @@ import {
   type BotSkillLevel,
   type GameState,
 } from "../lib/gameEngine.js";
+import { getAllCards } from "../lib/cards.js";
 import {
   addSseClient,
   acquireGameMutationLock,
@@ -52,6 +53,7 @@ import {
   type PgQueryable,
 } from "../lib/gameStore.js";
 import { buildEffectAnnouncement, findEffectCard, serializeEffectAnnouncement } from "../lib/facilitatedEffects.js";
+import { sanitizeRecapLog } from "../lib/recapPrivacy.js";
 import { extractBearerToken, getUserByToken, isApprovedFacilitator, type CompostUser } from "../lib/userStore.js";
 
 // Registration rules: online games (and facilitated hosting) require a
@@ -156,6 +158,16 @@ export function serializeState(state: GameState, viewerIndex?: number) {
   // Effect details about a discarded hand card are withheld from the shared
   // state and materialized only for the viewer who owns that hand.
   const lastEffect = serializeEffectAnnouncement(state.lastEffect, viewerId, isOnline);
+  const knownCardNames = [
+    ...getAllCards().map((card) => card.name),
+    ...state.players.flatMap((player) => [
+      ...player.hand.map((card) => card.name),
+      ...player.compostPile.map((card) => card.name),
+    ]),
+    ...state.deck.map((card) => card.name),
+    ...state.discardPile.map((card) => card.name),
+    ...(state.ongoingActionCard ? [state.ongoingActionCard.name] : []),
+  ];
 
   // Hidden-information contract: a pending decision's options/meta can contain
   // hand-derived card identities (e.g. Worm Party, hand-choice decisions).
@@ -179,6 +191,7 @@ export function serializeState(state: GameState, viewerIndex?: number) {
 
   return {
     ...rest,
+    log: sanitizeRecapLog(state.log, knownCardNames),
     lastEffect,
     pendingDecision,
     questions,

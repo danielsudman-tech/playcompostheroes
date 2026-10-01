@@ -2,6 +2,7 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { getGetGameQueryKey } from "@workspace/api-client-react";
 import type { GameAction, GameState } from "@workspace/api-client-react";
+import { gameStateKey, nextClaimIdentity, shouldAttemptClaim, shouldRetireClaim, type ClaimIdentity } from "@/lib/gameCache";
 import { transferRememberedEventSeat, updateRememberedEventSeatIdentity } from "@/hooks/use-events";
 
 // ── Token management ──────────────────────────────────────────────────────────
@@ -60,13 +61,15 @@ export function useClaimSlot(gameId: string | null, enabled: boolean) {
     loading: boolean;
     requiresPassword: boolean;
   } | null>(null);
-  const activeGame = useRef({ gameId, generation: 0 });
-  if (activeGame.current.gameId !== gameId) {
-    activeGame.current = { gameId, generation: activeGame.current.generation + 1 };
-  }
+  // Claim identity is game AND the seat credential stored for it.
+  const viewer = gameId ? getStoredToken(gameId) : null;
+  const activeGame = useRef<ClaimIdentity>({ gameId, viewer, generation: 0 });
+  activeGame.current = nextClaimIdentity(activeGame.current, gameId, viewer);
   const mounted = useRef(true);
   const attemptedGeneration = useRef<number | null>(null);
   const requestSequence = useRef(0);
+  const loadingGeneration = useRef<number | null>(null);
+  const previousViewer = useRef<string | null>(viewer);
 
   useEffect(() => {
     mounted.current = true;
@@ -80,6 +83,7 @@ export function useClaimSlot(gameId: string | null, enabled: boolean) {
     const requestGame = activeGame.current;
     if (requestGame.gameId !== gameId) return;
     const requestId = ++requestSequence.current;
+    loadingGeneration.current = requestGame.generation;
     const isCurrentRequest = () =>
       mounted.current &&
       activeGame.current.gameId === gameId &&
@@ -147,6 +151,7 @@ export function useClaimSlot(gameId: string | null, enabled: boolean) {
         }
       })
       .finally(() => {
+        if (requestSequence.current === requestId) loadingGeneration.current = null;
         if (isCurrentRequest()) {
           setClaimState((previous) => isCurrentRequest() ? {
             gameId,
@@ -157,15 +162,30 @@ export function useClaimSlot(gameId: string | null, enabled: boolean) {
           } : previous);
         }
       });
-  }, [gameId]);
+  }, [gameId, viewer]);
 
+  // viewer is a dependency: a seat switch must claim for the new credential even
+  // while the old credential's request is still in flight (its result is ignored).
   useEffect(() => {
-    if (!gameId || !enabled || attemptedGeneration.current === activeGame.current.generation) return;
+    // Token removal: drop the old seat's claim so it can't linger.
+    if (previousViewer.current && !viewer) setClaimState(null);
+    previousViewer.current = viewer;
+    // Disabled (mode change, logout): never claim; retire an obsolete in-flight
+    // request and clear its loading flag so the page cannot stick.
+    if (shouldRetireClaim(loadingGeneration.current, activeGame.current, enabled)) {
+      requestSequence.current++;
+      loadingGeneration.current = null;
+      setClaimState((previous) => (previous && previous.loading ? { ...previous, loading: false } : previous));
+      return;
+    }
+    if (!shouldAttemptClaim(attemptedGeneration.current, activeGame.current, enabled)) return;
     attemptedGeneration.current = activeGame.current.generation;
     doClaim();
-  }, [gameId, enabled, doClaim]);
+  }, [gameId, viewer, enabled, doClaim]);
 
-  const visibleState = claimState?.gameId === gameId ? claimState : null;
+  const visibleState = claimState?.gameId === gameId &&
+    (!viewer || !claimState.claim || claimState.claim.token === viewer)
+    ? claimState : null;
   return {
     claim: visibleState?.claim ?? null,
     error: visibleState?.error ?? null,
@@ -179,7 +199,7 @@ export function useClaimSlot(gameId: string | null, enabled: boolean) {
 
 export function useGameState(gameId: string | null, token?: string | null) {
   return useQuery({
-    queryKey: gameId ? getGetGameQueryKey(gameId) : [],
+    queryKey: gameId ? gameStateKey(gameId, token) : [],
     queryFn: async () => {
       if (!gameId) throw new Error("No game ID");
       const url = token
@@ -227,26 +247,31 @@ export function useGameSse(
 
     const url = `/api/games/${gameId}/events?token=${encodeURIComponent(token)}`;
     const source = new EventSource(url);
+    // Messages from a closed (previous seat/game) stream must never ingest.
+    let active = true;
+    const stateKey = gameStateKey(gameId, token);
 
     source.onopen = () => {
-      setSseConnected(true);
+      if (active) setSseConnected(true);
     };
 
     source.onmessage = (e) => {
       try {
+        if (!active) return;
         const data = JSON.parse(e.data);
-        queryClient.setQueryData(getGetGameQueryKey(gameId), data);
+        queryClient.setQueryData(stateKey, data);
         setSseConnected(true);
       } catch {}
     };
 
     source.addEventListener("kicked", () => {
       source.close();
-      onKickedRef.current?.();
+      if (active) onKickedRef.current?.();
     });
 
     source.addEventListener("nudge", (e) => {
       try {
+        if (!active) return;
         const data = JSON.parse((e as MessageEvent).data);
         onNudgeRef.current?.(data.from ?? "Someone");
       } catch {}
@@ -285,17 +310,18 @@ export function useGameSse(
           })
           .catch(() => false)
           .then((wasMoved) => {
-            if (!wasMoved) queryClient.invalidateQueries({ queryKey: getGetGameQueryKey(gameId) });
+            if (!wasMoved && active) queryClient.invalidateQueries({ queryKey: stateKey });
           })
           .finally(() => { recoveryInProgress.current = false; });
         return;
       }
       // Force a poll immediately so the player doesn't see stale state
       // while EventSource auto-reconnects in the background.
-      queryClient.invalidateQueries({ queryKey: getGetGameQueryKey(gameId) });
+      if (active) queryClient.invalidateQueries({ queryKey: stateKey });
     };
 
     return () => {
+      active = false;
       source.close();
       setSseConnected(false);
     };
@@ -386,7 +412,7 @@ export function useCreateNewGame() {
       return r.json();
     },
     onSuccess: (data) => {
-      queryClient.setQueryData(getGetGameQueryKey(data.gameId), data);
+      queryClient.setQueryData(gameStateKey(data.gameId, data.creatorToken ?? null), data);
       // In online mode, store the creator's token
       if (data.creatorToken) {
         storeToken(data.gameId, data.creatorToken);
@@ -418,8 +444,9 @@ export function useGameAction(gameId: string, token?: string | null, callbacks?:
       }
       return r.json();
     },
-    onSuccess: (data) => {
-      queryClient.setQueryData(getGetGameQueryKey(gameId), data);
+    onMutate: () => ({ key: gameStateKey(gameId, token) }),
+    onSuccess: (data, _vars, ctx) => {
+      queryClient.setQueryData(ctx?.key ?? gameStateKey(gameId, token), data);
       if (callbacks?.onSuccess && data.log.length > 0) {
         const lastEntry = data.log[data.log.length - 1];
         callbacks.onSuccess(lastEntry);
@@ -469,8 +496,9 @@ export function usePauseGame(gameId: string | null, token: string | null) {
       }
       return r.json() as Promise<GameState>;
     },
-    onSuccess: (data) => {
-      if (gameId) queryClient.setQueryData(getGetGameQueryKey(gameId), data);
+    onMutate: () => ({ key: gameId ? gameStateKey(gameId, token) : null }),
+    onSuccess: (data, _vars, ctx) => {
+      if (ctx?.key) queryClient.setQueryData(ctx.key, data);
     },
   });
 }
@@ -490,8 +518,9 @@ export function useSendHostMessage(gameId: string | null, token: string | null) 
       }
       return r.json() as Promise<GameState>;
     },
-    onSuccess: (data) => {
-      if (gameId) queryClient.setQueryData(getGetGameQueryKey(gameId), data);
+    onMutate: () => ({ key: gameId ? gameStateKey(gameId, token) : null }),
+    onSuccess: (data, _vars, ctx) => {
+      if (ctx?.key) queryClient.setQueryData(ctx.key, data);
     },
   });
 }
@@ -528,8 +557,9 @@ export function useResolveQuestion(gameId: string | null, token: string | null) 
       }
       return r.json() as Promise<GameState>;
     },
-    onSuccess: (data) => {
-      if (gameId) queryClient.setQueryData(getGetGameQueryKey(gameId), data);
+    onMutate: () => ({ key: gameId ? gameStateKey(gameId, token) : null }),
+    onSuccess: (data, _vars, ctx) => {
+      if (ctx?.key) queryClient.setQueryData(ctx.key, data);
     },
   });
 }
@@ -549,8 +579,9 @@ export function useEndSession(gameId: string | null, token: string | null) {
       }
       return r.json() as Promise<GameState>;
     },
-    onSuccess: (data) => {
-      if (gameId) queryClient.setQueryData(getGetGameQueryKey(gameId), data);
+    onMutate: () => ({ key: gameId ? gameStateKey(gameId, token) : null }),
+    onSuccess: (data, _vars, ctx) => {
+      if (ctx?.key) queryClient.setQueryData(ctx.key, data);
     },
   });
 }
@@ -570,8 +601,9 @@ export function useReorderWaitingPlayers(gameId: string | null, token: string | 
       }
       return r.json() as Promise<GameState>;
     },
-    onSuccess: (data) => {
-      if (gameId) queryClient.setQueryData(getGetGameQueryKey(gameId), data);
+    onMutate: () => ({ key: gameId ? gameStateKey(gameId, token) : null }),
+    onSuccess: (data, _vars, ctx) => {
+      if (ctx?.key) queryClient.setQueryData(ctx.key, data);
     },
   });
 }
@@ -640,8 +672,9 @@ export function useFacilitatorResolve(gameId: string | null, token: string | nul
       }
       return r.json() as Promise<GameState>;
     },
-    onSuccess: (data) => {
-      if (gameId) queryClient.setQueryData(getGetGameQueryKey(gameId), data);
+    onMutate: () => ({ key: gameId ? gameStateKey(gameId, token) : null }),
+    onSuccess: (data, _vars, ctx) => {
+      if (ctx?.key) queryClient.setQueryData(ctx.key, data);
     },
   });
 }
@@ -694,8 +727,9 @@ export function useStartGame(gameId: string | null, token?: string | null) {
       }
       return r.json();
     },
-    onSuccess: (data) => {
-      if (gameId) queryClient.setQueryData(getGetGameQueryKey(gameId), data);
+    onMutate: () => ({ key: gameId ? gameStateKey(gameId, token) : null }),
+    onSuccess: (data, _vars, ctx) => {
+      if (ctx?.key) queryClient.setQueryData(ctx.key, data);
     },
   });
 }

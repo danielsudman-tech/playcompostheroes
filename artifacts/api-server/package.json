@@ -8,6 +8,7 @@
     "build": "tsx ./build.ts",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "test:hidden-info": "tsx ./src/tests/hidden-info.test.ts",
+    "test:recap-privacy": "tsx ./src/tests/recap-privacy.test.ts",
     "test:effect-announcements": "tsx ./src/tests/effect-announcements.test.ts",
     "test:bot-worm-party": "tsx ./src/tests/bot-worm-party.test.ts",
     "test:route-worm-party": "tsx ./src/tests/route-worm-party.test.ts",

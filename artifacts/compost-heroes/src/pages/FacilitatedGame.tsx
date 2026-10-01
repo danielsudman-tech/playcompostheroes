@@ -21,7 +21,9 @@ import {
 } from "@/hooks/use-game";
 import { GameCard } from "@/components/GameCard";
 import { DecisionModal, PLAYER_SELECTION_TYPES } from "@/components/DecisionModal";
-import { EffectAnnouncementOverlay } from "@/components/EffectAnnouncementOverlay";
+import { GameUpdatesList, GameUpdatesStrip } from "@/components/game-updates/GameUpdatesList";
+import { useGameUpdates } from "@/hooks/use-game-updates";
+import { viewerFingerprint } from "@/lib/gameCache";
 import { PostGameLinks } from "@/components/PostGameLinks";
 import { OnlineRoomEntry } from "@/components/OnlineRoomEntry";
 import { getDecisionStepInfo } from "@/lib/decisionSteps";
@@ -175,7 +177,7 @@ export default function FacilitatedGame() {
     localToken,
     isRemote && !!localToken,
     handleKicked,
-     (from) => toast({ title: "It's your turn!", description: `${from} is waiting for you to play.`, duration: 6000 }),
+     (from) => { setNudgedAt(Date.now()); logUpdate("Nudge received", "notice", `${from} is waiting for you to play.`); },
     isFacilitated ? handleRoomTransfer : undefined
   );
 
@@ -209,6 +211,7 @@ export default function FacilitatedGame() {
   const [zoomedCard, setZoomedCard] = useState<Card | null>(null);
   const [showRules, setShowRules] = useState(false);
   const [showLog, setShowLog] = useState(false);
+  const [nudgedAt, setNudgedAt] = useState(0);
   const [mobileControlsOpen, setMobileControlsOpen] = useState(false);
   const [passScreen, setPassScreen] = useState<{ name: string; cardCount: number } | null>(null);
   const previousLocalTurn = useRef<{
@@ -243,10 +246,30 @@ export default function FacilitatedGame() {
   }, [isPassPlay, gameId, localPlayerId, gameState?.phase, gameState?.turnNumber]);
 
   // Facilitator broadcast + participant questions
-  const [dismissedMsgId, setDismissedMsgId] = useState<string | null>(null);
   const [askOpen, setAskOpen] = useState(false);
   const [askText, setAskText] = useState("");
   const askMutation = useAskQuestion(gameId || null, localToken);
+  const { updates: gameUpdates, log: logUpdate } = useGameUpdates({
+    scope: {
+      gameId: gameId ?? "",
+      seatId: isPassPlay ? localPlayerId : claim?.playerId ?? localPlayerId,
+      viewerId: isRemote && localToken ? viewerFingerprint(localToken) : null,
+    },
+    lastEffect: gameState?.lastEffect ?? null,
+    localPlayerId,
+    hidden: !!passScreen,
+    turn: gameState ? { turnNumber: gameState.turnNumber, currentPlayerId: gameState.players[gameState.currentPlayerIndex]?.id ?? null, phase: gameState.phase } : null,
+  });
+  useEffect(() => {
+    if (!nudgedAt) return;
+    const t = setTimeout(() => setNudgedAt(0), 10_000);
+    return () => clearTimeout(t);
+  }, [nudgedAt]);
+  const hostMsgId = gameState?.hostMessage?.id ?? null;
+  const hostMsgText = gameState?.hostMessage?.text ?? null;
+  useEffect(() => {
+    if (isFacilitated && hostMsgId && hostMsgText) logUpdate(`Facilitator: ${hostMsgText}`, "facilitator", undefined, `host:${hostMsgId}`);
+  }, [isFacilitated, hostMsgId, hostMsgText, logUpdate]);
   const myOpenQuestion = !!(gameState?.questions ?? []).some((q) => q.playerId === localPlayerId && !q.resolved);
 
   const handleAskQuestion = () => {
@@ -254,7 +277,7 @@ export default function FacilitatedGame() {
       onSuccess: () => {
         setAskOpen(false);
         setAskText("");
-         toast({ title: "Question sent", description: "Your facilitator has been notified." });
+         logUpdate("Question sent", "notice", "Your facilitator has been notified.");
       },
       onError: (e) => toast({ title: "Couldn't send", description: (e as Error).message, variant: "destructive" }),
     });
@@ -370,7 +393,7 @@ export default function FacilitatedGame() {
             <Loader2 className="w-8 h-8 text-primary animate-spin mx-auto mb-4" />
             <h2 className="text-2xl font-display font-bold mb-2">You're at the table!</h2>
              <p className="text-muted-foreground mb-6">Waiting for your facilitator to start the game.</p>
-              {isFacilitated && eventCode && eventSeat && <div className="flex flex-col sm:flex-row gap-2 mb-4"><Button className="flex-1" variant="outline" disabled={eventClosing || eventMarkedReady || eventReady.isPending} onClick={() => { if (!eventClosing) eventReady.mutate(eventSeat, { onSuccess: () => { try { localStorage.setItem(`compost_event_ready_${eventSeat.gameId}`, "yes"); } catch {} setEventMarkedReady(true); toast({ title: "Your host knows you're ready" }); }, onError: e => toast({ title: "Couldn't mark ready", description: e.message, variant: "destructive" }) }); }} data-testid="button-table-event-ready">{eventClosing ? "Event closing" : eventMarkedReady ? "You're ready" : "I'm ready"}</Button><Button className="flex-1" variant="outline" onClick={() => setLocation(`/event/${eventCode}`)} data-testid="button-back-event-lobby">Event lobby</Button></div>}
+              {isFacilitated && eventCode && eventSeat && <div className="flex flex-col sm:flex-row gap-2 mb-4"><Button className="flex-1" variant="outline" disabled={eventClosing || eventMarkedReady || eventReady.isPending} onClick={() => { if (!eventClosing) eventReady.mutate(eventSeat, { onSuccess: () => { try { localStorage.setItem(`compost_event_ready_${eventSeat.gameId}`, "yes"); } catch {} setEventMarkedReady(true); logUpdate("Ready sent", "notice", "Your host knows you're ready."); }, onError: e => toast({ title: "Couldn't mark ready", description: e.message, variant: "destructive" }) }); }} data-testid="button-table-event-ready">{eventClosing ? "Event closing" : eventMarkedReady ? "You're ready" : "I'm ready"}</Button><Button className="flex-1" variant="outline" onClick={() => setLocation(`/event/${eventCode}`)} data-testid="button-back-event-lobby">Event lobby</Button></div>}
             <div className="bg-muted rounded-2xl p-4 text-left">
               <p className="text-xs font-bold uppercase tracking-wider text-muted-foreground mb-2">Players seated</p>
               <div className="space-y-1.5">
@@ -535,6 +558,7 @@ export default function FacilitatedGame() {
     return `${currentPlayer.name}'s turn — ${gameState.phase === "draw" ? "drawing" : "playing"}`;
   })();
 
+  const turnGlow = gameState.phase !== "game_over" && ((isMyTurn && !decision) || nudgedAt > 0);
   const isPlayPhase = isMyTurn && gameState.phase === "play" && !gameState.pendingDecision;
 
   return (
@@ -593,7 +617,7 @@ export default function FacilitatedGame() {
             <button
               disabled={nudgePlayer.isPending}
               onClick={() => nudgePlayer.mutate(gameState.currentPlayerIndex, {
-                onSuccess: () => toast({ title: "Nudge sent", description: `${currentPlayer.name} has been reminded it's their turn.` }),
+                onSuccess: () => logUpdate("Nudge sent", "notice", `${currentPlayer.name} has been reminded it's their turn.`),
                 onError: (err) => toast({ title: "Couldn't nudge", description: err.message, variant: "destructive" }),
               })}
               title={`Nudge ${currentPlayer.name}`}
@@ -671,7 +695,7 @@ export default function FacilitatedGame() {
 
       {/* FACILITATOR BROADCAST BANNER */}
       <AnimatePresence>
-        {isFacilitated && gameState.hostMessage && gameState.hostMessage.id !== dismissedMsgId && (
+        {isFacilitated && gameState.hostMessage && (
           <motion.div
             initial={{ opacity: 0, height: 0 }}
             animate={{ opacity: 1, height: "auto" }}
@@ -684,13 +708,6 @@ export default function FacilitatedGame() {
               <span className="flex-1 min-w-0 text-sm font-semibold text-foreground truncate">
                 <span className="text-primary font-bold">Facilitator:</span> {gameState.hostMessage.text}
               </span>
-              <button
-                onClick={() => setDismissedMsgId(gameState.hostMessage!.id)}
-                className="text-muted-foreground hover:text-foreground shrink-0"
-                title="Dismiss"
-              >
-                <X className="w-4 h-4" />
-              </button>
             </div>
           </motion.div>
         )}
@@ -800,6 +817,8 @@ export default function FacilitatedGame() {
               </div>
             </div>
           )}
+
+          <GameUpdatesStrip updates={gameUpdates} onOpenRecap={() => setShowLog(true)} />
 
           {/* MY HAND FOOTER — tall enough to show full md cards (208px) + header */}
           <div className={cn("table-hand-footer shrink-0 h-[188px] md:h-[208px] xl:h-[252px] bg-card/95 backdrop-blur-2xl border-t border-border/60 shadow-[0_-10px_40px_rgba(0,0,0,0.1)] z-20 flex flex-col relative before:absolute before:inset-0 before:bg-gradient-to-t before:from-background/20 before:pointer-events-none", passScreen && "invisible")} aria-hidden={!!passScreen}>
@@ -953,8 +972,10 @@ export default function FacilitatedGame() {
             )}
           </div>
 
+          <div className="shrink-0 px-3 xl:px-6 pb-2"><GameUpdatesList updates={gameUpdates} onOpenRecap={() => setShowLog(true)} /></div>
+
           {/* Turn Actions */}
-          <div className="shrink-0 h-[150px] xl:h-[190px] p-3 xl:p-6 border-t border-border/40 bg-muted/10 flex flex-col justify-center gap-4 relative before:absolute before:inset-0 before:bg-gradient-to-t before:from-background/30 before:to-transparent before:pointer-events-none">
+          <div data-testid="turn-controls" data-glow={turnGlow ? "on" : "off"} className={cn("shrink-0 h-[150px] xl:h-[190px] p-3 xl:p-6 border-t border-border/40 bg-muted/10 flex flex-col justify-center gap-4 relative before:absolute before:inset-0 before:bg-gradient-to-t before:from-background/30 before:to-transparent before:pointer-events-none transition-shadow duration-700", turnGlow && "shadow-[inset_0_0_0_2px_hsl(var(--primary)),inset_0_0_28px_hsl(var(--primary)/0.28)]")} >
             <div className="relative z-10 flex flex-col gap-4 h-full justify-center">
               {canActivateHotPile && (
                 <Button
@@ -1094,6 +1115,17 @@ export default function FacilitatedGame() {
               <button onClick={() => setShowLog(false)} className="text-muted-foreground hover:text-foreground"><X className="w-4 h-4" /></button>
             </div>
             <div className="p-4 flex-1 overflow-y-auto flex flex-col gap-2 custom-scrollbar">
+              {gameUpdates.length > 0 && (
+                <div className="flex flex-col gap-1.5 pb-2 border-b border-border" data-testid="recap-updates">
+                  <span className="text-[10px] font-bold uppercase tracking-widest text-primary">Your table updates</span>
+                  {gameUpdates.map((u) => (
+                    <div key={u.id} className="text-xs leading-snug">
+                      <p className="font-bold text-foreground">{u.title}</p>
+                      {(u.lines ?? []).map((line, li) => <p key={li} className="text-muted-foreground">{line}</p>)}
+                    </div>
+                  ))}
+                </div>
+              )}
               {[...gameState.log].reverse().map((entry, i) => (
                 <div key={i} className="text-xs text-muted-foreground py-1 border-b border-border/30 last:border-0 leading-snug">
                   {entry}
@@ -1291,9 +1323,6 @@ export default function FacilitatedGame() {
           stepInfo={decision ? getDecisionStepInfo(decision.type, decision.meta ?? undefined) : null}
         />
       )}
-
-      {/* Effect Announcements */}
-      <EffectAnnouncementOverlay effect={gameState.lastEffect ?? null} localPlayerId={localPlayerId} />
 
       {/* Game Over Screen */}
       {gameState.phase === "game_over" && (
