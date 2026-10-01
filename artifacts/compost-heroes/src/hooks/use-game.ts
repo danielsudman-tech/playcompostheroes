@@ -53,18 +53,51 @@ function followMovedRoom(sourceGameId: string, sourceToken: string, data: { redi
 }
 
 export function useClaimSlot(gameId: string | null, enabled: boolean) {
-  const [claim, setClaim] = useState<ClaimResult | null>(null);
-  const [error, setError] = useState<string | null>(null);
-  const [loading, setLoading] = useState(false);
-  const [requiresPassword, setRequiresPassword] = useState(false);
-  const attempted = useRef(false);
+  const [claimState, setClaimState] = useState<{
+    gameId: string | null;
+    claim: ClaimResult | null;
+    error: string | null;
+    loading: boolean;
+    requiresPassword: boolean;
+  } | null>(null);
+  const activeGame = useRef({ gameId, generation: 0 });
+  if (activeGame.current.gameId !== gameId) {
+    activeGame.current = { gameId, generation: activeGame.current.generation + 1 };
+  }
+  const mounted = useRef(true);
+  const attemptedGeneration = useRef<number | null>(null);
+  const requestSequence = useRef(0);
+
+  useEffect(() => {
+    mounted.current = true;
+    return () => {
+      mounted.current = false;
+    };
+  }, []);
 
   const doClaim = useCallback((password?: string) => {
     if (!gameId) return;
+    const requestGame = activeGame.current;
+    if (requestGame.gameId !== gameId) return;
+    const requestId = ++requestSequence.current;
+    const isCurrentRequest = () =>
+      mounted.current &&
+      activeGame.current.gameId === gameId &&
+      activeGame.current.generation === requestGame.generation &&
+      requestSequence.current === requestId;
     const existingToken = getStoredToken(gameId);
-    setLoading(true);
-    setError(null);
-    setRequiresPassword(false);
+    if (isCurrentRequest()) {
+      setClaimState((previous) => {
+        if (!isCurrentRequest()) return previous;
+        return {
+          gameId,
+          claim: previous?.gameId === gameId ? previous.claim : null,
+          error: null,
+          loading: true,
+          requiresPassword: false,
+        };
+      });
+    }
 
     fetch(`/api/games/${gameId}/claim`, {
       method: "POST",
@@ -73,30 +106,73 @@ export function useClaimSlot(gameId: string | null, enabled: boolean) {
     })
       .then(async (r) => {
         const data = await r.json().catch(() => ({}));
+        if (!isCurrentRequest()) return;
         if (r.status === 409 && gameId && followMovedRoom(gameId, existingToken ?? "", data)) return;
         if (r.status === 403 && data.requiresPassword) {
-          setRequiresPassword(true);
-          if (data.error !== "This game is password protected") {
-            setError(data.error ?? "Incorrect password");
+          if (isCurrentRequest()) {
+            setClaimState((previous) => isCurrentRequest() ? {
+              gameId,
+              claim: previous?.gameId === gameId ? previous.claim : null,
+              error: data.error !== "This game is password protected"
+                ? data.error ?? "Incorrect password"
+                : null,
+              loading: previous?.gameId === gameId ? previous.loading : false,
+              requiresPassword: true,
+            } : previous);
           }
           return;
         }
         if (!r.ok) throw new Error(data.error ?? "Failed to claim slot");
         storeToken(gameId, data.token);
         updateRememberedEventSeatIdentity(gameId, data.token, data);
-        setClaim(data as ClaimResult);
+        if (isCurrentRequest()) {
+          setClaimState((previous) => isCurrentRequest() ? {
+            gameId,
+            claim: data as ClaimResult,
+            error: null,
+            loading: previous?.gameId === gameId ? previous.loading : false,
+            requiresPassword: false,
+          } : previous);
+        }
       })
-      .catch((e) => setError(e.message))
-      .finally(() => setLoading(false));
+      .catch((e) => {
+        if (isCurrentRequest()) {
+          setClaimState((previous) => isCurrentRequest() ? {
+            gameId,
+            claim: previous?.gameId === gameId ? previous.claim : null,
+            error: e instanceof Error ? e.message : String(e),
+            loading: previous?.gameId === gameId ? previous.loading : false,
+            requiresPassword: previous?.gameId === gameId ? previous.requiresPassword : false,
+          } : previous);
+        }
+      })
+      .finally(() => {
+        if (isCurrentRequest()) {
+          setClaimState((previous) => isCurrentRequest() ? {
+            gameId,
+            claim: previous?.gameId === gameId ? previous.claim : null,
+            error: previous?.gameId === gameId ? previous.error : null,
+            loading: false,
+            requiresPassword: previous?.gameId === gameId ? previous.requiresPassword : false,
+          } : previous);
+        }
+      });
   }, [gameId]);
 
   useEffect(() => {
-    if (!gameId || !enabled || attempted.current) return;
-    attempted.current = true;
+    if (!gameId || !enabled || attemptedGeneration.current === activeGame.current.generation) return;
+    attemptedGeneration.current = activeGame.current.generation;
     doClaim();
   }, [gameId, enabled, doClaim]);
 
-  return { claim, error, loading, requiresPassword, doClaim };
+  const visibleState = claimState?.gameId === gameId ? claimState : null;
+  return {
+    claim: visibleState?.claim ?? null,
+    error: visibleState?.error ?? null,
+    loading: visibleState?.loading ?? false,
+    requiresPassword: visibleState?.requiresPassword ?? false,
+    doClaim,
+  };
 }
 
 // ── Game state (polling for pass-and-play, SSE for online) ───────────────────

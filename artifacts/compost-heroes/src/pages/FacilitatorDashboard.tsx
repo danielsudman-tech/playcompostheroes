@@ -197,6 +197,7 @@ export default function FacilitatorDashboard() {
   const currentPlayer = gameState.players[gameState.currentPlayerIndex];
   const decisionOwner = decision ? gameState.players.find((p) => p.id === decision.playerId) : null;
   const isWaitingRoom = gameState.phase === "waiting";
+  const displayedMaxPlayers = gameState.maxPlayers ?? 4;
 
   const statusText = (() => {
     if (isWaitingRoom) return "Waiting room — game not started yet";
@@ -420,7 +421,7 @@ export default function FacilitatorDashboard() {
                 <div>
                   <h2 className="font-display font-bold text-base">Waiting room</h2>
                   <p className="text-xs text-muted-foreground">
-                    {gameState.players.length} of 4 participants seated · game starts with 2–4
+                    {gameState.players.length} of {displayedMaxPlayers} participants seated · game starts with 2–{displayedMaxPlayers}
                   </p>
                 </div>
                 <Button
@@ -430,7 +431,7 @@ export default function FacilitatorDashboard() {
                   data-testid="button-start-facilitated-game"
                 >
                   {startMutation.isPending ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : <Play className="w-4 h-4 mr-2" />}
-                  Start game ({gameState.players.length}/4)
+                  Start game ({gameState.players.length}/{displayedMaxPlayers})
                 </Button>
               </div>
               {gameState.players.length === 0 ? (

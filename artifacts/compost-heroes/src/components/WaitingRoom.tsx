@@ -51,9 +51,8 @@ export function WaitingRoom({ gameId, players, maxPlayers, playerIndex, token, h
 
   const isHost = playerIndex === 0;
   const myPlayerId = playerIndex !== null ? players[playerIndex]?.id : null;
-  // Facilitated invites go to the table page, which is open to guests
-  // (name-only join, no registration).
-  const shareUrl = `${window.location.origin}${import.meta.env.BASE_URL}game/${gameId}${isFacilitated ? "/table" : ""}`.replace(/\/+\//, "/");
+  // Online and facilitated players both enter through the table route.
+  const shareUrl = `${window.location.origin}${import.meta.env.BASE_URL}game/${encodeURIComponent(gameId)}/table`;
   const roomCode = gameId.toUpperCase();
 
   const totalCount = players.length + botSlots.length;

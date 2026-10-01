@@ -71,16 +71,15 @@ function PasswordInput({
 
 // Registration rules:
 // - The lobby ("/") is open to everyone — guests can set up Pass & Play.
-// - Facilitated game routes (table/host) are open — players just enter a
-//   name at the table, no account needed.
-// - Pass & Play and facilitated games at /game/:id are open; online games
-//   require sign-in (checked per-game via the API below).
+// - The facilitator dashboard stays open to its existing seat-token flow.
+// - Both game URL forms are classified by mode: Online requires sign-in,
+//   while Pass & Play and Facilitated participants need no account.
 function isUngatedPath(p: string): boolean {
-  return p === "/" || /^\/event\/[^/]+(?:\/results)?\/?$/.test(p) || /^\/game\/[^/]+\/(table|host)\/?$/.test(p);
+  return p === "/" || /^\/event\/[^/]+(?:\/results)?\/?$/.test(p) || /^\/game\/[^/]+\/host\/?$/.test(p);
 }
 
 function pathGameId(p: string): string | null {
-  const m = p.match(/^\/game\/([^/]+)\/?$/);
+  const m = p.match(/^\/game\/([^/]+)(?:\/table)?\/?$/);
   return m ? m[1] : null;
 }
 
@@ -110,25 +109,29 @@ export function AppGate({ children }: { children: ReactNode }) {
     }
   });
 
-  // For /game/:id — only online games require an account. Recomputed on
+  // For /game/:id and /game/:id/table, only Online requires an account.
+  // Recomputed on
   // every client-side navigation via wouter's location hook.
   const [location] = useWouterLocation();
   const gameId = pathGameId(location);
-  const [gameNeedsGate, setGameNeedsGate] = useState<boolean | null>(gameId ? null : false);
+  const [gameGate, setGameGate] = useState<{ gameId: string | null; required: boolean | null }>({
+    gameId, required: gameId ? null : false,
+  });
+  const gameNeedsGate = gameGate.gameId === gameId ? gameGate.required : null;
   useEffect(() => {
     if (!gameId) {
-      setGameNeedsGate(false);
+      setGameGate({ gameId, required: false });
       return;
     }
-    setGameNeedsGate(null);
+    setGameGate({ gameId, required: null });
     let cancelled = false;
     fetch(`/api/games/${encodeURIComponent(gameId)}`)
       .then((r) => (r.ok ? r.json() : null))
       .then((d: { mode?: string } | null) => {
-        if (!cancelled) setGameNeedsGate((d?.mode ?? "online") === "online");
+        if (!cancelled) setGameGate({ gameId, required: (d?.mode ?? "online") === "online" });
       })
       .catch(() => {
-        if (!cancelled) setGameNeedsGate(true);
+        if (!cancelled) setGameGate({ gameId, required: true });
       });
     return () => {
       cancelled = true;

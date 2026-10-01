@@ -15,6 +15,7 @@ import {
   useGameSse,
   useAskQuestion,
   useLeaveRoom,
+  useNudgePlayer,
   getStoredToken,
   storeToken,
 } from "@/hooks/use-game";
@@ -22,6 +23,7 @@ import { GameCard } from "@/components/GameCard";
 import { DecisionModal, PLAYER_SELECTION_TYPES } from "@/components/DecisionModal";
 import { EffectAnnouncementOverlay } from "@/components/EffectAnnouncementOverlay";
 import { PostGameLinks } from "@/components/PostGameLinks";
+import { OnlineRoomEntry } from "@/components/OnlineRoomEntry";
 import { getDecisionStepInfo } from "@/lib/decisionSteps";
 import { OpponentPileModal } from "@/components/OpponentPileModal";
 import {
@@ -99,7 +101,7 @@ function getOngoingActivation(gameState: any, me: PlayerState) {
 }
 
 /**
- * Zoom-friendly game table for facilitated corporate sessions.
+ * Shared game table for Online, Pass & Play, and Facilitated sessions.
  * Features a desktop-first shared table matrix where every player's pile is visible.
  */
 export default function FacilitatedGame() {
@@ -118,11 +120,14 @@ export default function FacilitatedGame() {
   const storedToken = gameId ? getStoredToken(gameId) : null;
   const { data: gameState, isLoading, error } = useGameState(gameId || null, urlSeatToken ?? storedToken);
   const isFacilitated = gameState?.mode === "facilitated";
-  const isPassPlay = gameState?.mode === "standalone";
+  const isOnline = gameState?.mode === "online";
+  // The legacy facilitator mode is local play, not a facilitated session.
+  const isPassPlay = gameState?.mode === "standalone" || gameState?.mode === "facilitator";
+  const isRemote = isFacilitated || isOnline;
 
   useEffect(() => {
-    // Seat links belong to facilitated tables, never local Pass & Play games.
-    if (!isFacilitated || !gameId || !urlSeatToken) return;
+    // Only remote tables use seat links; account tokens are never shared in links.
+    if (!isRemote || !gameId || !urlSeatToken) return;
     storeToken(gameId, urlSeatToken);
     try {
       const params = new URLSearchParams(window.location.search);
@@ -130,10 +135,14 @@ export default function FacilitatedGame() {
       const query = params.toString();
       window.history.replaceState({}, "", window.location.pathname + (query ? `?${query}` : "") + window.location.hash);
     } catch {}
-  }, [isFacilitated, gameId, urlSeatToken]);
+  }, [isRemote, gameId, urlSeatToken]);
 
-  const { claim, loading: claimLoading } = useClaimSlot(gameId || null, isFacilitated && !!(storedToken ?? urlSeatToken));
-  const localToken = isFacilitated ? claim?.token ?? urlSeatToken ?? storedToken : null;
+  const { claim, loading: claimLoading, requiresPassword, doClaim, error: claimError } = useClaimSlot(
+    gameId || null,
+    (isFacilitated && !!(storedToken ?? urlSeatToken)) ||
+      (isOnline && (gameState?.phase !== "waiting" || !!(storedToken ?? urlSeatToken)))
+  );
+  const localToken = isRemote ? claim?.token ?? urlSeatToken ?? storedToken : null;
   const eventCode = gameId ? getGameEventCode(gameId) : null;
   const eventSeat = eventCode ? rememberedEventSeat(eventCode) : null;
   useEventPresence(eventCode ?? "", eventSeat, isFacilitated && !!eventSeat && !!localToken);
@@ -164,19 +173,25 @@ export default function FacilitatedGame() {
   const { sseConnected } = useGameSse(
     gameId || null,
     localToken,
-    isFacilitated && !!localToken,
+    isRemote && !!localToken,
     handleKicked,
      (from) => toast({ title: "It's your turn!", description: `${from} is waiting for you to play.`, duration: 6000 }),
-    handleRoomTransfer
+    isFacilitated ? handleRoomTransfer : undefined
   );
 
-  const actionMutation = useGameAction(gameId || "", isFacilitated ? localToken : null, {
+  const actionMutation = useGameAction(gameId || "", isRemote ? localToken : null, {
     onError: (msg) => toast({ title: "Action failed", description: msg, variant: "destructive" }),
   });
   const leaveRoom = useLeaveRoom(gameId || null, localToken);
+  const nudgePlayer = useNudgePlayer(gameId || null, localToken);
 
+  // During a shared-device effect, the human making a choice is the active seat,
+  // even when a bot owns the main turn. Remote seats remain token-bound.
+  const localDecisionPlayer = isPassPlay && gameState?.pendingDecision
+    ? gameState.players.find((p) => p.id === gameState.pendingDecision?.playerId && !p.isBot)
+    : null;
   const localPlayerId = isPassPlay
-    ? gameState?.players[gameState.currentPlayerIndex]?.id ?? null
+    ? localDecisionPlayer?.id ?? gameState?.players[gameState.currentPlayerIndex]?.id ?? null
     : claim?.playerId ?? null;
 
   // Sound system
@@ -205,7 +220,7 @@ export default function FacilitatedGame() {
 
   useLayoutEffect(() => {
     if (!isPassPlay || !gameState) return;
-    const idx = gameState.currentPlayerIndex;
+    const idx = gameState.players.findIndex((p) => p.id === localPlayerId);
     const previous = previousLocalTurn.current;
     const needsReveal = !previous || previous.gameId !== gameId ||
       previous.playerIndex !== idx || previous.phase === "game_over" ||
@@ -225,7 +240,7 @@ export default function FacilitatedGame() {
         ? { name: newPlayer.name, cardCount: newPlayer.hand.length }
         : null);
     }
-  }, [isPassPlay, gameId, gameState?.currentPlayerIndex, gameState?.phase, gameState?.turnNumber]);
+  }, [isPassPlay, gameId, localPlayerId, gameState?.phase, gameState?.turnNumber]);
 
   // Facilitator broadcast + participant questions
   const [dismissedMsgId, setDismissedMsgId] = useState<string | null>(null);
@@ -246,20 +261,10 @@ export default function FacilitatedGame() {
   };
 
   useEffect(() => {
-    if (!gameState) return;
-    // Only non-facilitated games belong on the classic screen. Facilitated
-    // players stay here — the table shows its own name-entry join form
-    // (no registration) while the game is waiting.
-    if (gameState.mode !== "facilitated" && gameState.mode !== "standalone") {
-      setLocation(`/game/${gameId}`);
-    }
-  }, [gameState?.mode, gameState?.phase, storedToken, gameId, setLocation, gameState]);
-
-  useEffect(() => {
-    if (hostIsSpectator && claim?.playerIndex === -1) {
+    if (isFacilitated && hostIsSpectator && claim?.playerIndex === -1) {
       setLocation(`/game/${gameId}/host`);
     }
-  }, [hostIsSpectator, claim?.playerIndex, gameId, setLocation]);
+  }, [isFacilitated, hostIsSpectator, claim?.playerIndex, gameId, setLocation]);
 
   useEffect(() => {
     if (gameState?.phase === "game_over" && gameState.winner) {
@@ -292,11 +297,20 @@ export default function FacilitatedGame() {
     );
   }
 
-  if (gameState.mode !== "facilitated" && gameState.mode !== "standalone") {
-    return null;
+  if (isOnline && (gameState.phase === "waiting" || !claim)) {
+    return <OnlineRoomEntry
+      gameId={gameId!}
+      gameState={gameState}
+      claim={claim}
+      token={localToken}
+      claimLoading={claimLoading}
+      requiresPassword={requiresPassword}
+      claimError={claimError}
+      doClaim={doClaim}
+    />;
   }
 
-  if (hostIsSpectator && claim?.playerIndex === -1) return null;
+  if (isFacilitated && hostIsSpectator && claim?.playerIndex === -1) return null;
 
   const waitingHostMessage = isFacilitated && gameState.hostMessage && (
     <div className="w-full max-w-md mb-4 rounded-2xl border border-primary/30 bg-primary/10 px-4 py-3 text-sm font-semibold text-foreground" data-testid="waiting-host-message">
@@ -503,7 +517,7 @@ export default function FacilitatedGame() {
 
   const stepText = (() => {
     if (gameState.phase === "game_over") return "Game over";
-    if ((gameState as any).paused) return "Game paused by the facilitator";
+    if (isFacilitated && (gameState as any).paused) return "Game paused by the facilitator";
     if (decision) {
       const owner = gameState.players.find((p) => p.id === decision.playerId);
       return isMyDecision ? `Your choice: ${decision.prompt}` : `${owner?.name ?? "Someone"} is choosing…`;
@@ -566,6 +580,20 @@ export default function FacilitatedGame() {
         </div>
         
         <div className="flex items-center gap-1 md:gap-2 shrink-0 ml-auto">
+          {isOnline && !isMyTurn && !currentPlayer.isBot && gameState.phase !== "game_over" && (
+            <button
+              disabled={nudgePlayer.isPending}
+              onClick={() => nudgePlayer.mutate(gameState.currentPlayerIndex, {
+                onSuccess: () => toast({ title: "Nudge sent", description: `${currentPlayer.name} has been reminded it's their turn.` }),
+                onError: (err) => toast({ title: "Couldn't nudge", description: err.message, variant: "destructive" }),
+              })}
+              title={`Nudge ${currentPlayer.name}`}
+              className="flex items-center gap-1.5 px-2 md:px-3 py-1.5 rounded-xl text-xs font-bold border bg-card border-border text-muted-foreground hover:bg-muted/50 disabled:opacity-50"
+              data-testid="button-nudge-player"
+            >
+              <Hand className="w-4 h-4" /><span className="hidden sm:inline">Nudge</span>
+            </button>
+          )}
           {isFacilitated && claim?.playerIndex === 0 && currentUser?.role === "facilitator" && currentUser.id === gameState.facilitatorId && (
             <button
               onClick={() => setLocation(`/game/${gameId}/host`)}
@@ -593,7 +621,7 @@ export default function FacilitatedGame() {
           >
             <BookOpen className="w-4 h-4" /> <span className="hidden sm:inline">Rules</span>
           </button>
-          {claim && (
+          {isFacilitated && claim && (
             <div>
               <button
                 onClick={() => setAskOpen((v) => !v)}
@@ -620,7 +648,7 @@ export default function FacilitatedGame() {
           >
             {soundMuted ? <VolumeX className="w-4 h-4" /> : <Volume2 className="w-4 h-4" />}
           </button>
-          {isFacilitated && <div
+          {isRemote && <div
             className={cn(
               "flex items-center gap-1.5 px-2 md:px-3 py-1.5 rounded-xl text-xs font-bold border",
               sseConnected ? "bg-green-500/10 border-green-500/30 text-green-700 dark:text-green-400" : "bg-yellow-500/10 border-yellow-500/30 text-yellow-700 dark:text-yellow-400"
@@ -715,7 +743,7 @@ export default function FacilitatedGame() {
                   key={p.id}
                   player={p}
                   isMe={p.id === localPlayerId}
-                  showHandBacks={isPassPlay && p.id !== localPlayerId}
+                  showHandBacks={p.id !== localPlayerId}
                   isTurn={p.id === currentPlayer.id}
                   modifiers={gameState.activeModifiers.filter((m) => m.appliedByPlayerId === p.id)}
                   targetingActive={isInlineTargeting}
@@ -935,7 +963,7 @@ export default function FacilitatedGame() {
       {/* Body portal avoids the header's stacking context and the clipped table/controls. */}
       {createPortal(
         <AnimatePresence>
-          {askOpen && !myOpenQuestion && (
+          {isFacilitated && askOpen && !myOpenQuestion && (
             <motion.div
               key="ask-question"
               initial={{ opacity: 0 }}

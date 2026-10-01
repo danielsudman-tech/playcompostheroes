@@ -1,4 +1,4 @@
-- [Compost Heroes conventions](compost-heroes-conventions.md) — facilitated mode reuses the online flow (tokens/SSE/hidden hands, token must match acting player); API contract is spec-first via lib/api-spec + orval codegen.
+- [Compost Heroes conventions](compost-heroes-conventions.md) — one shared table, distinct mode capabilities; common remote privacy/transport; notify before removing legacy local facilitator mode.
 - [Facilitated table testing](facilitated-table-testing.md) — seat token links can open guest tables; never use account tokens in URLs; board must fit 4 players at 900px.
 - [Sound UX](sound-system.md) — keep short, meaningful cues and a mute switch; do not restore a continuous ambient hum.
 - [Facilitator approval provenance](facilitator-approval.md) — never trust legacy self-selected roles as admin approval or backfill them automatically.

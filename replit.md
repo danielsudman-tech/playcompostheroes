@@ -113,7 +113,7 @@ A browser-based digital card game for 2–4 players. Players collect hero cards 
 
 - Admin-set card copy counts and image override keys live in PostgreSQL (`compost_card_settings`), not writable JSON. The API initializes this table and imports the checked-in legacy `cardCopies.json` and `imageKeys.json` only for missing rows, without overwriting later database edits.
 - Uploaded card images are stored in Replit Object Storage. Existing local PNG/JPEG/WebP assets are copied there in the background under their existing keys, with retries and without deleting the originals; `/api/assets/*` serves stored images, with local assets as a migration/outage fallback. New admin uploads go through private staging, are validated as PNG, JPEG, or WebP, then promoted to a separate public key so the signed upload URL cannot replace a verified image.
-- Game state, game seat tokens, user accounts, and user sign-in sessions are persisted in PostgreSQL. New sign-in and game seat tokens use cryptographic randomness; user sessions expire 30 days after creation. Existing game seat tokens remain valid. Pass & Play and facilitated guests do not need an account; Online requires sign-in, and hosting requires facilitator approval.
+- Game state, game seat tokens, user accounts, and user sign-in sessions are persisted in PostgreSQL. New sign-in and game seat tokens use cryptographic randomness; user sessions expire 30 days after creation. Existing game seat tokens remain valid. Pass & Play and facilitated guests do not need an account; Online requires sign-in. Any signed-in user can host an Online room; hosting Facilitated sessions requires facilitator approval.
 - Admin requests require the `x-admin-key` header, including database and GitHub backup routes. Never put an admin key or user sign-in token in a URL; facilitator Event streams use short-lived, single-use tickets instead of account tokens in their connection URLs. Login, registration, and admin routes have per-client rate limits.
 
 ### Key Game Rules
@@ -121,7 +121,8 @@ A browser-based digital card game for 2–4 players. Players collect hero cards 
 - Win: collect 1 hero from each of 5 functions: Airflow, Carbon, Moisture, Nitrogen, Decomposer
 - Turn flow: `draw` phase → draw card → `play` phase → play or skip → end turn → next player
 - Action cards trigger `pendingDecision` which must be resolved before ending turn
-- Modes: Pass & Play (local, turn-based), Facilitator (host controls view)
+- Modes: Online (signed-in players on separate devices, live updates and waiting-room host controls), Pass & Play (anonymous shared device with handoff privacy), Facilitated (guest participants and approved facilitator dashboard).
+- All modes use the shared table at `/game/:id/table`; existing `/game/:id` links redirect there. The legacy `facilitator` API mode remains supported as local shared-device play, not modern Facilitated play.
 
 ### Important Bugs Fixed
 

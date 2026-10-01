@@ -748,7 +748,7 @@ function applyWormParty(state: GameState, activePlayerId: string, chosenCardId: 
 }
 
 // Helper: apply Worm Party passes where EVERY player explicitly chose their
-// card (facilitated sequential decision chain). chosen maps playerId → cardId.
+// card. chosen maps playerId → cardId.
 function applyWormPartyChain(state: GameState, chosen: Record<string, string>): GameState {
   const passCards: Array<{ fromId: string; card: Card }> = [];
   for (const pl of state.players) {
@@ -1062,52 +1062,31 @@ function resolveActionInstantEffect(
       return s;
     }
 
-    // Worm Party: each player passes 1 card from hand to player on left
-    // Prompt the active player to choose; auto-pick hand[0] for others
+    // Worm Party: each player chooses 1 card from hand to pass to player on left
     case "worm_party": {
-      // Facilitated mode: EVERY player chooses their own card via a sequential
-      // guided decision chain (no auto-picking for other players).
-      if (s.mode === "facilitated") {
-        const startIdx = s.players.findIndex((pl) => pl.id === p.id);
-        const order: string[] = [];
-        for (let k = 0; k < s.players.length; k++) {
-          const pl = s.players[(startIdx + k) % s.players.length];
-          if (pl.hand.length > 0) order.push(pl.id);
-          else addLog(s, `Worm Party — ${pl.name} has no cards to pass.`);
-        }
-        if (order.length === 0) {
-          addLog(s, `Worm Party — nobody has cards to pass.`);
-          return s;
-        }
-        const first = getPlayer(s, order[0])!;
-        s = {
-          ...s,
-          pendingDecision: {
-            type: "choose_worm_party_card",
-            playerId: first.id,
-            cardId: card.id,
-            options: first.hand.map((c) => ({ cardId: c.id, cardName: c.name })),
-            prompt: `${first.name}: Choose 1 card from your hand to pass to the player on your left (Worm Party).`,
-            meta: { wormChain: true, order, index: 0, chosen: {} },
-          },
-        };
+      // Every player chooses their own card via a sequential decision chain.
+      // Choices are applied together at the end so no one sees early transfers.
+      const startIdx = s.players.findIndex((pl) => pl.id === p.id);
+      const order: string[] = [];
+      for (let k = 0; k < s.players.length; k++) {
+        const pl = s.players[(startIdx + k) % s.players.length];
+        if (pl.hand.length > 0) order.push(pl.id);
+        else addLog(s, `Worm Party — ${pl.name} has no cards to pass.`);
+      }
+      if (order.length === 0) {
+        addLog(s, `Worm Party — nobody has cards to pass.`);
         return s;
       }
-
-      if (p.hand.length === 0) {
-        addLog(s, `Worm Party — ${p.name} has no cards to pass, skipping their pass.`);
-        // Auto-process for all other players
-        s = applyWormParty(s, p.id, null);
-        return s;
-      }
+      const first = getPlayer(s, order[0])!;
       s = {
         ...s,
         pendingDecision: {
           type: "choose_worm_party_card",
-          playerId: p.id,
+          playerId: first.id,
           cardId: card.id,
-          options: p.hand.map((c) => ({ cardId: c.id, cardName: c.name })),
-          prompt: `${p.name}: Choose 1 card from your hand to pass to the player on your left (Worm Party).`,
+          options: first.hand.map((c) => ({ cardId: c.id, cardName: c.name })),
+          prompt: `${first.name}: Choose 1 card from your hand to pass to the player on your left (Worm Party).`,
+          meta: { wormChain: true, order, index: 0, chosen: {} },
         },
       };
       return s;
@@ -3369,6 +3348,10 @@ function botTakeTurn(state: GameState, alreadyDrew = false): GameState {
       break;
     }
   }
+
+  // Leave every Worm Party chain pending for runBotTurnsIfNeeded to drain:
+  // another bot may own the next step before the chain reaches a human.
+  if (s.pendingDecision?.meta?.wormChain) return s;
 
   // 6. End turn
   const endResult = endTurn(s, player.id);
