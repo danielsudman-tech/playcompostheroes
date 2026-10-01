@@ -1,4 +1,4 @@
-import { Card, buildDeck, WIN_FUNCTIONS, getAllCards } from "./cards.js";
+import { Card, buildDeck, WIN_FUNCTIONS } from "./cards.js";
 import { getAllOverrides } from "./imageKeyStore.js";
 import { getAllCopies } from "./cardCopiesStore.js";
 
@@ -17,6 +17,7 @@ export interface PlayerState {
   compostPile: Card[];
   skipsNextTurn: boolean;
   maxHandSize: number;
+  /** Legacy wire-compatibility field; Hot Pile no longer sets a passive draw flag. */
   drawsExtraCard: boolean;
   isBot: boolean;
   botSkillLevel?: BotSkillLevel;
@@ -254,7 +255,12 @@ function getEffectiveFunction(card: Card): string {
 
 /** True if this card instance matches the given template/design ID. */
 function cardIs(card: Card, templateId: string): boolean {
-  return (card.baseId ?? card.id) === templateId;
+  return getCardBaseId(card) === templateId;
+}
+
+/** Supports older saved card instances that predate the explicit baseId field. */
+function getCardBaseId(card: Card): string {
+  return card.baseId ?? card.id.split("__", 1)[0] ?? card.id;
 }
 
 /** True if the card natively offers `fn` as one of its possible functions (regardless of which slot it occupies). */
@@ -292,6 +298,11 @@ function getCountFunction(player: PlayerState, fn: string): number {
   return player.compostPile.filter((c) => getEffectiveFunction(c) === fn).length;
 }
 
+/** Hot Pile counts a card once if Decomposer is its placed or available function. */
+function countsForHotPile(card: Card): boolean {
+  return getEffectiveFunction(card) === "Decomposer" || cardHasFunctionNatively(card, "Decomposer");
+}
+
 function checkWinCondition(state: GameState): string | null {
   for (const player of state.players) {
     const won = WIN_FUNCTIONS.every((fn) => getHasFunction(player, fn));
@@ -305,7 +316,6 @@ function recomputePlayerModifiers(
   player: PlayerState
 ): PlayerState {
   let maxHandSize = 5;
-  let drawsExtraCard = false;
 
   // Old Timer hero: +1 hand size
   if (player.compostPile.some((c) => cardIs(c, "old_timer"))) {
@@ -318,15 +328,8 @@ function recomputePlayerModifiers(
     maxHandSize = Math.min(maxHandSize, 3);
   }
 
-  // Hot Pile Bonus: if 2+ Decomposers in compost, draw extra card per turn
-  const hotPileBonus = state.activeModifiers.find(
-    (m) => m.cardId === "hot_pile_bonus"
-  );
-  if (hotPileBonus && getCountFunction(player, "Decomposer") >= 2) {
-    drawsExtraCard = true;
-  }
-
-  return { ...player, maxHandSize, drawsExtraCard };
+  // Hot Pile's benefit is activated once by the current player, never passively.
+  return { ...player, maxHandSize, drawsExtraCard: false };
 }
 
 function recomputeAllModifiers(state: GameState): GameState {
@@ -380,7 +383,7 @@ function applyOngoingModifier(
   playerId: string
 ): GameState {
   const modifier: ActiveModifier = {
-    cardId: card.baseId ?? card.id,   // always store the template ID so lookups work
+    cardId: getCardBaseId(card),   // always store the template ID so lookups work
     cardName: card.name,
     effect: card.cardText,
     appliedByPlayerId: playerId,
@@ -402,7 +405,7 @@ function resolveHeroInstantEffect(
   let s = state;
   let p = player;
 
-  switch (card.baseId ?? card.id) {
+  switch (getCardBaseId(card)) {
     // Fresh-Air Friend: discard 1 from hand to draw 2
     case "fresh_air_friend": {
       if (p.hand.length === 0) {
@@ -666,32 +669,23 @@ function resolveHeroInstantEffect(
 
     // The Legion of Life: discard the active Ongoing Action Card
     case "legion_of_life": {
-      // Prioritize Plastic Contamination; otherwise target the current ongoingActionCard
-      const plasticMod = s.activeModifiers.find((m) => m.cardId === "plastic_contamination");
-      const ongoingActions = s.activeModifiers.filter(
-        (m) => getAllCards().find((c) => c.id === m.cardId)?.type === "action"
-      );
-      const toRemoveMod = plasticMod ?? ongoingActions[0];
-      if (!toRemoveMod) {
+      const ongoing = s.ongoingActionCard;
+      if (!ongoing) {
         addLog(s, `No active Ongoing Action Card to discard (Legion of Life).`);
         return s;
       }
-      // Find the card and move to discard
-      const removedCard = getAllCards().find((c) => c.id === toRemoveMod.cardId);
-      if (removedCard) {
-        s = {
-          ...s,
-          discardPile: [removedCard, ...s.discardPile],
-          activeModifiers: s.activeModifiers.filter(
-            (m) => m.cardId !== toRemoveMod.cardId
-          ),
-          ongoingActionCard:
-            s.ongoingActionCard?.id === toRemoveMod.cardId
-              ? null
-              : s.ongoingActionCard,
-        };
-        addLog(s, `${p.name} used Legion of Life to remove ${removedCard.name}.`);
-      }
+      // The ongoing card is authoritative. Older Legion saves may already have
+      // lost its modifier, and legacy modifiers may store the instance ID.
+      const ongoingBaseId = getCardBaseId(ongoing);
+      s = {
+        ...s,
+        discardPile: [ongoing, ...s.discardPile],
+        activeModifiers: s.activeModifiers.filter(
+          (modifier) => modifier.cardId !== ongoingBaseId && modifier.cardId !== ongoing.id,
+        ),
+        ongoingActionCard: null,
+      };
+      addLog(s, `${p.name} used Legion of Life to remove ${ongoing.name}.`);
       return s;
     }
 
@@ -825,7 +819,7 @@ function resolveActionInstantEffect(
   let s = state;
   const p = player;
 
-  switch (card.baseId ?? card.id) {
+  switch (getCardBaseId(card)) {
     // Anaerobic Pocket: discard 1 Airflow from compost, then choose opponent to skip
     case "anaerobic_pocket": {
       const airflowCards = p.compostPile.filter((c) => getEffectiveFunction(c) === "Airflow");
@@ -1167,7 +1161,7 @@ export function playCard(
 
   // Check Plastic Contamination for hero cards
   // Exception: Legion of Life can always be played — its effect removes the ongoing action card
-  if (cardInHand.type === "hero" && cardInHand.id !== "legion_of_life") {
+  if (cardInHand.type === "hero" && !cardIs(cardInHand, "legion_of_life")) {
     const plasticMod = state.activeModifiers.find(
       (m) => m.cardId === "plastic_contamination"
     );
@@ -1287,7 +1281,7 @@ export function playCard(
         ...s,
         ongoingActionCard: cardInHand,
         activeModifiers: prevOngoing
-          ? s.activeModifiers.filter((m) => m.cardId !== (prevOngoing.baseId ?? prevOngoing.id))
+          ? s.activeModifiers.filter((m) => !cardIs(prevOngoing, m.cardId))
           : s.activeModifiers,
         discardPile: prevOngoing ? [prevOngoing, ...s.discardPile] : s.discardPile,
       };
@@ -2353,10 +2347,10 @@ export function activateOngoing(
   // decision uses up the activation, preventing a second activation if the player skips).
   const stateWithFlag: GameState = { ...state, ongoingBenefitUsedThisTurn: true };
 
-  switch (ongoing.baseId ?? ongoing.id) {
+  switch (getCardBaseId(ongoing)) {
     case "hot_pile_bonus": {
       const decomposerCount = player.compostPile.filter(
-        (c) => getEffectiveFunction(c) === "Decomposer"
+        countsForHotPile
       ).length;
       if (decomposerCount < 2) {
         return { state, error: "Hot Pile Bonus requires 2 Decomposer cards in your compost pile" };
@@ -2726,7 +2720,7 @@ function scoreActionCard(
   const opponents = state.players.filter((p) => p.id !== player.id);
   const danger = mostDangerousOpponent(state, player.id);
 
-  switch (card.baseId ?? card.id) {
+  switch (getCardBaseId(card)) {
     case "time_warp":
       return 90; // Always play — extra turn is always good
 
@@ -3230,9 +3224,9 @@ function botActivateOngoing(state: GameState, playerId: string): GameState {
 
   // Check if activation is beneficial
   let shouldActivate = false;
-  switch (ongoing.baseId ?? ongoing.id) {
+  switch (getCardBaseId(ongoing)) {
     case "hot_pile_bonus": {
-      const decomp = player.compostPile.filter((c) => getEffectiveFunction(c) === "Decomposer").length;
+      const decomp = player.compostPile.filter(countsForHotPile).length;
       shouldActivate = decomp >= 2;
       break;
     }

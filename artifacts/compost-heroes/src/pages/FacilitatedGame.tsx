@@ -25,11 +25,11 @@ import { EffectAnnouncementOverlay } from "@/components/EffectAnnouncementOverla
 import { PostGameLinks } from "@/components/PostGameLinks";
 import { OnlineRoomEntry } from "@/components/OnlineRoomEntry";
 import { getDecisionStepInfo } from "@/lib/decisionSteps";
+import { countsForHotPile, getCardBaseId, isHotPileCard } from "@/lib/hotPile";
 import { OpponentPileModal } from "@/components/OpponentPileModal";
 import {
   PlayerBoardRow,
   PILE_CATEGORIES,
-  getEffectiveFn,
 } from "@/components/facilitated/PlayerBoardRow";
 import { Button } from "@/components/ui/button";
 import { useToast } from "@/hooks/use-toast";
@@ -77,13 +77,13 @@ const CARD_BACK = {
 function getOngoingActivation(gameState: any, me: PlayerState) {
   const card = gameState.ongoingActionCard;
   if (!card) return null;
-  const oid = (card as any).baseId ?? card.id;
+  const oid = getCardBaseId(card);
   const ACTIVATABLE = ["hot_pile_bonus", "critical_mass", "nitrogen_boost", "rot_regrow"];
   if (!ACTIVATABLE.includes(oid)) return null;
   let canActivate = false;
   let hint = "";
   if (oid === "hot_pile_bonus") {
-    const n = me.compostPile.filter((c) => getEffectiveFn(c) === "Decomposer").length;
+    const n = me.compostPile.filter(countsForHotPile).length;
     canActivate = n >= 2;
     hint = canActivate ? "Draw 1 card" : `Need 2 Decomposers (have ${n})`;
   } else if (oid === "critical_mass") {
@@ -514,6 +514,15 @@ export default function FacilitatedGame() {
 
   const topDiscard = gameState.discardPile[gameState.discardPile.length - 1] ?? null;
   const ongoing = getOngoingActivation(gameState, me);
+  const canActivateHotPile = !!(
+    gameState.ongoingActionCard &&
+    isHotPileCard(gameState.ongoingActionCard) &&
+    ongoing?.canActivate &&
+    !ongoing.alreadyUsed &&
+    isMyTurn &&
+    gameState.phase === "play" &&
+    !decision
+  );
 
   const stepText = (() => {
     if (gameState.phase === "game_over") return "Game over";
@@ -705,11 +714,25 @@ export default function FacilitatedGame() {
           onClick={() => setMobileControlsOpen((open) => !open)}
           aria-controls="table-controls"
           aria-expanded={mobileControlsOpen}
-          aria-label={mobileControlsOpen ? "Hide draw, discard and turn controls" : "Show draw, discard and turn controls"}
+          aria-label={
+            mobileControlsOpen
+              ? "Hide draw, discard and turn controls"
+              : canActivateHotPile
+                ? "Open turn controls to activate Hot Pile Bonus"
+                : "Show draw, discard and turn controls"
+          }
           data-testid="button-toggle-mobile-controls"
         >
           {mobileControlsOpen ? <ChevronRight className="h-5 w-5" /> : <ChevronLeft className="h-5 w-5" />}
-          {!mobileControlsOpen && <span>{isMyTurn && !decision ? (gameState.phase === "draw" ? "Draw card" : "Turn controls") : "Controls"}</span>}
+          {!mobileControlsOpen && (
+            <span>
+              {canActivateHotPile
+                ? "Activate effect"
+                : isMyTurn && !decision
+                  ? gameState.phase === "draw" ? "Draw card" : "Turn controls"
+                  : "Controls"}
+            </span>
+          )}
         </button>
         {/* LEFT: Matrix Board + Footer Hand */}
         <div className="flex-1 min-w-0 flex flex-col overflow-hidden relative bg-black/5 shadow-inner">
@@ -892,7 +915,11 @@ export default function FacilitatedGame() {
                        variant={ongoing.alreadyUsed || !ongoing.canActivate ? "secondary" : "default"}
                        className={cn("w-full font-bold mt-1", ongoing.canActivate && !ongoing.alreadyUsed && "bg-orange-500 hover:bg-orange-600 text-white shadow-md")}
                      >
-                       {ongoing.alreadyUsed ? "Used this turn" : (ongoing.canActivate ? <><Zap className="w-3 h-3 mr-1.5"/> Activate Effect</> : ongoing.hint)}
+                        {ongoing.alreadyUsed
+                          ? "Used this turn"
+                          : ongoing.canActivate
+                            ? <><Zap className="w-3 h-3 mr-1.5"/> {isHotPileCard(gameState.ongoingActionCard) ? "Activate Hot Pile Bonus" : "Activate Effect"}</>
+                            : ongoing.hint}
                      </Button>
                    )}
                 </div>
@@ -903,14 +930,14 @@ export default function FacilitatedGame() {
               )}
             </div>
 
-            {gameState.activeModifiers.filter(m => !gameState.ongoingActionCard || m.cardId !== ((gameState.ongoingActionCard as any).baseId ?? gameState.ongoingActionCard.id)).length > 0 && (
+            {gameState.activeModifiers.filter(m => !gameState.ongoingActionCard || m.cardId !== getCardBaseId(gameState.ongoingActionCard)).length > 0 && (
               <div>
                 <div className="flex items-center gap-2 text-[11px] font-bold tracking-widest uppercase text-primary border-b border-border/50 pb-2 mb-3">
                    <Sparkles className="w-3.5 h-3.5" /> Active Modifiers
                 </div>
                 <div className="flex flex-col gap-2">
                   {gameState.activeModifiers
-                    .filter((m) => !gameState.ongoingActionCard || m.cardId !== ((gameState.ongoingActionCard as any).baseId ?? gameState.ongoingActionCard.id))
+                    .filter((m) => !gameState.ongoingActionCard || m.cardId !== getCardBaseId(gameState.ongoingActionCard))
                     .map((mod, i) => (
                       <div key={i} className="flex items-start gap-2 bg-primary/5 border border-primary/20 rounded-xl p-3 shadow-sm">
                         <Sparkles className="w-4 h-4 text-primary shrink-0 mt-0.5" />
@@ -929,6 +956,17 @@ export default function FacilitatedGame() {
           {/* Turn Actions */}
           <div className="shrink-0 h-[150px] xl:h-[190px] p-3 xl:p-6 border-t border-border/40 bg-muted/10 flex flex-col justify-center gap-4 relative before:absolute before:inset-0 before:bg-gradient-to-t before:from-background/30 before:to-transparent before:pointer-events-none">
             <div className="relative z-10 flex flex-col gap-4 h-full justify-center">
+              {canActivateHotPile && (
+                <Button
+                  size="sm"
+                  onClick={handleActivateOngoing}
+                  disabled={actionMutation.isPending}
+                  className="hidden md:flex h-10 w-full animate-pulse items-center justify-center gap-2 border border-orange-400 bg-orange-500 font-bold text-white shadow-lg hover:bg-orange-600"
+                >
+                  <Zap className="h-4 w-4" />
+                  Activate Hot Pile Bonus
+                </Button>
+              )}
               {gameState.phase !== "game_over" && isMyTurn ? (
                  gameState.phase === "draw" ? (
                    <>

@@ -24,7 +24,8 @@
     "test:event-stream-auth": "tsx ./src/tests/event-stream-auth.test.ts",
     "test:health-readiness": "tsx ./src/tests/health-readiness.test.ts",
     "test:health-readiness-db": "RUN_DEV_DB_HEALTH_INTEGRATION=1 tsx ./src/tests/health-readiness-db-integration.test.ts",
-    "test:startup-readiness": "tsx ./src/tests/startup-readiness.test.ts"
+    "test:startup-readiness": "tsx ./src/tests/startup-readiness.test.ts",
+    "test:hot-pile-legion": "tsx ./src/tests/hot-pile-legion.test.ts"
   },
   "dependencies": {
     "@octokit/rest": "^22.0.1",
