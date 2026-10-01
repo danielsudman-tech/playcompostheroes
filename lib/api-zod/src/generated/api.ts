@@ -8,11 +8,71 @@
 import * as zod from "zod";
 
 /**
- * Returns server health status
- * @summary Health check
+ * Returns whether the API can acquire a database connection and execute a bounded SELECT 1 probe.
+ * @summary Database readiness check
  */
 export const HealthCheckResponse = zod.object({
-  status: zod.string(),
+  status: zod.enum(["ok", "unavailable"]),
+});
+
+/**
+ * Returns whether the API process is responding without probing dependencies.
+ * @summary Process liveness check
+ */
+export const LivenessCheckResponse = zod.object({
+  status: zod.literal("ok"),
+});
+
+/**
+ * Requires the x-admin-key header. Pool diagnostics are omitted from the public health endpoint. sinceMs filters acquisition wait metrics to the given recent lookback duration.
+ * @summary Authorized database readiness and pool diagnostics
+ */
+export const adminHealthCheckQuerySinceMsMin = 0;
+
+export const AdminHealthCheckQueryParams = zod.object({
+  sinceMs: zod.coerce
+    .number()
+    .min(adminHealthCheckQuerySinceMsMin)
+    .optional()
+    .describe(
+      "Recent lookback duration in milliseconds for acquisition wait metrics (not an epoch timestamp).",
+    ),
+});
+
+export const AdminHealthCheckHeader = zod.object({
+  "x-admin-key": zod.string(),
+});
+
+export const adminHealthCheckResponsePoolTotalMin = 0;
+
+export const adminHealthCheckResponsePoolIdleMin = 0;
+
+export const adminHealthCheckResponsePoolWaitingMin = 0;
+
+export const adminHealthCheckResponsePoolAcquisitionWaitCountMin = 0;
+
+export const adminHealthCheckResponsePoolAcquisitionWaitMaxMsMin = 0;
+
+export const adminHealthCheckResponsePoolAcquisitionWaitP95MsMin = 0;
+
+export const AdminHealthCheckResponse = zod.object({
+  status: zod.enum(["ok", "unavailable"]),
+  pool: zod.object({
+    total: zod.number().min(adminHealthCheckResponsePoolTotalMin),
+    idle: zod.number().min(adminHealthCheckResponsePoolIdleMin),
+    waiting: zod.number().min(adminHealthCheckResponsePoolWaitingMin),
+    acquisitionWait: zod.object({
+      count: zod
+        .number()
+        .min(adminHealthCheckResponsePoolAcquisitionWaitCountMin),
+      maxMs: zod
+        .number()
+        .min(adminHealthCheckResponsePoolAcquisitionWaitMaxMsMin),
+      p95Ms: zod
+        .number()
+        .min(adminHealthCheckResponsePoolAcquisitionWaitP95MsMin),
+    }),
+  }),
 });
 
 /**

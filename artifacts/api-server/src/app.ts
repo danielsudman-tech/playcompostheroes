@@ -2,11 +2,10 @@ import express, { type Express } from "express";
 import cors from "cors";
 import "./lib/poolMonitoring.js";
 import router from "./routes";
+import healthRouter from "./routes/health";
 import { initializeCardSettingsStore } from "./lib/cardSettingsStore.js";
-import {
-  classifyDatabaseSafeguardError,
-  DatabaseSafeguardError,
-} from "./lib/databaseSafeguards.js";
+import { databaseSafeguardErrorHandler } from "./lib/databaseSafeguardErrorHandler.js";
+import { startupReadiness } from "./lib/startupReadiness.js";
 import { isServableCardAssetKey, streamCardAsset } from "./lib/cardAssetStorage.js";
 import { join } from "path";
 import { WORKSPACE_ROOT } from "./lib/workspaceRoot.js";
@@ -19,6 +18,14 @@ app.set("trust proxy", 1);
 app.use(cors());
 app.use(express.json({ limit: "20mb" }));
 app.use(express.urlencoded({ extended: true, limit: "20mb" }));
+
+// Readiness and liveness must remain reachable while database-backed route
+// initialization is blocked or the pool is saturated.
+app.use("/api", healthRouter);
+
+// Non-health API routes fail quickly until startup migrations and card settings
+// have completed; they never wait behind startup database work.
+app.use("/api", startupReadiness.middleware);
 
 // Initialize/migrate once before any game or admin route reads the card settings.
 let cardSettingsReady: Promise<void> | null = null;
@@ -63,18 +70,6 @@ app.use("/api", router);
 // Only known database contention/acquisition failures are converted to a
 // sanitized retryable response. Unknown errors retain Express's normal error
 // path; SQL text and driver details are never returned to API clients.
-app.use((error: unknown, _req: express.Request, res: express.Response, next: express.NextFunction) => {
-  if (!classifyDatabaseSafeguardError(error)) {
-    next(error);
-    return;
-  }
-  if (res.headersSent) {
-    res.destroy(error instanceof Error ? error : undefined);
-    return;
-  }
-  res.status(503).json(error instanceof DatabaseSafeguardError
-    ? error.toSafeResponse()
-    : { error: "Database temporarily unavailable" });
-});
+app.use(databaseSafeguardErrorHandler);
 
 export default app;

@@ -64,8 +64,8 @@ export async function runStartupMigrations(): Promise<void> {
       `ALTER TABLE compost_users ADD COLUMN IF NOT EXISTS role_approved_at TIMESTAMPTZ`
     );
     console.log("[analytics] startup migrations done");
-  } catch (err) {
-    console.error("[analytics] startup migrations failed", err);
-    throw err;
+  } catch (error) {
+    console.error("[analytics] startup migrations failed");
+    throw error;
   }
 }

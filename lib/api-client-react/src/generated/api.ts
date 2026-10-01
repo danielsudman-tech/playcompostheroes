@@ -17,6 +17,8 @@ import type {
 } from "@tanstack/react-query";
 
 import type {
+  AdminHealthCheckParams,
+  AdminHealthStatus,
   AskQuestion200,
   CreateGameRequest,
   CreatedGameResponse,
@@ -51,6 +53,7 @@ import type {
   HostBroadcast,
   HostCredential,
   HostTokenRecovery,
+  LivenessStatus,
   ParticipantQuestion,
   PauseGameRequest,
   PublicEvent,
@@ -72,8 +75,8 @@ type Awaited<O> = O extends AwaitedInput<infer T> ? T : never;
 type SecondParameter<T extends (...args: never) => unknown> = Parameters<T>[1];
 
 /**
- * Returns server health status
- * @summary Health check
+ * Returns whether the API can acquire a database connection and execute a bounded SELECT 1 probe.
+ * @summary Database readiness check
  */
 export const getHealthCheckUrl = () => {
   return `/api/healthz`;
@@ -94,7 +97,7 @@ export const getHealthCheckQueryKey = () => {
 
 export const getHealthCheckQueryOptions = <
   TData = Awaited<ReturnType<typeof healthCheck>>,
-  TError = ErrorType<unknown>,
+  TError = ErrorType<HealthStatus>,
 >(options?: {
   query?: UseQueryOptions<
     Awaited<ReturnType<typeof healthCheck>>,
@@ -121,15 +124,15 @@ export const getHealthCheckQueryOptions = <
 export type HealthCheckQueryResult = NonNullable<
   Awaited<ReturnType<typeof healthCheck>>
 >;
-export type HealthCheckQueryError = ErrorType<unknown>;
+export type HealthCheckQueryError = ErrorType<HealthStatus>;
 
 /**
- * @summary Health check
+ * @summary Database readiness check
  */
 
 export function useHealthCheck<
   TData = Awaited<ReturnType<typeof healthCheck>>,
-  TError = ErrorType<unknown>,
+  TError = ErrorType<HealthStatus>,
 >(options?: {
   query?: UseQueryOptions<
     Awaited<ReturnType<typeof healthCheck>>,
@@ -139,6 +142,182 @@ export function useHealthCheck<
   request?: SecondParameter<typeof customFetch>;
 }): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
   const queryOptions = getHealthCheckQueryOptions(options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+/**
+ * Returns whether the API process is responding without probing dependencies.
+ * @summary Process liveness check
+ */
+export const getLivenessCheckUrl = () => {
+  return `/api/livez`;
+};
+
+export const livenessCheck = async (
+  options?: RequestInit,
+): Promise<LivenessStatus> => {
+  return customFetch<LivenessStatus>(getLivenessCheckUrl(), {
+    ...options,
+    method: "GET",
+  });
+};
+
+export const getLivenessCheckQueryKey = () => {
+  return [`/api/livez`] as const;
+};
+
+export const getLivenessCheckQueryOptions = <
+  TData = Awaited<ReturnType<typeof livenessCheck>>,
+  TError = ErrorType<unknown>,
+>(options?: {
+  query?: UseQueryOptions<
+    Awaited<ReturnType<typeof livenessCheck>>,
+    TError,
+    TData
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey = queryOptions?.queryKey ?? getLivenessCheckQueryKey();
+
+  const queryFn: QueryFunction<Awaited<ReturnType<typeof livenessCheck>>> = ({
+    signal,
+  }) => livenessCheck({ signal, ...requestOptions });
+
+  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof livenessCheck>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type LivenessCheckQueryResult = NonNullable<
+  Awaited<ReturnType<typeof livenessCheck>>
+>;
+export type LivenessCheckQueryError = ErrorType<unknown>;
+
+/**
+ * @summary Process liveness check
+ */
+
+export function useLivenessCheck<
+  TData = Awaited<ReturnType<typeof livenessCheck>>,
+  TError = ErrorType<unknown>,
+>(options?: {
+  query?: UseQueryOptions<
+    Awaited<ReturnType<typeof livenessCheck>>,
+    TError,
+    TData
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getLivenessCheckQueryOptions(options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+/**
+ * Requires the x-admin-key header. Pool diagnostics are omitted from the public health endpoint. sinceMs filters acquisition wait metrics to the given recent lookback duration.
+ * @summary Authorized database readiness and pool diagnostics
+ */
+export const getAdminHealthCheckUrl = (params?: AdminHealthCheckParams) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? "null" : value.toString());
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0
+    ? `/api/admin/healthz?${stringifiedParams}`
+    : `/api/admin/healthz`;
+};
+
+export const adminHealthCheck = async (
+  params?: AdminHealthCheckParams,
+  options?: RequestInit,
+): Promise<AdminHealthStatus> => {
+  return customFetch<AdminHealthStatus>(getAdminHealthCheckUrl(params), {
+    ...options,
+    method: "GET",
+  });
+};
+
+export const getAdminHealthCheckQueryKey = (
+  params?: AdminHealthCheckParams,
+) => {
+  return [`/api/admin/healthz`, ...(params ? [params] : [])] as const;
+};
+
+export const getAdminHealthCheckQueryOptions = <
+  TData = Awaited<ReturnType<typeof adminHealthCheck>>,
+  TError = ErrorType<ErrorResponse | AdminHealthStatus>,
+>(
+  params?: AdminHealthCheckParams,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof adminHealthCheck>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey =
+    queryOptions?.queryKey ?? getAdminHealthCheckQueryKey(params);
+
+  const queryFn: QueryFunction<
+    Awaited<ReturnType<typeof adminHealthCheck>>
+  > = ({ signal }) => adminHealthCheck(params, { signal, ...requestOptions });
+
+  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof adminHealthCheck>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type AdminHealthCheckQueryResult = NonNullable<
+  Awaited<ReturnType<typeof adminHealthCheck>>
+>;
+export type AdminHealthCheckQueryError = ErrorType<
+  ErrorResponse | AdminHealthStatus
+>;
+
+/**
+ * @summary Authorized database readiness and pool diagnostics
+ */
+
+export function useAdminHealthCheck<
+  TData = Awaited<ReturnType<typeof adminHealthCheck>>,
+  TError = ErrorType<ErrorResponse | AdminHealthStatus>,
+>(
+  params?: AdminHealthCheckParams,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof adminHealthCheck>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getAdminHealthCheckQueryOptions(params, options);
 
   const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
     queryKey: QueryKey;

@@ -6,7 +6,11 @@
  * OpenAPI spec version: 0.1.0
  */
 
+export * from "./acquisitionWaitDiagnostics";
 export * from "./activeModifier";
+export * from "./adminHealthCheckParams";
+export * from "./adminHealthStatus";
+export * from "./adminHealthStatusStatus";
 export * from "./askQuestion200";
 export * from "./card";
 export * from "./cardEffectType";
@@ -60,9 +64,11 @@ export * from "./gameStateMode";
 export * from "./gameStatePhase";
 export * from "./getGameParams";
 export * from "./healthStatus";
+export * from "./healthStatusStatus";
 export * from "./hostBroadcast";
 export * from "./hostCredential";
 export * from "./hostTokenRecovery";
+export * from "./livenessStatus";
 export * from "./participantQuestion";
 export * from "./pauseGameRequest";
 export * from "./pendingDecision";
@@ -70,6 +76,7 @@ export * from "./pendingDecisionMeta";
 export * from "./pendingDecisionOptionsItem";
 export * from "./playerState";
 export * from "./playerStateBotSkillLevel";
+export * from "./poolDiagnostics";
 export * from "./publicEvent";
 export * from "./publicEventAssignmentMode";
 export * from "./publicEventStatus";

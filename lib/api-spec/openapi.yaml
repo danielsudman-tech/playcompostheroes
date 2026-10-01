@@ -16,15 +16,82 @@ paths:
     get:
       operationId: healthCheck
       tags: [health]
-      summary: Health check
-      description: Returns server health status
+      summary: Database readiness check
+      description: Returns whether the API can acquire a database connection and execute a bounded SELECT 1 probe.
       responses:
         "200":
-          description: Healthy
+          description: Database is ready
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/HealthStatus"
+        "503":
+          description: Database is unavailable or did not respond before the readiness deadline
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HealthStatus"
+
+  /livez:
+    get:
+      operationId: livenessCheck
+      tags: [health]
+      summary: Process liveness check
+      description: Returns whether the API process is responding without probing dependencies.
+      responses:
+        "200":
+          description: Process is alive
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/LivenessStatus"
+
+  /admin/healthz:
+    get:
+      operationId: adminHealthCheck
+      tags: [health]
+      summary: Authorized database readiness and pool diagnostics
+      description: Requires the x-admin-key header. Pool diagnostics are omitted from the public health endpoint. sinceMs filters acquisition wait metrics to the given recent lookback duration.
+      parameters:
+        - name: x-admin-key
+          in: header
+          required: true
+          schema:
+            type: string
+        - name: sinceMs
+          in: query
+          required: false
+          description: Recent lookback duration in milliseconds for acquisition wait metrics (not an epoch timestamp).
+          schema:
+            type: number
+            minimum: 0
+      responses:
+        "200":
+          description: Database is ready
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AdminHealthStatus"
+        "400":
+          description: Invalid sinceMs lookback duration
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "401":
+          description: Admin access required
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "503":
+          description: Database unavailable or admin access is not configured
+          content:
+            application/json:
+              schema:
+                oneOf:
+                  - $ref: "#/components/schemas/AdminHealthStatus"
+                  - $ref: "#/components/schemas/ErrorResponse"
 
   /admin/users/{userId}/facilitator:
     patch:
@@ -1193,8 +1260,58 @@ components:
       properties:
         status:
           type: string
+          enum: [ok, unavailable]
       required:
         - status
+
+    AdminHealthStatus:
+      type: object
+      properties:
+        status:
+          type: string
+          enum: [ok, unavailable]
+        pool:
+          $ref: "#/components/schemas/PoolDiagnostics"
+      required: [status, pool]
+
+    LivenessStatus:
+      type: object
+      properties:
+        status:
+          type: string
+          const: ok
+      required:
+        - status
+
+    PoolDiagnostics:
+      type: object
+      properties:
+        total:
+          type: integer
+          minimum: 0
+        idle:
+          type: integer
+          minimum: 0
+        waiting:
+          type: integer
+          minimum: 0
+        acquisitionWait:
+          $ref: "#/components/schemas/AcquisitionWaitDiagnostics"
+      required: [total, idle, waiting, acquisitionWait]
+
+    AcquisitionWaitDiagnostics:
+      type: object
+      properties:
+        count:
+          type: integer
+          minimum: 0
+        maxMs:
+          type: number
+          minimum: 0
+        p95Ms:
+          type: number
+          minimum: 0
+      required: [count, maxMs, p95Ms]
 
     ErrorResponse:
       type: object

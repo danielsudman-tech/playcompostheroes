@@ -552,9 +552,54 @@ export interface FacilitatorRole {
   role: string | null;
 }
 
+export type HealthStatusStatus =
+  (typeof HealthStatusStatus)[keyof typeof HealthStatusStatus];
+
+export const HealthStatusStatus = {
+  ok: "ok",
+  unavailable: "unavailable",
+} as const;
+
 export interface HealthStatus {
-  status: string;
+  status: HealthStatusStatus;
 }
+
+export type AdminHealthStatusStatus =
+  (typeof AdminHealthStatusStatus)[keyof typeof AdminHealthStatusStatus];
+
+export const AdminHealthStatusStatus = {
+  ok: "ok",
+  unavailable: "unavailable",
+} as const;
+
+export interface AcquisitionWaitDiagnostics {
+  /** @minimum 0 */
+  count: number;
+  /** @minimum 0 */
+  maxMs: number;
+  /** @minimum 0 */
+  p95Ms: number;
+}
+
+export interface PoolDiagnostics {
+  /** @minimum 0 */
+  total: number;
+  /** @minimum 0 */
+  idle: number;
+  /** @minimum 0 */
+  waiting: number;
+  acquisitionWait: AcquisitionWaitDiagnostics;
+}
+
+export interface AdminHealthStatus {
+  status: AdminHealthStatusStatus;
+  pool: PoolDiagnostics;
+}
+
+export const LivenessStatusValue = {
+  status: "ok",
+} as const;
+export type LivenessStatus = typeof LivenessStatusValue;
 
 export interface ErrorResponse {
   error: string;
@@ -633,6 +678,14 @@ export interface GameAction {
   targetCardId?: string | null;
   decisionData?: GameActionDecisionData;
 }
+
+export type AdminHealthCheckParams = {
+  /**
+   * Recent lookback duration in milliseconds for acquisition wait metrics (not an epoch timestamp).
+   * @minimum 0
+   */
+  sinceMs?: number;
+};
 
 export type GetGameParams = {
   /**
