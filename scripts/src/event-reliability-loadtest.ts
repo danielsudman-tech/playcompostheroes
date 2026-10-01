@@ -3,6 +3,23 @@ import { createRequire } from "node:module";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
+import { runCompleteScenario } from "./event-reliability-final-scenario.js";
+import {
+  observeDashboardChange,
+  openHostEventFeed,
+  percentile,
+  PoolDiagnosticsSampler,
+  readPoolDiagnostics,
+  resolveFixtureManifestPath,
+  settlePoolAfterBurst,
+  type DashboardObservation,
+  type HostEventFeed,
+  type OperationResult,
+  type PoolCheckpoint,
+  type PoolExhaustionIncident,
+  type PoolSample,
+  type RequestOptions,
+} from "./event-reliability-support.js";
 
 type QueryResult<Row> = { rows: Row[]; rowCount?: number | null };
 type MonitorPool = {
@@ -53,12 +70,6 @@ type FixtureManifest = {
   events: FixtureEvent[];
   createdAt: string;
 };
-type OperationResult = {
-  operation: string;
-  durationMs: number;
-  status: number | null;
-  outcome: "ok" | "http_error" | "timeout" | "error";
-};
 type DbSample = {
   sampledAt: string;
   connections: number;
@@ -95,6 +106,10 @@ function parseArgs(argv: string[]): Map<string, string | boolean> {
       options.set(key, true);
       continue;
     }
+    if (key === "staging-vm") {
+      options.set(key, true);
+      continue;
+    }
     const value = argv[index + 1];
     if (!value || value.startsWith("--")) throw new Error(`Missing value for --${key}`);
     options.set(key, value);
@@ -109,7 +124,7 @@ function requiredOption(options: Map<string, string | boolean>, key: string): st
   return value;
 }
 
-function apiBaseFromEnvironment(): URL {
+function apiBaseFromEnvironment(options: Map<string, string | boolean>): URL {
   const raw = process.env.API_BASE_URL ?? DEFAULT_API_BASE;
   const url = new URL(raw);
   if (url.username || url.password || url.search || url.hash) {
@@ -118,6 +133,9 @@ function apiBaseFromEnvironment(): URL {
   const host = url.hostname.toLowerCase();
   const isLoopback = host === "localhost" || host === "127.0.0.1" || host === "::1";
   const isReplitDev = host.endsWith(".replit.dev");
+  if (options.get("staging-vm") === true && !isLoopback) {
+    throw new Error("--staging-vm requires an explicit loopback API_BASE_URL");
+  }
   if (!isLoopback && !isReplitDev) {
     throw new Error("API_BASE_URL must be localhost or an allowlisted *.replit.dev development host (published hosts are refused)");
   }
@@ -139,8 +157,19 @@ function validateDevelopmentEnvironment(apiBase: URL, options: Map<string, strin
   if (process.env.NODE_ENV !== "development") {
     throw new Error("NODE_ENV must be exactly 'development'");
   }
-  if (process.env.REPLIT_DEPLOYMENT) {
-    throw new Error("REPLIT_DEPLOYMENT is set; load tests are disabled in deployments");
+  const stagingVmOptIn = options.get("staging-vm") === true;
+  if (process.env.REPLIT_DEPLOYMENT && !stagingVmOptIn) {
+    throw new Error("REPLIT_DEPLOYMENT is set; only an explicitly guarded staging VM may run this harness");
+  }
+  if (stagingVmOptIn) {
+    if (!process.env.REPLIT_DEPLOYMENT || process.env.APP_ENV !== "staging" ||
+        process.env.STAGING_VM_LOADTEST !== "1") {
+      throw new Error("--staging-vm requires a staging deployment with APP_ENV=staging and STAGING_VM_LOADTEST=1");
+    }
+    if (!["localhost", "127.0.0.1", "::1"].includes(apiBase.hostname.toLowerCase()) ||
+        (apiBase.port && apiBase.port !== "80")) {
+      throw new Error("Staging VM requests must use the local shared proxy; published targets are refused");
+    }
   }
   if (/^(prod|production)$/i.test(process.env.APP_ENV ?? "")) {
     throw new Error("APP_ENV indicates production");
@@ -171,12 +200,6 @@ function isTimeout(error: unknown): boolean {
   if (error instanceof DeadlineFailure) return true;
   if (error instanceof Error && (error.name === "TimeoutError" || error.name === "AbortError")) return true;
   return false;
-}
-
-function percentile(values: number[], percentileRank: number): number | null {
-  if (!values.length) return null;
-  const sorted = [...values].sort((a, b) => a - b);
-  return sorted[Math.max(0, Math.ceil(percentileRank * sorted.length) - 1)];
 }
 
 function createMonitor(): {
@@ -241,12 +264,13 @@ async function runMonitor(
   monitor: ReturnType<typeof createMonitor>,
   signal: AbortSignal,
   samples: DbSample[],
+  sampleErrors: string[],
 ): Promise<void> {
   while (!signal.aborted) {
     try {
       samples.push(await monitor.sample());
-    } catch {
-      // Monitor errors are represented by the last successful sample count in the report.
+    } catch (error) {
+      sampleErrors.push(error instanceof Error ? error.name : "Unknown monitor error");
     }
     if (signal.aborted) break;
     await new Promise<void>((resolveDelay) => {
@@ -267,18 +291,32 @@ class LoadTest {
   readonly timeoutMs: number;
   readonly results: OperationResult[] = [];
   readonly dbSamples: DbSample[] = [];
+  readonly monitorErrors: string[] = [];
   readonly failed: string[] = [];
+  readonly dashboardObservations: DashboardObservation[] = [];
+  readonly poolCheckpoints: PoolCheckpoint[] = [];
+  readonly poolSamples: PoolSample[] = [];
+  readonly poolExhaustionIncidents: PoolExhaustionIncident[] = [];
+  readonly poolSamplingErrors: Array<{ phase: string; sampledAt: string; error: string }> = [];
+  readonly assertions: string[] = [];
   readonly manifest: FixtureManifest;
   readonly reportPath: string;
   readonly manifestPath: string;
   readonly adminPassword: string;
   readonly monitor: ReturnType<typeof createMonitor>;
+  readonly poolSampler: PoolDiagnosticsSampler;
+  readonly runStartedAtMs: number;
+  readonly expectedGuestSeats: number;
+  readonly runId: string;
   userToken = "";
   eventId = "";
   eventCode = "";
   hostTokens: Record<string, string> = {};
   seats: Seat[] = [];
   tables: Table[] = [];
+  hostFeed?: HostEventFeed;
+  finalScenario?: JsonRecord;
+  failureMessage: string | null = null;
 
   constructor(
     apiBase: URL,
@@ -287,11 +325,15 @@ class LoadTest {
     timeoutMs: number,
   ) {
     const runId = randomUUID();
+    this.runId = runId;
     this.apiBase = apiBase;
     this.deadline = makeDeadline(deadlineSeconds);
     this.timeoutMs = timeoutMs;
     this.adminPassword = process.env.APP_PASSWORD!;
+    this.runStartedAtMs = Date.now();
+    this.expectedGuestSeats = scenario === "A" ? 16 : 32;
     this.monitor = createMonitor();
+    this.poolSampler = new PoolDiagnosticsSampler(this);
     const eventName = `${RUN_PREFIX} ${runId} scenario-${scenario}`;
     this.manifest = {
       format: 1,
@@ -312,13 +354,7 @@ class LoadTest {
   async request<T>(
     operation: string,
     path: string,
-    options: {
-      method?: string;
-      body?: unknown;
-      admin?: boolean;
-      bearer?: string;
-      stream?: boolean;
-    } = {},
+    options: RequestOptions = {},
   ): Promise<{ data: T; status: number; response: Response }> {
     if (this.deadline.aborted) throw new DeadlineFailure();
     const startedAt = performance.now();
@@ -346,7 +382,7 @@ class LoadTest {
           throw new Error("SSE stream did not deliver its initial event");
         }
         const durationMs = performance.now() - startedAt;
-        this.results.push({ operation, durationMs, status, outcome: "ok" });
+        this.results.push({ operation, phase: options.phase ?? "setup", durationMs, status, outcome: "ok" });
         return { data: undefined as T, status, response };
       }
       const text = await response.text();
@@ -360,11 +396,17 @@ class LoadTest {
       }
       if (!response.ok) throw new HttpFailure(response.status, operation);
       const durationMs = performance.now() - startedAt;
-      this.results.push({ operation, durationMs, status, outcome: "ok" });
+      this.results.push({ operation, phase: options.phase ?? "setup", durationMs, status, outcome: "ok" });
       return { data: data as T, status, response };
     } catch (error) {
       const outcome = isTimeout(error) ? "timeout" : error instanceof HttpFailure ? "http_error" : "error";
-      this.results.push({ operation, durationMs: performance.now() - startedAt, status, outcome });
+      this.results.push({
+        operation,
+        phase: options.phase ?? "setup",
+        durationMs: performance.now() - startedAt,
+        status,
+        outcome,
+      });
       this.failed.push(operation);
       throw error;
     }
@@ -438,6 +480,13 @@ class LoadTest {
     eventFixture.gameIds = this.tables.map((table) => table.gameId);
     await this.saveManifest();
 
+    const feed = await openHostEventFeed(this, "host-sse-open-before-joins");
+    this.hostFeed = feed;
+    await readPoolDiagnostics(this, "pool-before-join-burst", this.runStartedAtMs);
+    const joinSinceMs = Date.now();
+    this.poolSampler.setPhase("join-burst", joinSinceMs, "burst");
+    const joinSequence = feed.lastSequence;
+    const joinStartedAt = performance.now();
     const joins = Array.from({ length: guestCount }, (_, index) => async () => {
       const joined = await this.request<{
         token: string;
@@ -448,6 +497,7 @@ class LoadTest {
       }>(`join-${index + 1}`, `events/${encodeURIComponent(this.eventCode)}/join`, {
         method: "POST",
         body: { name: `DEV guest ${String(index + 1).padStart(2, "0")}` },
+        phase: "burst",
       });
       const seat = joined.data;
       this.seats.push({
@@ -460,24 +510,20 @@ class LoadTest {
       return seat;
     });
     await this.allSettled("join burst", joins);
-  }
-
-  async hostEventControl(action: string, operation = `host-${action}`): Promise<void> {
-    const result = await this.request(operation, `facilitator/events/${this.eventId}/control`, {
-      method: "POST",
-      body: {
-        userToken: this.userToken,
-        action,
-        ...(action === "message" ? { text: "Development reliability probe" } : {}),
-      },
-    });
-    const payload = result.data as { results?: Array<{ success: boolean }> };
-    if (payload.results?.some((item) => !item.success)) {
-      throw new Error(`${operation} returned one or more unsuccessful table results`);
-    }
+    await observeDashboardChange(
+      this,
+      feed,
+      "join-burst",
+      joinStartedAt,
+      joinSequence,
+      (detail) => detail.tables.reduce((sum, table) => sum + table.players.length, 0) === guestCount,
+    );
+    await settlePoolAfterBurst(this, "join-burst", joinSinceMs);
   }
 
   async reorganizeWaitingGuests(): Promise<void> {
+    const restructuringSinceMs = Date.now();
+    this.poolSampler.setPhase("waiting-room-reorganization", restructuringSinceMs, "burst");
     const guestCounts = this.tables.map((table) => ({
       table,
       seats: this.seats.filter((seat) => seat.gameId === table.gameId),
@@ -494,6 +540,7 @@ class LoadTest {
         userToken: this.userToken,
         playerIds: reorderSeats,
       },
+      phase: "burst",
     });
 
     const kickCandidate = fullestBeforeChanges.seats[0];
@@ -504,6 +551,7 @@ class LoadTest {
         token: this.hostTokens[kickCandidate.gameId],
         userToken: this.userToken,
       },
+      phase: "burst",
     });
     this.seats = this.seats.filter((seat) => seat.playerId !== kickCandidate.playerId);
 
@@ -526,115 +574,83 @@ class LoadTest {
         playerId: movingSeat.playerId,
         targetGameId: emptiest.table.gameId,
       },
+      phase: "burst",
     });
     movingSeat.gameId = emptiest.table.gameId;
     movingSeat.tableNumber = emptiest.table.tableNumber;
+
+    const feed = this.hostFeed;
+    if (!feed) throw new Error("Host SSE must be active before guest restructuring");
+    const replacementSequence = feed.lastSequence;
+    const replacementStartedAt = performance.now();
+    const replacement = await this.request<{
+      token: string;
+      playerId: string;
+      playerName: string;
+      gameId: string;
+      tableNumber: number;
+    }>(
+      "join-replacement-after-kick",
+      `events/${encodeURIComponent(this.eventCode)}/join`,
+      { method: "POST", body: { name: "DEV replacement guest" }, phase: "burst" },
+    );
+    this.seats.push(replacement.data);
+    await observeDashboardChange(
+      this,
+      feed,
+      "replacement-join-after-kick",
+      replacementStartedAt,
+      replacementSequence,
+      (detail) => detail.tables.reduce((sum, table) => sum + table.players.length, 0) === this.expectedGuestSeats,
+    );
+    if (this.seats.length !== this.expectedGuestSeats) {
+      throw new Error(`Fixture must retain all ${this.expectedGuestSeats} guests after replacement join`);
+    }
+    await settlePoolAfterBurst(this, "kick-transfer-replacement", restructuringSinceMs);
   }
 
   async readyAndPresenceBurst(): Promise<void> {
+    const readySinceMs = Date.now();
+    this.poolSampler.setPhase("ready-presence-burst", readySinceMs, "burst");
+    const feed = this.hostFeed;
+    if (!feed) throw new Error("Host SSE must be active before readiness burst");
+    const readySequence = feed.lastSequence;
+    const readyStartedAt = performance.now();
     const requests = this.seats.flatMap((seat, index) => [
       () => this.request(`ready-${index + 1}`, `events/${encodeURIComponent(this.eventCode)}/ready`, {
         method: "POST",
         body: { token: seat.token, ready: true },
+        phase: "burst",
       }),
       () => this.request(`presence-${index + 1}`, `events/${encodeURIComponent(this.eventCode)}/presence`, {
         method: "POST",
         body: { token: seat.token },
+        phase: "burst",
       }),
     ]);
     await this.allSettled("ready + presence burst", requests);
-  }
-
-  async readHostEvent(operation = "host-detail"): Promise<{
-    tables: Array<{ gameId: string; tableNumber: number; phase: string }>;
-  }> {
-    const detail = await this.request<{
-      tables: Array<{ gameId: string; tableNumber: number; phase: string }>;
-    }>(operation, `facilitator/events/${this.eventId}`, { bearer: this.userToken });
-    return detail.data;
-  }
-
-  async openHostStream(): Promise<void> {
-    const issued = await this.request<{ ticket: string }>(
-      "host-stream-ticket",
-      `facilitator/events/${this.eventId}/stream-ticket`,
-      {
-        method: "POST",
-        body: { userToken: this.userToken },
-      },
+    await observeDashboardChange(
+      this,
+      feed,
+      "ready-burst",
+      readyStartedAt,
+      readySequence,
+      (detail) => detail.tables.length === this.tables.length &&
+        detail.tables.every((table) => table.players.length === table.capacity &&
+          table.players.every((player) => player.ready && player.connected)),
     );
-    await this.request(
-      "host-sse-open",
-      `facilitator/events/${this.eventId}/stream?ticket=${encodeURIComponent(issued.data.ticket)}`,
-      { stream: true },
-    );
-  }
-
-  async startBurstAndGameActions(): Promise<void> {
-    await this.openHostStream();
-    const concurrent = await Promise.allSettled([
-      this.hostEventControl("start", "start-all"),
-      this.readHostEvent("host-detail-during-start"),
-      ...this.seats.flatMap((seat, index) =>
-        [1, 2].map((attempt) =>
-          this.request(`presence-reconnect-${index + 1}-${attempt}`, `events/${encodeURIComponent(this.eventCode)}/presence`, {
-            method: "POST",
-            body: { token: seat.token },
-          }),
-        ),
-      ),
-    ]);
-    if (concurrent.some((item) => item.status === "rejected")) {
-      throw new Error("Start-all / host-detail / presence burst had a failure or stall");
-    }
-
-    const actionRuns = this.tables.map(async (table, tableIndex) => {
-      const observer = this.seats.find((seat) => seat.gameId === table.gameId);
-      if (!observer) throw new Error(`No synthetic guest remains at table ${table.tableNumber}`);
-      const stateResponse = await this.request<{
-        currentPlayerIndex: number;
-        players: Array<{ id: string }>;
-      }>(`player-action-state-${tableIndex + 1}`, `games/${table.gameId}?token=${encodeURIComponent(observer.token)}`);
-      const player = stateResponse.data.players[stateResponse.data.currentPlayerIndex];
-      if (!player) throw new Error(`Table ${table.tableNumber} did not return a current player`);
-      const actor = this.seats.find((seat) => seat.gameId === table.gameId && seat.playerId === player.id);
-      if (!actor) throw new Error(`Table ${table.tableNumber} current player is not a synthetic guest`);
-      await this.request(`player-action-draw-${tableIndex + 1}`, `games/${table.gameId}/action`, {
-        method: "POST",
-        body: { token: actor.token, playerId: actor.playerId, type: "draw_card" },
-      });
-      await this.request(`player-action-end-turn-${tableIndex + 1}`, `games/${table.gameId}/action`, {
-        method: "POST",
-        body: { token: actor.token, playerId: actor.playerId, type: "end_turn" },
-      });
-    });
-    const actionResults = await Promise.allSettled(actionRuns);
-    if (actionResults.some((item) => item.status === "rejected")) {
-      throw new Error("Concurrent player-action burst had a failure or stall");
-    }
-  }
-
-  async exerciseControlsAndEnd(): Promise<void> {
-    await this.hostEventControl("pause_all");
-    await this.hostEventControl("resume_all");
-    await this.hostEventControl("message");
-    await this.readHostEvent("host-detail-after-controls");
-    await this.openHostStream();
-    await this.hostEventControl("end");
+    await settlePoolAfterBurst(this, "ready-presence-burst", readySinceMs);
   }
 
   buildReport(scenario: ScenarioName, startedAt: string, status: string): JsonRecord {
     const operations = this.results;
-    const latencySummary = (prefix: string) => {
+    const latencySummary = (phase: "normal" | "burst", kind: "presence" | "playerActions" | "all") => {
       const values = operations
-        .filter((item) => {
-          if (item.outcome !== "ok") return false;
-          if (prefix === "playerActions") {
-            return item.operation.startsWith("player-action-draw-") ||
-              item.operation.startsWith("player-action-end-turn-");
-          }
-          return item.operation.startsWith(prefix);
-        })
+        .filter((item) => item.phase === phase && item.outcome === "ok")
+        .filter((item) => kind === "all" ||
+          (kind === "presence"
+            ? item.operation.startsWith("presence-")
+            : item.operation.startsWith("player-action-")))
         .map((item) => item.durationMs);
       return { count: values.length, p50Ms: percentile(values, 0.5), p95Ms: percentile(values, 0.95) };
     };
@@ -651,7 +667,7 @@ class LoadTest {
       : null;
     return {
       format: 1,
-      mode: "development-only-baseline",
+      mode: process.env.REPLIT_DEPLOYMENT ? "guarded-staging-vm" : "development-only-complete",
       scenario,
       status,
       startedAt,
@@ -662,12 +678,20 @@ class LoadTest {
         facilitatorId: this.manifest.facilitatorId,
         eventId: this.eventId || event.eventId,
         gameIds: this.tables.length ? this.tables.map((table) => table.gameId) : event.gameIds,
-        expectedGuestSeats: scenario === "A" ? 16 : 32,
+        expectedGuestSeats: this.expectedGuestSeats,
         survivingGuestSeats: this.seats.length,
       },
       timings: {
-        presence: latencySummary("presence-"),
-        playerActions: latencySummary("playerActions"),
+        normal: {
+          presence: latencySummary("normal", "presence"),
+          playerActions: latencySummary("normal", "playerActions"),
+          allRequests: latencySummary("normal", "all"),
+        },
+        burst: {
+          presence: latencySummary("burst", "presence"),
+          playerActions: latencySummary("burst", "playerActions"),
+          allRequests: latencySummary("burst", "all"),
+        },
         allRequests: {
           count: operations.length,
           p95Ms: percentile(operations.filter((item) => item.outcome === "ok").map((item) => item.durationMs), 0.95),
@@ -680,7 +704,22 @@ class LoadTest {
         otherErrors: operations.filter((item) => item.outcome === "error").length,
       },
       failedOperations: [...new Set(this.failed)],
+      failureMessage: this.failureMessage,
+      assertions: this.assertions,
+      finalScenario: this.finalScenario ?? null,
+      dashboardObservations: this.dashboardObservations,
+      poolDiagnostics: {
+        checkpoints: this.poolCheckpoints,
+        samples: this.poolSamples,
+        exhaustionIncidents: this.poolExhaustionIncidents,
+        samplingErrors: this.poolSamplingErrors,
+        trafficWindows: this.finalScenario ? (this.finalScenario as { performance?: { poolDiagnostics?: unknown } }).performance?.poolDiagnostics : null,
+      },
       databaseMonitor: connectionMetrics,
+      databaseMonitorErrors: {
+        count: this.monitorErrors.length,
+        types: [...new Set(this.monitorErrors)],
+      },
       databaseSamples: this.dbSamples,
       fixtureManifestPath: this.manifestPath,
       cleanup: "After the API is responsive, run --cleanup with the fixture manifest path.",
@@ -691,6 +730,7 @@ class LoadTest {
 function printUsage(): void {
   console.info(
     "Usage: NODE_ENV=development pnpm --filter @workspace/scripts run event:reliability -- --scenario A|B --confirm-development-database [--deadline-seconds 180] [--request-timeout-ms 12000]\n" +
+    "Optional isolated staging VM only: set APP_ENV=staging STAGING_VM_LOADTEST=1 API_BASE_URL=http://localhost:80/api and add --staging-vm (requires REPLIT_DEPLOYMENT)\n" +
     "Cleanup: NODE_ENV=development pnpm --filter @workspace/scripts run event:reliability -- --cleanup scripts/results/<fixture-manifest>.json --confirm-development-database",
   );
 }
@@ -701,13 +741,13 @@ async function runLoad(options: Map<string, string | boolean>): Promise<void> {
   const scenario = scenarioValue as ScenarioName;
   const deadlineSeconds = Number(options.get("deadline-seconds") ?? "180");
   const timeoutMs = Number(options.get("request-timeout-ms") ?? "12000");
-  if (!Number.isInteger(deadlineSeconds) || deadlineSeconds < 30 || deadlineSeconds > 600) {
-    throw new Error("--deadline-seconds must be an integer from 30 to 600");
+  if (!Number.isInteger(deadlineSeconds) || deadlineSeconds < 120 || deadlineSeconds > 600) {
+    throw new Error("--deadline-seconds must be an integer from 120 to 600 for the real presence-timeout scenario");
   }
   if (!Number.isInteger(timeoutMs) || timeoutMs < 1000 || timeoutMs > 60000) {
     throw new Error("--request-timeout-ms must be an integer from 1000 to 60000");
   }
-  const apiBase = apiBaseFromEnvironment();
+  const apiBase = apiBaseFromEnvironment(options);
   validateDevelopmentEnvironment(apiBase, options);
   const startedAt = new Date().toISOString();
   const test = new LoadTest(apiBase, scenario, deadlineSeconds, timeoutMs);
@@ -716,15 +756,22 @@ async function runLoad(options: Map<string, string | boolean>): Promise<void> {
   const monitorStop = new AbortController();
   try {
     const dbIdentity = await test.monitor.validate();
-    monitorTask = runMonitor(test.monitor, monitorStop.signal, test.dbSamples);
+    await test.poolSampler.start();
+    monitorTask = runMonitor(test.monitor, monitorStop.signal, test.dbSamples, test.monitorErrors);
     const health = await test.request<{ status: string }>("api-health", "healthz");
     if (health.data.status !== "ok") throw new Error("Development API health check did not return ok");
     await test.createFacilitator();
     await test.createEvent(scenario);
     await test.reorganizeWaitingGuests();
     await test.readyAndPresenceBurst();
-    await test.startBurstAndGameActions();
-    await test.exerciseControlsAndEnd();
+    if (!test.hostFeed) throw new Error("Host SSE feed was not opened before the join burst");
+    test.finalScenario = await runCompleteScenario(test, scenario, test.hostFeed);
+    const assertions = (test.finalScenario as { assertions?: string[] }).assertions ?? [];
+    test.assertions.push(...assertions);
+    if (test.poolSamplingErrors.length) {
+      test.failed.push(`pool-diagnostics-sampling-errors:${test.poolSamplingErrors.length}`);
+    }
+    if (test.failed.length) status = "assertion-failed";
     console.info(`Development DB monitor connected (${dbIdentity.database}, PostgreSQL ${dbIdentity.serverVersion}).`);
   } catch (error) {
     status = isTimeout(error) || test.results.some((item) => item.outcome === "timeout")
@@ -732,9 +779,21 @@ async function runLoad(options: Map<string, string | boolean>): Promise<void> {
       : test.results.some((item) => item.outcome === "http_error" || item.outcome === "error")
         ? "request-error"
         : "failed";
-    console.error(`Load test stopped: ${error instanceof HttpFailure ? error.message : error instanceof Error ? error.message : "unknown error"}`);
+    test.failureMessage = error instanceof HttpFailure ? error.message : error instanceof Error ? error.message : "unknown error";
+    console.error(`Load test stopped: ${test.failureMessage}`);
   } finally {
     await writeFile(test.manifestPath, `${JSON.stringify(test.manifest, null, 2)}\n`, { mode: 0o600 }).catch(() => undefined);
+    if (test.hostFeed?.connectionOpen) await test.hostFeed.close();
+    await test.poolSampler.stop();
+    if (test.poolSamplingErrors.length && !test.failed.some((item) => item.startsWith("pool-diagnostics-sampling-errors:"))) {
+      test.failed.push(`pool-diagnostics-sampling-errors:${test.poolSamplingErrors.length}`);
+      if (status === "passed") status = "assertion-failed";
+      test.failureMessage ??= "One or more authenticated API-pool diagnostics samples failed";
+    }
+    if (test.poolExhaustionIncidents.length && status === "passed") {
+      status = "assertion-failed";
+      test.failureMessage ??= `API-pool exhaustion persisted for at least ${test.poolExhaustionIncidents[0]!.durationMs} ms`;
+    }
     monitorStop.abort();
     await monitorTask?.catch(() => undefined);
     await test.monitor.pool.end().catch(() => undefined);
@@ -749,33 +808,36 @@ async function runLoad(options: Map<string, string | boolean>): Promise<void> {
   }
 }
 
-function safeManifestPath(rawPath: string): string {
-  const candidate = resolve(rawPath);
-  const relative = candidate.slice(RESULTS_DIR.length + 1);
-  if (!candidate.startsWith(`${RESULTS_DIR}/`) || !relative || relative.includes("/") || !candidate.endsWith(".fixtures.json")) {
-    throw new Error("Cleanup manifest must be a .fixtures.json file directly inside scripts/results");
-  }
-  return candidate;
-}
-
 async function cleanupFixtures(options: Map<string, string | boolean>): Promise<void> {
   if (options.get("confirm-development-database") !== true) {
     throw new Error("Refusing cleanup without --confirm-development-database");
   }
-  const apiBase = apiBaseFromEnvironment();
+  const apiBase = apiBaseFromEnvironment(options);
   validateDevelopmentEnvironment(apiBase, options);
-  const manifestPath = safeManifestPath(requiredOption(options, "cleanup"));
+  const manifestPath = await resolveFixtureManifestPath(requiredOption(options, "cleanup"), SCRIPTS_ROOT);
   const manifest = JSON.parse(await readFile(manifestPath, "utf8")) as FixtureManifest;
   if (manifest.format !== 1 || !/^[0-9a-f-]{36}$/i.test(manifest.runId) ||
-      !manifest.facilitatorId || !Array.isArray(manifest.events) || !manifest.events.length) {
+      !manifest.facilitatorId || !/^[0-9a-f-]{36}$/i.test(manifest.facilitatorId) ||
+      !Array.isArray(manifest.events) || !manifest.events.length) {
     throw new Error("Fixture manifest is incomplete or has an unsupported format");
   }
+  const manifestNames = new Set<string>();
+  const manifestEventIds = new Set<string>();
   for (const event of manifest.events) {
+    if (event.scenario !== "A" && event.scenario !== "B") {
+      throw new Error("Fixture manifest contains an unsupported scenario");
+    }
     const expectedName = `${RUN_PREFIX} ${manifest.runId} scenario-${event.scenario}`;
-    if (event.name !== expectedName || (event.eventId !== null && typeof event.eventId !== "string") ||
-        !Array.isArray(event.gameIds)) {
+    if (event.name !== expectedName ||
+        (event.eventId !== null && (typeof event.eventId !== "string" || !/^[0-9a-f-]{36}$/i.test(event.eventId))) ||
+        !Array.isArray(event.gameIds) || event.gameIds.some((gameId) => typeof gameId !== "string" || !gameId)) {
       throw new Error("Fixture manifest contains an invalid or out-of-scope event entry");
     }
+    if (manifestNames.has(event.name) || (event.eventId && manifestEventIds.has(event.eventId))) {
+      throw new Error("Fixture manifest contains duplicate event ownership entries");
+    }
+    manifestNames.add(event.name);
+    if (event.eventId) manifestEventIds.add(event.eventId);
   }
 
   const monitor = createMonitor();
@@ -790,60 +852,210 @@ async function cleanupFixtures(options: Map<string, string | boolean>): Promise<
       });
       return response.status;
     };
-    const eventRows = await monitor.pool.query<{
-      id: string;
-      name: string;
-    }>(
-      `SELECT id, name FROM compost_events WHERE facilitator_id = $1 AND name = ANY($2::text[])`,
-      [manifest.facilitatorId, manifest.events.map((event) => event.name)],
-    );
-
-    for (const expectedEvent of manifest.events) {
-      const discovered = eventRows.rows.filter((row) => row.name === expectedEvent.name);
-      if (expectedEvent.eventId && !discovered.some((row) => row.id === expectedEvent.eventId)) {
-        const recordedExists = await monitor.pool.query<{ id: string }>(
-          `SELECT id FROM compost_events WHERE id=$1 AND facilitator_id=$2 AND name=$3`,
-          [expectedEvent.eventId, manifest.facilitatorId, expectedEvent.name],
-        );
-        if (recordedExists.rows.length) throw new Error("Manifest event identity did not match its scoped lookup");
-      }
-      for (const event of discovered) {
-        if (expectedEvent.eventId && event.id !== expectedEvent.eventId) {
-          throw new Error("A run marker resolved to an event ID outside the fixture manifest");
-        }
-        const games = await monitor.pool.query<{ game_id: string }>(
-          `SELECT game_id FROM compost_event_tables WHERE event_id=$1`,
-          [event.id],
-        );
-        const gameIds = games.rows.map((row) => row.game_id);
-        if (expectedEvent.gameIds.some((gameId) => !gameIds.includes(gameId))) {
-          throw new Error("An event table ID did not match the fixture manifest");
-        }
-        for (const gameId of gameIds) {
-          const status = await adminRequest(`admin/games/${encodeURIComponent(gameId)}`, "DELETE");
-          if (status !== 200 && status !== 404) throw new Error(`Admin game cleanup returned HTTP ${status}`);
-        }
-        await monitor.pool.query(
-          `DELETE FROM compost_events WHERE id=$1 AND facilitator_id=$2 AND name=$3`,
-          [event.id, manifest.facilitatorId, expectedEvent.name],
-        );
-      }
-    }
-
+    const expectedEmail = `dev-event-${manifest.runId}@example.test`;
+    const expectedUserName = `${RUN_PREFIX} facilitator ${manifest.runId}`;
     const syntheticUser = await monitor.pool.query<{ id: string; email: string; name: string }>(
       `SELECT id,email,name FROM compost_users WHERE id=$1`,
       [manifest.facilitatorId],
     );
     if (syntheticUser.rows.length) {
-      const row = syntheticUser.rows[0];
-      const expectedEmail = `dev-event-${manifest.runId}@example.test`;
-      const expectedName = `${RUN_PREFIX} facilitator ${manifest.runId}`;
-      if (row.email !== expectedEmail || row.name !== expectedName) {
+      const row = syntheticUser.rows[0]!;
+      if (row.email !== expectedEmail || row.name !== expectedUserName) {
         throw new Error("Facilitator ID does not match the synthetic identity derived from this manifest");
       }
     }
+    const emailOwner = await monitor.pool.query<{ id: string }>(
+      `SELECT id FROM compost_users WHERE email=$1`,
+      [expectedEmail],
+    );
+    if (emailOwner.rows.some((row) => row.id !== manifest.facilitatorId)) {
+      throw new Error("The synthetic fixture email belongs to an account outside this manifest");
+    }
+
+    const eventRows = await monitor.pool.query<{ id: string; name: string }>(
+      `SELECT id, name FROM compost_events WHERE facilitator_id = $1 AND name = ANY($2::text[])`,
+      [manifest.facilitatorId, manifest.events.map((event) => event.name)],
+    );
+    const ownedEvents: Array<{ id: string; name: string }> = [];
+    const fixtureEventIdByName = new Map<string, string>();
+    const expectedOwnerByGameId = new Map<string, string>();
+    for (const expectedEvent of manifest.events) {
+      const matching = eventRows.rows.filter((row) => row.name === expectedEvent.name);
+      if (matching.length > 1) throw new Error("Fixture run marker matched multiple events");
+      const discovered = matching[0];
+      if (expectedEvent.eventId && discovered && discovered.id !== expectedEvent.eventId) {
+        throw new Error("A run marker resolved to an event ID outside the fixture manifest");
+      }
+      if (expectedEvent.eventId && !discovered) {
+        const idOwner = await monitor.pool.query<{ id: string; facilitator_id: string; name: string }>(
+          `SELECT id,facilitator_id,name FROM compost_events WHERE id=$1`,
+          [expectedEvent.eventId],
+        );
+        if (idOwner.rows.some((row) =>
+          row.facilitator_id !== manifest.facilitatorId || row.name !== expectedEvent.name)) {
+          throw new Error("Manifest event ID currently belongs to a different event or facilitator");
+        }
+      }
+      const ownerEventId = discovered?.id ?? expectedEvent.eventId ?? undefined;
+      if (discovered) ownedEvents.push(discovered);
+      if (ownerEventId) fixtureEventIdByName.set(expectedEvent.name, ownerEventId);
+      for (const gameId of expectedEvent.gameIds) {
+        const priorOwner = expectedOwnerByGameId.get(gameId);
+        if (priorOwner && priorOwner !== ownerEventId) {
+          throw new Error("A game ID is attributed to multiple fixture events");
+        }
+        if (!ownerEventId) throw new Error("Cannot verify a manifest game ID without its owning fixture event ID");
+        expectedOwnerByGameId.set(gameId, ownerEventId);
+      }
+    }
+
+    const eventIds = [...new Set([
+      ...fixtureEventIdByName.values(),
+      ...manifest.events.map((event) => event.eventId).filter((id): id is string => typeof id === "string"),
+    ])];
+    const eventTableRows = eventIds.length
+      ? await monitor.pool.query<{ event_id: string; game_id: string }>(
+          `SELECT event_id,game_id FROM compost_event_tables WHERE event_id = ANY($1::text[])`,
+          [eventIds],
+        )
+      : { rows: [] as Array<{ event_id: string; game_id: string }> };
+    const gameIdOwnersFromTables = new Map<string, string>();
+    for (const row of eventTableRows.rows) {
+      const priorOwner = gameIdOwnersFromTables.get(row.game_id);
+      if (priorOwner && priorOwner !== row.event_id) {
+        throw new Error("A fixture game ID is linked to multiple Events");
+      }
+      gameIdOwnersFromTables.set(row.game_id, row.event_id);
+      const expectedOwner = expectedOwnerByGameId.get(row.game_id);
+      if (expectedOwner && expectedOwner !== row.event_id) {
+        throw new Error("Event table ownership does not match the fixture manifest");
+      }
+      expectedOwnerByGameId.set(row.game_id, row.event_id);
+    }
+    const seatRows = eventIds.length || expectedOwnerByGameId.size
+      ? await monitor.pool.query<{ event_id: string; game_id: string }>(
+          `SELECT event_id,game_id FROM compost_event_seats
+            WHERE event_id = ANY($1::text[]) OR game_id = ANY($2::text[])`,
+          [eventIds, [...expectedOwnerByGameId.keys()]],
+        )
+      : { rows: [] as Array<{ event_id: string; game_id: string }> };
+    for (const seat of seatRows.rows) {
+      if (!eventIds.includes(seat.event_id) ||
+          expectedOwnerByGameId.get(seat.game_id) !== seat.event_id) {
+        throw new Error("An Event seat row does not match verified fixture event/game ownership");
+      }
+    }
+    for (const expectedEvent of manifest.events) {
+      const eventId = fixtureEventIdByName.get(expectedEvent.name);
+      if (!eventId || !ownedEvents.some((event) => event.id === eventId)) continue;
+      const actualGameIds = eventTableRows.rows
+        .filter((row) => row.event_id === eventId)
+        .map((row) => row.game_id)
+        .sort();
+      if (expectedEvent.gameIds.length &&
+          JSON.stringify([...expectedEvent.gameIds].sort()) !== JSON.stringify(actualGameIds)) {
+        throw new Error("The Event's current table IDs do not exactly match the fixture manifest");
+      }
+    }
+
+    const gameIds = [...expectedOwnerByGameId.keys()];
+    const gameRows = gameIds.length
+      ? await monitor.pool.query<{ game_id: string; state: unknown }>(
+          `SELECT game_id,state FROM compost_games WHERE game_id = ANY($1::text[])`,
+          [gameIds],
+        )
+      : { rows: [] as Array<{ game_id: string; state: unknown }> };
+    for (const game of gameRows.rows) {
+      const expectedEventId = expectedOwnerByGameId.get(game.game_id);
+      const rawState = typeof game.state === "string" ? JSON.parse(game.state) as unknown : game.state;
+      if (!rawState || typeof rawState !== "object" || Array.isArray(rawState)) {
+        throw new Error("A fixture game has no verifiable ownership state");
+      }
+      const state = rawState as { gameId?: unknown; eventId?: unknown; facilitatorId?: unknown };
+      if (!expectedEventId || state.gameId !== game.game_id ||
+          state.eventId !== expectedEventId || state.facilitatorId !== manifest.facilitatorId) {
+        throw new Error("A game row does not match the fixture event/facilitator ownership");
+      }
+    }
+    const analyticsRows = await monitor.pool.query<{ user_id: string | null; game_id: string | null }>(
+      `SELECT user_id,game_id FROM compost_analytics_events
+        WHERE user_id=$1 OR game_id = ANY($2::text[])`,
+      [manifest.facilitatorId, gameIds],
+    );
+    for (const row of analyticsRows.rows) {
+      if (row.user_id === manifest.facilitatorId && row.game_id !== null &&
+          !expectedOwnerByGameId.has(row.game_id)) {
+        throw new Error("Synthetic facilitator analytics reference an unverified game ID");
+      }
+    }
+
+    for (const gameId of gameIds) {
+      const status = await adminRequest(`admin/games/${encodeURIComponent(gameId)}`, "DELETE");
+      if (status !== 200 && status !== 404) throw new Error(`Admin game cleanup returned HTTP ${status}`);
+    }
+    await monitor.pool.query(
+      `DELETE FROM compost_event_seats
+        WHERE event_id = ANY($1::text[]) OR game_id = ANY($2::text[])`,
+      [eventIds, gameIds],
+    );
+    await monitor.pool.query(
+      `DELETE FROM compost_event_tables
+        WHERE event_id = ANY($1::text[]) OR game_id = ANY($2::text[])`,
+      [eventIds, gameIds],
+    );
+    for (const event of ownedEvents) {
+      await monitor.pool.query(
+        `DELETE FROM compost_events WHERE id=$1 AND facilitator_id=$2 AND name=$3`,
+        [event.id, manifest.facilitatorId, event.name],
+      );
+    }
+
+    await monitor.pool.query(
+      `DELETE FROM compost_analytics_events
+        WHERE user_id=$1 OR game_id = ANY($2::text[])`,
+      [manifest.facilitatorId, gameIds],
+    );
     const userStatus = await adminRequest(`admin/users/${encodeURIComponent(manifest.facilitatorId)}`, "DELETE");
     if (userStatus !== 204 && userStatus !== 404) throw new Error(`Admin facilitator cleanup returned HTTP ${userStatus}`);
+
+    const expectedNames = manifest.events.map((event) => event.name);
+    const noLeftovers: Array<{ label: string; count: number }> = [];
+    const checkZero = async (label: string, sql: string, values: unknown[]): Promise<void> => {
+      const result = await monitor.pool.query<{ count: number | string }>(sql, values);
+      const count = Number(result.rows[0]?.count ?? 0);
+      if (count !== 0) noLeftovers.push({ label, count });
+    };
+    await checkZero("events", `
+      SELECT COUNT(*)::int AS count FROM compost_events
+       WHERE id = ANY($1::text[]) OR (facilitator_id=$2 AND name = ANY($3::text[]))
+    `, [eventIds, manifest.facilitatorId, expectedNames]);
+    await checkZero("event tables", `
+      SELECT COUNT(*)::int AS count FROM compost_event_tables
+       WHERE event_id = ANY($1::text[]) OR game_id = ANY($2::text[])
+    `, [eventIds, gameIds]);
+    await checkZero("event seats", `
+      SELECT COUNT(*)::int AS count FROM compost_event_seats
+       WHERE event_id = ANY($1::text[]) OR game_id = ANY($2::text[])
+    `, [eventIds, gameIds]);
+    await checkZero("game tokens", `
+      SELECT COUNT(*)::int AS count FROM compost_game_tokens WHERE game_id = ANY($1::text[])
+    `, [gameIds]);
+    await checkZero("games", `
+      SELECT COUNT(*)::int AS count FROM compost_games WHERE game_id = ANY($1::text[])
+    `, [gameIds]);
+    await checkZero("analytics", `
+      SELECT COUNT(*)::int AS count FROM compost_analytics_events
+       WHERE user_id=$1 OR game_id = ANY($2::text[])
+    `, [manifest.facilitatorId, gameIds]);
+    await checkZero("facilitator account", `
+      SELECT COUNT(*)::int AS count FROM compost_users WHERE id=$1 OR email=$2
+    `, [manifest.facilitatorId, expectedEmail]);
+    await checkZero("facilitator sessions", `
+      SELECT COUNT(*)::int AS count FROM compost_user_sessions WHERE user_id=$1
+    `, [manifest.facilitatorId]);
+    if (noLeftovers.length) {
+      throw new Error(`Cleanup left fixture metadata behind: ${noLeftovers.map((item) => `${item.label}=${item.count}`).join(", ")}`);
+    }
     console.info(`Cleaned only synthetic fixtures for run ${manifest.runId}.`);
     console.info(`Fixture manifest: ${manifestPath}`);
   } finally {

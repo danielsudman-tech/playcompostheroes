@@ -1,0 +1,85 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Compost Heroes — Event reliability validation</title>
+<style>
+body{font:16px/1.6 system-ui,sans-serif;color:#243128;background:#f7f8f5;margin:0;padding:32px}main{max-width:1050px;margin:auto;background:white;padding:36px;border:1px solid #dce2da;border-radius:12px}h1,h2,h3{line-height:1.25}h1{font-size:30px}h2{font-size:23px;margin-top:34px}h3{font-size:18px}p,li{max-width:90ch}.note{padding:16px;background:#edf5e9;border-left:4px solid #557d3f}.table-wrap{overflow-x:auto}table{border-collapse:collapse;width:100%;font-size:14px}th,td{padding:10px;text-align:left;border-bottom:1px solid #dde3da}th{background:#eef2eb}code,pre{font-family:ui-monospace,monospace;font-size:13px}pre{padding:16px;background:#f2f4f0;overflow:auto;white-space:pre-wrap}a{color:#355e29}.small{font-size:14px;color:#586356}@media(max-width:600px){body{padding:12px}main{padding:20px}h1{font-size:25px}}@media print{body{padding:0;background:white}main{border:0;padding:0}}
+</style>
+</head>
+<body><main>
+<h1>Compost Heroes: Event reliability validation</h1>
+<p class="small">Completed 1 October 2026 · Development workspace and database only</p>
+<p class="note"><strong>Result: both requested scenarios passed.</strong> Four tables / 16 guests and eight tables / 32 guests remained fully occupied through the active tests. There were 857 successful API requests in total, zero HTTP errors, zero request timeouts, and zero other request errors. No lost updates, cross-table contamination or deadlocks were observed by these checks.</p>
+<p>No production database queries or production load/concurrency tests were run. This work made no publishing or deployment-setting changes and left the mockup sandbox untouched. No shared-gameplay architecture/UI migration, Redis or distributed realtime infrastructure was introduced.</p>
+
+<h2>1. Exact changes</h2>
+<ol>
+<li><strong>Lightweight presence.</strong> A routine heartbeat now performs one atomic presence update without the game mutation lock. The statement resolves the Event code, token, current token/seat indexes and game JSON player identity together. A removed or stale seat cannot refresh another participant. Only a meaningful presence transition queues a detail push. Jittered timers and online/visibility triggers reduce synchronized check-ins; the 10-second sweep retains the 45-second disconnect threshold and retries missed intervals after database failures.</li>
+<li><strong>Held-client locking.</strong> Locked Event and game work passes the held database client through authorization, state, token, seat, readiness and persistence helpers. Multi-table controls and transfers acquire sorted game locks on one connection rather than one connection per table. Join transactions release their client before building the response detail. The pool maximum remains 10. Ready still holds the game lock and rejects a transfer race if its refreshed seat belongs to a different game.</li>
+<li><strong>Bounded contention and safe retries.</strong> Connection acquisition is bounded at 5 seconds, lock waits at 2 seconds and statements at 5 seconds. Busy responses are sanitized and recoverable. A <code>notApplied: true</code> claim is made only when no write was started or rollback is proven; ambiguous writes are not labeled safe to repeat. Client backoff is bounded and limited to safe reads, presence, ready, or an explicit not-applied response. Gameplay is not blindly replayed. Failed unlocks/rollbacks destroy the client; detached cleanup failures are observed rather than becoming unhandled rejections.</li>
+<li><strong>Dashboard updates.</strong> Detail pushes are coalesced over approximately 350 ms. Host tokens are loaded in one query rather than one query per table. The dashboard applies validated SSE snapshots directly to its auth-scoped query cache, preserving host credentials without a GET on every push. In-flight old GETs are cancelled and cannot overwrite a newer SSE snapshot. A 10-second fallback read and fresh single-use stream tickets preserve recovery.</li>
+<li><strong>Readiness.</strong> HTTP starts listening before migrations and card initialization. Liveness remains accessible during startup; readiness and product routes stay unavailable until initialization succeeds. Readiness then performs a short, bounded database probe, so an exhausted pool cannot report healthy. Public health returns status only. Pool total/idle/waiting and recent acquisition timings require the existing <code>x-admin-key</code>.</li>
+<li><strong>Cache correctness.</strong> Durable writes/commits precede cache publication. State snapshots are copied at cache ingress and egress. In-flight generation guards prevent late reads from replacing newer state or resurrecting deleted entries; unknown-game token resolution uses an epoch-bounded reread through the same client. Finished snapshots expire after one hour and idle non-Event snapshots after 24 hours. A rotating 15-minute sweep inspects bounded batches of 250 state and 250 token entries. Waiting and in-progress Event games are protected. Admin game deletion invalidates associated caches.</li>
+<li><strong>Sandbox preservation and final validation.</strong> The mockup sandbox was left untouched. Reusable A/B load scenarios, strict target checks, guarded cleanup, path-resolution tests and these instructions/results were saved in the repository.</li>
+</ol>
+
+<h2>2. Before/after concurrency evidence</h2>
+<p>The unchanged-code baseline launched 16 simultaneous joins across four tables. <strong>All 16 reached their 8-second deadline.</strong> A subsequent rooms read still failed to respond within 2 seconds, while the old health route returned HTTP 200 in 42 ms. The PostgreSQL observer saw ten idle connections and no active SQL or database lock waiters. Together with the audited nested checkout path, this identifies application-pool starvation rather than proving a PostgreSQL deadlock.</p>
+<p>The identical initial burst passed after the held-client fix <strong>before timeout configuration was introduced</strong>: 106 successful requests, zero errors/timeouts, presence p95 203.5 ms and action p95 26.8 ms. That earlier harness removed one guest, so it is evidence for the lock fix, not the final full-occupancy result. The expanded final scenarios below retain all 16/32 seats by joining a replacement after the removal test.</p>
+<p>Eliminated failure paths include nested connection acquisition while retaining game/join clients, inconsistent multi-game lock ordering, readying a transferred seat under the wrong lock, separately resolved presence identity, failed-write cache publication, stale cache resurrection, falsely healthy startup/pool exhaustion and unobserved unlock-release failures.</p>
+
+<h2>3. Final measured results</h2>
+<div class="table-wrap"><table>
+<thead><tr><th>Measurement</th><th>A: 4 tables / 16 players</th><th>B: 8 tables / 32 players</th><th>Target</th></tr></thead>
+<tbody>
+<tr><td>Successful requests</td><td>315</td><td>542</td><td>No failed requests</td></tr>
+<tr><td>HTTP errors / timeouts / other errors</td><td>0 / 0 / 0</td><td>0 / 0 / 0</td><td>0</td></tr>
+<tr><td>Seats at active start and end</td><td>16 / 16</td><td>32 / 32</td><td>Full occupancy</td></tr>
+<tr><td>Presence p95, all normal + burst traffic</td><td>81.1 ms</td><td>81.6 ms</td><td>&lt;500 ms</td></tr>
+<tr><td>Legal player-action p95, all normal + burst traffic</td><td>39.4 ms</td><td>91.7 ms</td><td>&lt;1,000 ms</td></tr>
+<tr><td>Normal presence / action p95</td><td>103.5 / 19.7 ms</td><td>69.9 / 15.8 ms</td><td>&lt;500 / &lt;1,000 ms</td></tr>
+<tr><td>Burst presence / action p95</td><td>81.0 / 39.7 ms</td><td>83.0 / 97.9 ms</td><td>Reported separately; included above</td></tr>
+<tr><td>Request-to-host-SSE maximum</td><td>466.5 ms; 40/40 checks passed</td><td>748.8 ms; 72/72 checks passed</td><td>&lt;2,000 ms</td></tr>
+<tr><td>Actual disconnect detection</td><td>50.68 s</td><td>51.54 s</td><td>≤60 s</td></tr>
+<tr><td>Pool acquisition p95 / maximum, entire scenario</td><td>14 / 64 ms</td><td>34 / 302 ms</td><td>Maximum ≤1,000 ms</td></tr>
+<tr><td>Normal-only acquisition maximum</td><td>1 ms</td><td>10 ms</td><td>≤1,000 ms</td></tr>
+<tr><td>Sustained exhaustion / diagnostic sampling errors</td><td>0 / 0</td><td>0 / 0</td><td>0</td></tr>
+<tr><td>Terminal pool total / idle / waiting</td><td>6 / 6 / 0</td><td>10 / 8 / 0</td><td>Recovered, no queue</td></tr>
+<tr><td>Pool recovery checkpoints</td><td>11 passed</td><td>11 passed</td><td>Burst recovery within 10 s</td></tr>
+</tbody></table></div>
+<p class="small">Percentiles are calculated over each stated population, not averaged across subgroups. Failed requests are counted separately; there were none in these final scenarios. Dashboard timings measure authenticated host SSE delivery, not browser paint time. Separate PostgreSQL sampling is not a substitute for the API pool diagnostics.</p>
+<p>Each run kept the host stream active from before joins through completion, with two deliberate stream reconnections. The scenarios exercised concurrent joins/ready/presence, duplicate reconnect and visibility/unlock bursts, legal action rounds covering every guest, simultaneous cross-table actions, Start All during participant activity, per-table and all-table controls, pause/resume, unique table messages, Event announcements, reorder, waiting-room transfer, removal/replacement, real heartbeat absence, authoritative reconnect and simultaneous table completion. Turn/deck/seat integrity and table isolation were asserted.</p>
+
+<h2>4. Safeguard and regression verification</h2>
+<ul>
+<li>All 21 backend unit/route test files passed, including the added database-safeguard, presence, dashboard, startup-readiness and cache tests. Existing gameplay, privacy, decision-coverage, facilitated kick, Event, auth/session and stream-ticket tests remained green.</li>
+<li>Focused frontend presence tests and a real QueryClient integration passed: cancellation of an in-flight detail GET, late-GET rejection, direct SSE application, preserved host tokens and mismatched-Event rejection. Auth-scoped stream cleanup guards remain active.</li>
+<li>Shared-library, API, web and scripts typechecks passed. The scripts path/realpath guard test passed. Final focused architecture review found the reported blockers closed.</li>
+<li>Intentional development-database faults were measured separately: exhausted acquisition returned sanitized 503 after about 5,009 ms and recovered; advisory contention stopped after about 2,006 ms with <code>notApplied: true</code> and no mutation callback; a long statement was cancelled after about 5,001 ms with SQLSTATE 57014. These are actual fault measurements, not fabricated harness timings. The fault checks did not write game rows.</li>
+<li>Scoped cleanup verified and removed generated Events, table links, seats, games, tokens, analytics, synthetic accounts and sessions. Both final manifests passed zero-residual assertions. Raw credential-free reports and manifests remain locally under ignored <code>scripts/results/</code>.</li>
+<li>The restarted development API passed public readiness/liveness checks. A fresh application preview rendered successfully. No broad browser workshop benchmark was substituted for the measured API/SSE scenarios.</li>
+</ul>
+
+<h2>5. Reusable commands</h2>
+<p>Start the existing development API workflow normally, verify it uses the development database, then run from the workspace root:</p>
+<pre>NODE_ENV=development pnpm --filter @workspace/scripts run event:reliability -- --scenario A --confirm-development-database
+NODE_ENV=development pnpm --filter @workspace/scripts run event:reliability -- --scenario B --confirm-development-database
+
+# Use the exact manifest printed by that run:
+NODE_ENV=development pnpm --filter @workspace/scripts run event:reliability -- --cleanup scripts/results/&lt;run&gt;.fixtures.json --confirm-development-database</pre>
+<p>See <code>scripts/DEVELOPMENT_EVENT_LOADTEST.md</code> for safety gates, deadlines, output format and the explicit isolated staging-VM option. The script refuses normal published targets; staging reruns must still use a confirmed development database and local API, never production. It does not start workflows or publish. Fixture cleanup rejects symlink/path escapes and verifies ownership before deleting anything.</p>
+
+<h2>6. Remaining concerns and VM recommendation</h2>
+<p><strong>Recommend a dedicated Reserved VM for live 32-player workshops</strong>, using an available dedicated tier with at least 1 vCPU / 4 GiB as the initial staging candidate. The reason is predictable CPU availability and operational headroom, not evidence that a shared VM failed: no Reserved VM was benchmarked here. A shared tier remains a possible lower-cost choice only after the same checks pass on that isolated staging configuration.</p>
+<ul>
+<li>Development-environment timings are preliminary. Repeat A and B on the intended isolated staging VM before treating these as VM capacity results.</li>
+<li>These approximately one-minute scenarios are not a multi-day soak test or a capacity claim above 32 guests. CPU/RAM utilization, real venue Wi-Fi and browser paint latency were not benchmarked.</li>
+<li>Waiting/in-progress Event caches deliberately cannot be evicted. Forgotten unfinished Events should be ended; long-running memory behavior deserves a later soak check.</li>
+<li>The design intentionally remains single-instance. Horizontal scaling needs separate realtime/cache coordination work, outside this phase.</li>
+<li>Ambiguous write/commit failures intentionally do not trigger automatic gameplay replay. Players should refresh authoritative state before manually retrying.</li>
+<li>Multi-table controls retain per-table commit behavior: if a later database operation fails, earlier tables may already have changed. Such an error is not claimed to be wholly unapplied; refresh the authoritative detail before retrying.</li>
+</ul>
+<p class="small">Platform references consulted: <a href="https://docs.replit.com/features/publishing/deployment-types">Replit deployment types</a> and <a href="https://docs.replit.com/billing/aug-cloud-billing-updates">August 2026 cloud billing updates</a>. Available tiers/pricing should be confirmed when staging is configured. Nothing was published or reconfigured for this report.</p>
+</main></body></html>

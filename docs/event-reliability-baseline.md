@@ -22,3 +22,11 @@ The development API was restarted to recover. Cleanup then removed only the synt
 The reusable harness saves credential-free reports and cleanup manifests under ignored `scripts/results/`. Timed-out operations are reported separately from successful-request latency percentiles.
 
 Development latency is preliminary and must be measured again on the intended Reserved VM.
+
+## Held-client fix proof and final validation
+
+The same initial burst passed after the held-client locking changes and before timeout configuration: 106 successful requests, zero errors/timeouts, presence p95 203.5 ms and action p95 26.8 ms. That earlier scenario removed one guest; it is not the final full-occupancy validation.
+
+The historical 60-second command above belongs to the original reproduction harness. The expanded harness now needs at least 120 seconds of deadline allowance because it measures actual 45-second heartbeat absence and recovery. Use the current commands in `scripts/DEVELOPMENT_EVENT_LOADTEST.md`.
+
+The final 16- and 32-seat results, safeguard fault measurements, limitations and VM recommendation are recorded in `docs/event-reliability-validation.html`.
