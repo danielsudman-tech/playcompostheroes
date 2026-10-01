@@ -104,7 +104,8 @@ A browser-based digital card game for 2–4 players. Players collect hero cards 
 ### Game Architecture
 
 - **Frontend**: React + Vite, with React Query for polling (1.5s) and mutations
-- **Backend**: Live game state and player seat tokens are persisted in PostgreSQL. The API server caches active games and keeps live server-sent event (SSE) connections in memory, so production must run as a single, always-on **Reserved VM**, not Autoscale. A database backup does not capture live SSE connections.
+- **Backend**: Live game state and player seat tokens are persisted in PostgreSQL. The API server caches active games and keeps live server-sent event (SSE) connections in memory. A database backup does not capture live SSE connections.
+- **Production deployment**: Production runs on **Autoscale capped at a maximum of one server (instance)**. More than one instance would give players and the facilitator dashboard inconsistent or stale state because active-game caches and live SSE connections are held in each API instance's memory. Set **Max machines = 1** in **Publishing → Adjust settings → Machine configuration**; this cap is managed in the Publishing tool, not a project configuration key. A single always-on **Reserved VM** is an equivalent single-instance alternative, not a requirement. Autoscale may scale to zero when idle, so the first load after a quiet period may be slow. **Do not raise the maximum above 1 without first implementing multi-instance realtime/cache coordination.**
 - **Game Engine**: `artifacts/api-server/src/lib/gameEngine.ts` — complete card/turn logic
 - **Cards**: 51 cards defined in `artifacts/api-server/src/lib/cards.ts` (34 hero + 17 action)
 - **API**: POST /api/games, GET /api/games/:id, POST /api/games/:id/action

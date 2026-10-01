@@ -36,3 +36,15 @@ VITE_PUBLIC_URL = "https://play.compostheroes.org"
 
 [userenv.shared]
 GITHUB_BACKUP_REPO = "danielsudman-tech/playcompostheroes"
+
+[[ports]]
+localPort = 8080
+externalPort = 8080
+
+[[ports]]
+localPort = 8081
+externalPort = 80
+
+[[ports]]
+localPort = 19546
+externalPort = 3000
