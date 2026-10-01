@@ -67,6 +67,7 @@ export interface EventUpdate {
    */
   idleSeconds?: number;
   assignmentMode?: EventUpdateAssignmentMode;
+  triviaEnabled?: boolean;
 }
 
 export type EventControlInputAction =
@@ -204,6 +205,8 @@ export interface EventSummary {
   status: EventSummaryStatus;
   assignmentMode: EventSummaryAssignmentMode;
   idleSeconds: number;
+  /** Whether optional compost trivia is available at this event's tables. */
+  readonly triviaEnabled: boolean;
   tableCount: number;
 }
 
@@ -269,6 +272,7 @@ export interface PublicEvent {
   name: string;
   status: PublicEventStatus;
   assignmentMode: PublicEventAssignmentMode;
+  triviaEnabled: boolean;
   /** @maxItems 10 */
   tables: PublicEventTablesItem[];
 }
@@ -495,6 +499,8 @@ export interface GameState {
   gameId: string;
   /** Owning event for an event table; absent for standalone games and legacy rooms. */
   eventId?: string;
+  /** Event trivia setting for direct table links; absent for non-event games. */
+  readonly triviaEnabled?: boolean;
   mode: GameStateMode;
   phase: GameStatePhase;
   currentPlayerIndex: number;

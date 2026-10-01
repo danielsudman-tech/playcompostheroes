@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
 import { pool } from "@workspace/db";
 import app from "../app.js";
+import { runStartupMigrations } from "../lib/analyticsStore.js";
 import { getGame, storeGame, transferWaitingPlayer } from "../lib/gameStore.js";
 
 const server = app.listen(0);
@@ -27,6 +28,26 @@ async function getAsHost(path: string, token = userToken) {
 function post(body: unknown): RequestInit {
   return { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) };
 }
+function patch(body: unknown): RequestInit {
+  return { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) };
+}
+async function readSseSnapshot(reader: ReadableStreamDefaultReader<Uint8Array>): Promise<any> {
+  const decoder = new TextDecoder();
+  let buffered = "";
+  const timeout = setTimeout(() => { void reader.cancel(); }, 10_000);
+  try {
+    while (!buffered.includes("\n\n")) {
+      const result = await reader.read();
+      if (result.done) throw new Error("Event game SSE closed before its next snapshot");
+      buffered += decoder.decode(result.value, { stream: true });
+    }
+    const data = buffered.split("\n\n", 1)[0].split("\n").find((line) => line.startsWith("data: "));
+    if (!data) throw new Error("Event game SSE snapshot did not contain data");
+    return JSON.parse(data.slice(6));
+  } finally {
+    clearTimeout(timeout);
+  }
+}
 async function waitForBlockedQuery(queryFragment: string): Promise<void> {
   const deadline = Date.now() + 10_000;
   while (Date.now() < deadline) {
@@ -44,6 +65,7 @@ async function waitForBlockedQuery(queryFragment: string): Promise<void> {
 }
 
 try {
+  await runStartupMigrations();
   for (const [id, token, email] of [
     [userId, userToken, `${suffix}@event-test.test`],
     [otherId, otherToken, `${suffix}@event-other.test`],
@@ -58,6 +80,7 @@ try {
     userToken, name: "Concurrent Join Check", tableCount: 1, tableCapacities: [2],
   }));
   assert.equal(created.status, 201);
+  assert.equal(created.json.triviaEnabled, true, "new events default optional trivia on");
   const eventId = created.json.eventId as string;
   const gameId = created.json.tables[0].gameId as string;
   const code = (created.json.code as string).toLowerCase();
@@ -65,8 +88,16 @@ try {
   gameIds.push(gameId);
   assert.equal((await request(`/facilitator/events/${eventId}?userToken=${userToken}`)).status, 401,
     "facilitator event GET does not accept account tokens in query parameters");
-  assert.equal((await getAsHost(`/facilitator/events/${eventId}`)).status, 200,
+  const createdDetail = await getAsHost(`/facilitator/events/${eventId}`);
+  assert.equal(createdDetail.status, 200,
     "facilitator event GET accepts the account token in Authorization");
+  assert.equal(createdDetail.json.triviaEnabled, true, "facilitator detail includes the default-on setting");
+  const facilitatorEvents = await request("/facilitator/events", {
+    headers: { Authorization: `Bearer ${userToken}` },
+  });
+  assert.equal(facilitatorEvents.status, 200);
+  assert.equal(facilitatorEvents.json.find((event: any) => event.eventId === eventId).triviaEnabled, true,
+    "facilitator list includes the default-on setting");
   assert.equal((await request(`/facilitator/rooms?userToken=${userToken}`)).status, 401,
     "facilitator room GET does not accept account tokens in query parameters");
   assert.equal((await request("/facilitator/rooms", {
@@ -84,8 +115,50 @@ try {
   assert.ok(created.json.hostTokens[gameId], "creation returns reserved host spectator token");
   const publicWaiting = await request(`/events/${code}`);
   assert.equal(publicWaiting.status, 200, "public event lookup accepts lowercase codes");
+  assert.equal(publicWaiting.json.triviaEnabled, true, "public event payload exposes the enabled-by-default setting");
   assert.equal(publicWaiting.json.tables[0].phase, "waiting", "public table status includes its waiting phase");
   assert.deepEqual(Object.keys(publicWaiting.json.tables[0]).sort(), ["capacity", "occupied", "phase", "tableNumber"]);
+  const persistedDefault = await pool.query(`SELECT trivia_enabled FROM compost_events WHERE id=$1`, [eventId]);
+  assert.equal(persistedDefault.rows[0].trivia_enabled, true, "the database default is enabled");
+  assert.equal((await request(`/games/${gameId}`)).json.triviaEnabled, true,
+    "game GET includes the setting for direct table links");
+  const originalGameRow = await pool.query(`SELECT state, updated_at FROM compost_games WHERE game_id=$1`, [gameId]);
+
+  const gameStreamResponse = await fetch(`${base}/games/${gameId}/events?token=${encodeURIComponent(created.json.hostTokens[gameId])}`, {
+    signal: AbortSignal.timeout(20_000),
+  });
+  assert.equal(gameStreamResponse.status, 200);
+  const gameStreamReader = gameStreamResponse.body!.getReader();
+  try {
+    const initialGameSnapshot = await readSseSnapshot(gameStreamReader);
+    assert.equal(initialGameSnapshot.triviaEnabled, true, "the existing game SSE snapshot includes the default setting");
+
+    const settingsSaved = await request(`/facilitator/events/${eventId}`, patch({ userToken, triviaEnabled: false }));
+    assert.equal(settingsSaved.status, 200);
+    assert.equal(settingsSaved.json.triviaEnabled, false, "the existing settings PATCH persists the disabled setting");
+    assert.equal((await request(`/events/${code}`)).json.triviaEnabled, false, "public event payload reflects the saved setting");
+    const disabledGameSnapshot = await readSseSnapshot(gameStreamReader);
+    assert.equal(disabledGameSnapshot.triviaEnabled, false, "the existing table SSE publishes the changed setting without a game write");
+    const persistedDisabled = await pool.query(`SELECT trivia_enabled FROM compost_events WHERE id=$1`, [eventId]);
+    assert.equal(persistedDisabled.rows[0].trivia_enabled, false);
+
+    await runStartupMigrations();
+    assert.equal((await request(`/games/${gameId}`)).json.triviaEnabled, false,
+      "startup migration/cache hydration preserves the persisted disabled setting");
+
+    const settingsReenabled = await request(`/facilitator/events/${eventId}`, patch({ userToken, triviaEnabled: true }));
+    assert.equal(settingsReenabled.status, 200);
+    assert.equal(settingsReenabled.json.triviaEnabled, true, "the same settings PATCH can re-enable trivia");
+    assert.equal((await readSseSnapshot(gameStreamReader)).triviaEnabled, true,
+      "table SSE publishes the re-enabled setting");
+  } finally {
+    await gameStreamReader.cancel();
+  }
+  const unchangedGameRow = await pool.query(`SELECT state, updated_at FROM compost_games WHERE game_id=$1`, [gameId]);
+  assert.deepEqual(unchangedGameRow.rows[0].state, originalGameRow.rows[0].state,
+    "Event trivia settings are not persisted into a game snapshot");
+  assert.equal(unchangedGameRow.rows[0].updated_at.getTime(), originalGameRow.rows[0].updated_at.getTime(),
+    "changing an Event setting does not update its game row");
   assert.equal((await request(`/events/${code}/join`, post({ name: "Choice rejected", tableNumber: 1 }))).status, 400,
     "auto assignment rejects an explicit table choice");
 

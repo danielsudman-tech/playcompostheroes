@@ -1,5 +1,6 @@
 import { pool } from "@workspace/db";
 import type { PgQueryable } from "./gameStore.js";
+import { hydrateEventTriviaSettings } from "./eventTriviaSettings.js";
 
 export type AnalyticsEventType =
   | "register"
@@ -63,6 +64,10 @@ export async function runStartupMigrations(): Promise<void> {
     await pool.query(
       `ALTER TABLE compost_users ADD COLUMN IF NOT EXISTS role_approved_at TIMESTAMPTZ`
     );
+    await pool.query(
+      `ALTER TABLE compost_events ADD COLUMN IF NOT EXISTS trivia_enabled BOOLEAN NOT NULL DEFAULT TRUE`
+    );
+    await hydrateEventTriviaSettings();
     console.log("[analytics] startup migrations done");
   } catch (error) {
     console.error("[analytics] startup migrations failed");

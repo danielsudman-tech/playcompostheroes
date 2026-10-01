@@ -22,12 +22,15 @@ import {
 import { GameCard } from "@/components/GameCard";
 import { DecisionModal, PLAYER_SELECTION_TYPES } from "@/components/DecisionModal";
 import { GameUpdatesList, GameUpdatesStrip } from "@/components/game-updates/GameUpdatesList";
+import { TriviaLauncher, TriviaPanel } from "@/components/trivia/TriviaPanel";
 import { useGameUpdates } from "@/hooks/use-game-updates";
 import { viewerFingerprint } from "@/lib/gameCache";
+import { useTriviaSession } from "@/hooks/use-trivia-session";
 import { PostGameLinks } from "@/components/PostGameLinks";
 import { OnlineRoomEntry } from "@/components/OnlineRoomEntry";
 import { getDecisionStepInfo } from "@/lib/decisionSteps";
 import { countsForHotPile, getCardBaseId, isHotPileCard } from "@/lib/hotPile";
+import { isFacilitatedGameTriviaEnabled } from "@/lib/trivia/triviaAvailability";
 import { OpponentPileModal } from "@/components/OpponentPileModal";
 import {
   PlayerBoardRow,
@@ -195,6 +198,16 @@ export default function FacilitatedGame() {
   const localPlayerId = isPassPlay
     ? localDecisionPlayer?.id ?? gameState?.players[gameState.currentPlayerIndex]?.id ?? null
     : claim?.playerId ?? null;
+  const isTriviaPlayersTurn = Boolean(
+    gameState && localPlayerId && gameState.players[gameState.currentPlayerIndex]?.id === localPlayerId,
+  );
+  const isWaitingForTrivia = Boolean(
+    gameState &&
+    gameState.phase !== "waiting" &&
+    gameState.phase !== "game_over" &&
+    !isTriviaPlayersTurn &&
+    !gameState.pendingDecision,
+  );
 
   // Sound system
   const { muted: soundMuted, toggleMute: toggleSoundMute } = useGameSounds(gameState ?? undefined, localPlayerId ?? undefined);
@@ -214,6 +227,26 @@ export default function FacilitatedGame() {
   const [nudgedAt, setNudgedAt] = useState(0);
   const [mobileControlsOpen, setMobileControlsOpen] = useState(false);
   const [passScreen, setPassScreen] = useState<{ name: string; cardCount: number } | null>(null);
+  const handoffScreenRef = useRef<HTMLDivElement>(null);
+  const focusHandoffControl = useCallback(() => {
+    const handoff = handoffScreenRef.current;
+    const target = handoff?.querySelector<HTMLElement>('[data-testid="button-handoff-trivia"]') ??
+      handoff?.querySelector<HTMLElement>('[data-testid="button-handoff-reveal"]');
+    (target ?? handoff)?.focus();
+  }, []);
+  const triviaSession = useTriviaSession({
+    sessionKey: isPassPlay
+      ? `game:${gameId ?? ""}:pass-play-group`
+      : `game:${gameId ?? ""}:seat:${localPlayerId ?? "unclaimed"}`,
+    mode: isPassPlay ? "handoff" : "waiting",
+    enabled: !isFacilitated || isFacilitatedGameTriviaEnabled(gameState, guestEvent),
+    waiting: isWaitingForTrivia,
+    requiredDecision: !!gameState?.pendingDecision,
+    handoffActive: isPassPlay && !!passScreen,
+  });
+  useLayoutEffect(() => {
+    if (passScreen) handoffScreenRef.current?.focus();
+  }, [!!passScreen]);
   const previousLocalTurn = useRef<{
     gameId: string | undefined;
     playerIndex: number;
@@ -238,6 +271,7 @@ export default function FacilitatedGame() {
     if (needsReveal) {
       // Clear any prior player's private card preview before the next hand appears.
       setConfirmCard(null);
+      setZoomedCard(null);
       const newPlayer = gameState.players[idx];
       setPassScreen(newPlayer && !newPlayer.isBot
         ? { name: newPlayer.name, cardCount: newPlayer.hand.length }
@@ -560,36 +594,66 @@ export default function FacilitatedGame() {
 
   const turnGlow = gameState.phase !== "game_over" && ((isMyTurn && !decision) || nudgedAt > 0);
   const isPlayPhase = isMyTurn && gameState.phase === "play" && !gameState.pendingDecision;
-
+  const keepFocusInHandoff = (event: React.KeyboardEvent<HTMLDivElement>) => {
+    if (event.key !== "Tab" || !handoffScreenRef.current) return;
+    const controls = handoffScreenRef.current.querySelectorAll<HTMLElement>(
+      'button:not([disabled]), input:not([disabled]), [tabindex="0"]',
+    );
+    const first = controls[0];
+    const last = controls[controls.length - 1];
+    if (!first || !last) return;
+    if (event.shiftKey && (document.activeElement === first || document.activeElement === handoffScreenRef.current)) {
+      event.preventDefault();
+      last.focus();
+    } else if (!event.shiftKey &&
+      (document.activeElement === last || document.activeElement === handoffScreenRef.current)) {
+      event.preventDefault();
+      first.focus();
+    }
+  };
   return (
     <div className="facilitated-table h-[100dvh] bg-background game-table-pattern flex flex-col overflow-hidden text-foreground">
+      {!isPassPlay && <TriviaPanel session={triviaSession} mode="waiting" />}
       <AnimatePresence>
         {passScreen && (
           <motion.div
-            initial={{ opacity: 0 }}
+            initial={false}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
-            className="fixed inset-0 z-[250] flex items-center justify-center bg-black/90 backdrop-blur-md"
+            className="fixed inset-0 z-[250] flex items-center justify-center overflow-y-auto bg-background px-3 py-4"
+            ref={handoffScreenRef}
+            tabIndex={-1}
+            onKeyDown={keepFocusInHandoff}
           >
             <motion.div
               initial={{ scale: 0.85, y: 30 }}
               animate={{ scale: 1, y: 0 }}
               exit={{ scale: 0.9, opacity: 0 }}
               transition={{ type: "spring", bounce: 0.4 }}
-              className="bg-card w-full max-w-sm mx-4 rounded-3xl shadow-2xl p-8 text-center border border-border"
+              className="my-auto max-h-[calc(100dvh-2rem)] w-full max-w-sm overflow-y-auto rounded-3xl border border-border bg-card p-6 text-center shadow-2xl sm:p-8"
+              role="dialog"
+              aria-modal="true"
+              aria-labelledby="pass-screen-heading"
+              data-testid="pass-play-handoff"
             >
               <div className="w-20 h-20 rounded-full bg-primary/10 border-4 border-primary/30 flex items-center justify-center mx-auto mb-5">
                 <Leaf className="w-10 h-10 text-primary" />
               </div>
               <p className="text-sm font-bold uppercase tracking-widest text-muted-foreground mb-1">Pass the device to</p>
-              <h2 className="text-4xl font-display font-bold text-foreground mb-3">{passScreen.name}</h2>
+              <h2 id="pass-screen-heading" className="text-4xl font-display font-bold text-foreground mb-3">{passScreen.name}</h2>
               <p className="text-muted-foreground text-sm mb-7">
                 You have <strong className="text-foreground">{passScreen.cardCount}</strong> card{passScreen.cardCount !== 1 ? "s" : ""} waiting for you. Reveal your hand when the device is with you.
               </p>
+              <TriviaPanel
+                session={triviaSession}
+                mode="handoff"
+                onHandoffFocusFallback={focusHandoffControl}
+              />
               <Button
                 size="lg"
                 className="w-full font-bold text-lg rounded-2xl"
                 onClick={() => setPassScreen(null)}
+                data-testid="button-handoff-reveal"
               >
                 Reveal My Hand
               </Button>
@@ -818,10 +882,13 @@ export default function FacilitatedGame() {
             </div>
           )}
 
-          <GameUpdatesStrip updates={gameUpdates} onOpenRecap={() => setShowLog(true)} />
+          <GameUpdatesStrip updates={gameUpdates} onOpenRecap={() => setShowLog(true)}>
+            <TriviaLauncher session={triviaSession} compact />
+          </GameUpdatesStrip>
 
           {/* MY HAND FOOTER — tall enough to show full md cards (208px) + header */}
-          <div className={cn("table-hand-footer shrink-0 h-[188px] md:h-[208px] xl:h-[252px] bg-card/95 backdrop-blur-2xl border-t border-border/60 shadow-[0_-10px_40px_rgba(0,0,0,0.1)] z-20 flex flex-col relative before:absolute before:inset-0 before:bg-gradient-to-t before:from-background/20 before:pointer-events-none", passScreen && "invisible")} aria-hidden={!!passScreen}>
+          {!passScreen && (
+          <div className="table-hand-footer shrink-0 h-[188px] md:h-[208px] xl:h-[252px] bg-card/95 backdrop-blur-2xl border-t border-border/60 shadow-[0_-10px_40px_rgba(0,0,0,0.1)] z-20 flex flex-col relative before:absolute before:inset-0 before:bg-gradient-to-t before:from-background/20 before:pointer-events-none" data-testid="table-hand-footer">
              <div className="px-3 md:px-6 py-2 md:py-2.5 border-b border-border/40 bg-muted/20 flex justify-between items-center relative z-10">
                <span className="text-xs font-bold uppercase tracking-widest text-muted-foreground flex items-center gap-2">
                  Your Hand <span className="bg-background px-2.5 py-0.5 rounded-full border shadow-sm">{me.hand.length} / {me.maxHandSize}</span>
@@ -861,6 +928,7 @@ export default function FacilitatedGame() {
                 })}
              </div>
           </div>
+          )}
         </div>
 
         {/* RIGHT SIDEBAR */}
@@ -972,7 +1040,10 @@ export default function FacilitatedGame() {
             )}
           </div>
 
-          <div className="shrink-0 px-3 xl:px-6 pb-2"><GameUpdatesList updates={gameUpdates} onOpenRecap={() => setShowLog(true)} /></div>
+          <div className="shrink-0 px-3 xl:px-6 pb-2">
+            <GameUpdatesList updates={gameUpdates} onOpenRecap={() => setShowLog(true)} />
+            <TriviaLauncher session={triviaSession} />
+          </div>
 
           {/* Turn Actions */}
           <div data-testid="turn-controls" data-glow={turnGlow ? "on" : "off"} className={cn("shrink-0 h-[150px] xl:h-[190px] p-3 xl:p-6 border-t border-border/40 bg-muted/10 flex flex-col justify-center gap-4 relative before:absolute before:inset-0 before:bg-gradient-to-t before:from-background/30 before:to-transparent before:pointer-events-none transition-shadow duration-700", turnGlow && "shadow-[inset_0_0_0_2px_hsl(var(--primary)),inset_0_0_28px_hsl(var(--primary)/0.28)]")} >
@@ -1139,7 +1210,7 @@ export default function FacilitatedGame() {
 
       {/* Play confirmation modal — card on left, explanation on right */}
       <AnimatePresence>
-        {confirmCard && (
+        {!passScreen && confirmCard && (
           <motion.div
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
@@ -1287,7 +1358,7 @@ export default function FacilitatedGame() {
 
       {/* Card zoom lightbox (click any compost pile card on the board) */}
       <AnimatePresence>
-        {zoomedCard && (
+        {!passScreen && zoomedCard && (
           <motion.div
             key="card-zoom"
             initial={{ opacity: 0 }}

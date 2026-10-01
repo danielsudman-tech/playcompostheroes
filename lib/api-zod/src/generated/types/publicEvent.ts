@@ -14,6 +14,7 @@ export interface PublicEvent {
   name: string;
   status: PublicEventStatus;
   assignmentMode: PublicEventAssignmentMode;
+  triviaEnabled: boolean;
   /** @maxItems 10 */
   tables: PublicEventTablesItem[];
 }

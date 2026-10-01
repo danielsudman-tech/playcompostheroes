@@ -141,6 +141,11 @@ export function updateGameStateCache(state: GameState): void {
   gameStoreCache.setState(state);
 }
 
+/** Read an already cached snapshot without falling through to a database query. */
+export function getCachedGameState(gameId: string): GameState | undefined {
+  return gameStoreCache.getState(gameId);
+}
+
 export function onGameBroadcast(listener: (gameId: string) => void): () => void {
   gameBroadcastListeners.add(listener);
   return () => gameBroadcastListeners.delete(listener);

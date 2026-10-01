@@ -978,6 +978,7 @@ components:
         name: { type: string, minLength: 1, maxLength: 100 }
         idleSeconds: { type: integer, minimum: 30, maximum: 3600 }
         assignmentMode: { type: string, enum: [choose, auto] }
+        triviaEnabled: { type: boolean }
       required: [userToken]
     EventControlInput:
       type: object
@@ -1061,8 +1062,9 @@ components:
         status: { type: string, enum: [upcoming, active, ending, completed] }
         assignmentMode: { type: string, enum: [choose, auto] }
         idleSeconds: { type: integer }
+        triviaEnabled: { type: boolean, readOnly: true, description: Whether optional compost trivia is available at this event's tables. }
         tableCount: { type: integer }
-      required: [eventId, code, name, status, assignmentMode, idleSeconds, tableCount]
+      required: [eventId, code, name, status, assignmentMode, idleSeconds, triviaEnabled, tableCount]
     EventDetail:
       allOf:
         - $ref: "#/components/schemas/EventSummary"
@@ -1079,6 +1081,7 @@ components:
         name: { type: string }
         status: { type: string, enum: [upcoming, active, ending, completed] }
         assignmentMode: { type: string, enum: [choose, auto] }
+        triviaEnabled: { type: boolean }
         tables:
           type: array
           maxItems: 10
@@ -1091,7 +1094,7 @@ components:
               occupied: { type: integer, minimum: 0, maximum: 4 }
               phase: { type: string, enum: [waiting, setup, draw, play, effect_resolution, end_turn, game_over] }
             required: [tableNumber, capacity, occupied, phase]
-      required: [code, name, status, assignmentMode, tables]
+      required: [code, name, status, assignmentMode, triviaEnabled, tables]
     EventTableResult:
       type: object
       properties:
@@ -1645,6 +1648,10 @@ components:
         eventId:
           type: string
           description: Owning event for an event table; absent for standalone games and legacy rooms.
+        triviaEnabled:
+          type: boolean
+          readOnly: true
+          description: Event trivia setting for direct table links; absent for non-event games.
         mode:
           type: string
           enum: [facilitator, standalone, online, facilitated]

@@ -25,9 +25,9 @@ export interface EventTable {
 export interface EventRecord {
   id?: string; eventId?: string; code: string; name: string; status: "upcoming" | "active" | "ending" | "completed";
   tableCount?: number; maxPlayersPerTable?: number; playersPerTable?: number; assignmentMode?: "choose" | "auto";
-  idleThresholdMinutes?: number; idleSeconds?: number; tables: EventTable[]; createdAt?: number; paused?: boolean;
+  idleThresholdMinutes?: number; idleSeconds?: number; triviaEnabled?: boolean; tables: EventTable[]; createdAt?: number; paused?: boolean;
 }
-export interface GuestEvent { code: string; name: string; status: string; assignmentMode?: "choose" | "auto"; tables: EventTable[]; maxPlayersPerTable?: number; playersPerTable?: number }
+export interface GuestEvent { code: string; name: string; status: string; assignmentMode?: "choose" | "auto"; triviaEnabled?: boolean; tables: EventTable[]; maxPlayersPerTable?: number; playersPerTable?: number }
 export interface EventJoin { gameId: string; token: string; playerId?: string; playerName?: string; tableNumber?: number }
 
 export const eventId = (event: EventRecord) => event.eventId ?? event.id ?? "";
@@ -188,7 +188,7 @@ export function useCreateEvent() {
 }
 export function useUpdateEvent(id: string) {
   const qc = useQueryClient();
-  return useMutation({ mutationFn: async (data: { name?: string; idleThresholdMinutes?: number }) => normalizeEvent(await updateFacilitatorEvent(id, { name: data.name, idleSeconds: data.idleThresholdMinutes ? data.idleThresholdMinutes * 60 : undefined, userToken: userToken() })), onSuccess: (event) => { qc.setQueryData(eventKey(id), event); qc.invalidateQueries({ queryKey: facilitatorEventsKey() }); } });
+  return useMutation({ mutationFn: async (data: { name?: string; idleThresholdMinutes?: number; triviaEnabled?: boolean }) => normalizeEvent(await updateFacilitatorEvent(id, { name: data.name, idleSeconds: data.idleThresholdMinutes ? data.idleThresholdMinutes * 60 : undefined, triviaEnabled: data.triviaEnabled, userToken: userToken() })), onSuccess: (event) => { qc.setQueryData(eventKey(id), event); qc.invalidateQueries({ queryKey: facilitatorEventsKey() }); } });
 }
 export interface ControlResult { results: EventTableResult[] }
 export function useEventControl(id: string) {

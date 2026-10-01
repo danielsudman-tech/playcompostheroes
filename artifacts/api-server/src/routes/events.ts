@@ -16,10 +16,12 @@ import {
 import { WIN_FUNCTIONS } from "../lib/cards.js";
 import {
   broadcastToGame, createGameId, getEventForGame, getGame,
+  getCachedGameState,
   isEventGameReadyToStart, readTokenSlotConsistently,
   onGameBroadcast, updateGameStateCache, withGameMutationLocks, withClientTransaction,
   type PgClient, type PgQueryable,
 } from "../lib/gameStore.js";
+import { setEventTriviaEnabled } from "../lib/eventTriviaSettings.js";
 import { extractBearerToken, getUserByToken, isApprovedFacilitator } from "../lib/userStore.js";
 import { consumeEventStreamTicket, issueEventStreamTicket } from "../lib/eventStreamTickets.js";
 import {
@@ -44,11 +46,13 @@ const parseState = (value: unknown) => (typeof value === "string" ? JSON.parse(v
 
 async function eventRecord(eventId: string, client: PgQueryable = pool) {
   const result = await client.query(
-    `SELECT id, code, facilitator_id, name, status, assignment_mode, idle_seconds,
+    `SELECT id, code, facilitator_id, name, status, assignment_mode, idle_seconds, trivia_enabled,
             EXTRACT(EPOCH FROM last_meaningful_activity_at) * 1000 AS last_activity
        FROM compost_events WHERE id = $1`, [eventId],
   );
-  return result.rows[0] as any;
+  const event = result.rows[0] as any;
+  if (event) setEventTriviaEnabled(event.id, event.trivia_enabled !== false);
+  return event;
 }
 async function tableRecords(eventId: string, client: PgQueryable = pool) {
   return (await client.query(
@@ -71,7 +75,7 @@ function pushEvent(eventId: string, payload: unknown) {
 
 async function buildDetail(eventId: string, includeTokens = false, client: PgQueryable = pool) {
   const eventTables = await client.query(
-    `SELECT e.id, e.code, e.name, e.status, e.assignment_mode, e.idle_seconds,
+    `SELECT e.id, e.code, e.name, e.status, e.assignment_mode, e.idle_seconds, e.trivia_enabled,
             EXTRACT(EPOCH FROM e.last_meaningful_activity_at) * 1000 AS last_activity,
             t.game_id, t.table_number, t.capacity
        FROM compost_events e
@@ -82,6 +86,7 @@ async function buildDetail(eventId: string, includeTokens = false, client: PgQue
   );
   if (!eventTables.rows.length) return null;
   const event = eventTables.rows[0];
+  setEventTriviaEnabled(event.id, event.trivia_enabled !== false);
   const tables = eventTables.rows
     .filter((row: any) => row.game_id != null)
     .map((row: any) => ({ game_id: row.game_id, table_number: row.table_number, capacity: row.capacity }));
@@ -144,7 +149,8 @@ async function buildDetail(eventId: string, includeTokens = false, client: PgQue
   const detail: any = {
     eventId: event.id, code: event.code, name: event.name, status: event.status,
     assignmentMode: event.assignment_mode,
-    idleSeconds: event.idle_seconds, tableCount: tables.length, tables: summaries,
+    idleSeconds: event.idle_seconds, triviaEnabled: event.trivia_enabled !== false,
+    tableCount: tables.length, tables: summaries,
   };
   if (includeTokens) {
     detail.hostTokens = await loadHostTokens(client, tables.map((table) => table.game_id));
@@ -239,11 +245,12 @@ router.get("/facilitator/events", async (req, res): Promise<void> => {
   if (!isApprovedFacilitator(user)) { res.status(403).json({ error: "Facilitator approval is required" }); return; }
   const rows = (await pool.query(
     `SELECT e.id, e.code, e.name, e.status, e.idle_seconds,
-            e.assignment_mode,
+            e.assignment_mode, e.trivia_enabled,
             (SELECT COUNT(*) FROM compost_event_tables t WHERE t.event_id = e.id) AS table_count
        FROM compost_events e WHERE e.facilitator_id = $1 ORDER BY e.created_at DESC`, [user.id],
   )).rows;
-  res.json(GetFacilitatorEventsResponse.parse(rows.map((r) => ({ eventId: r.id, code: r.code, name: r.name, status: r.status, assignmentMode: r.assignment_mode, idleSeconds: r.idle_seconds, tableCount: Number(r.table_count) }))));
+  for (const row of rows) setEventTriviaEnabled(row.id, row.trivia_enabled !== false);
+  res.json(GetFacilitatorEventsResponse.parse(rows.map((r) => ({ eventId: r.id, code: r.code, name: r.name, status: r.status, assignmentMode: r.assignment_mode, idleSeconds: r.idle_seconds, triviaEnabled: r.trivia_enabled !== false, tableCount: Number(r.table_count) }))));
 });
 
 router.post("/facilitator/events", async (req, res): Promise<void> => {
@@ -304,6 +311,7 @@ router.post("/facilitator/events", async (req, res): Promise<void> => {
     commitAttempted = true;
     await client.query("COMMIT");
     committed = true;
+    setEventTriviaEnabled(eventId, true);
     newStates.forEach(updateGameStateCache);
   } catch (error) {
     let rollbackSucceeded = false;
@@ -333,15 +341,29 @@ router.get("/facilitator/events/:eventId", async (req, res): Promise<void> => {
 });
 
 router.patch("/facilitator/events/:eventId", async (req, res): Promise<void> => {
-  const body = req.body as { userToken?: string; name?: string; idleSeconds?: number; assignmentMode?: "choose" | "auto" };
+  const body = req.body as { userToken?: string; name?: string; idleSeconds?: number; assignmentMode?: "choose" | "auto"; triviaEnabled?: boolean };
   const parsedBody = UpdateFacilitatorEventBody.safeParse(body);
   if (!parsedBody.success) { res.status(400).json({ error: parsedBody.error.message }); return; }
   const check = await requireHost(req.params.eventId, body.userToken);
   if ("failure" in check) { res.status(Number(check.failure)).json({ error: check.error }); return; }
   if (body.name !== undefined && (!body.name.trim() || body.name.trim().length > 100)) { res.status(400).json({ error: "Event name must be 1-100 characters" }); return; }
   if (body.idleSeconds !== undefined && (!Number.isInteger(body.idleSeconds) || body.idleSeconds < 30 || body.idleSeconds > 3600)) { res.status(400).json({ error: "idleSeconds must be between 30 and 3600" }); return; }
-  await pool.query(`UPDATE compost_events SET name = COALESCE($2,name), idle_seconds = COALESCE($3,idle_seconds), assignment_mode = COALESCE($4,assignment_mode) WHERE id = $1`,
-    [req.params.eventId, body.name?.trim() ?? null, body.idleSeconds ?? null, body.assignmentMode ?? null]);
+  const updatedEvent = await pool.query(
+    `UPDATE compost_events
+        SET name = COALESCE($2,name),
+            idle_seconds = COALESCE($3,idle_seconds),
+            assignment_mode = COALESCE($4,assignment_mode),
+            trivia_enabled = COALESCE($5,trivia_enabled)
+      WHERE id = $1
+      RETURNING trivia_enabled`,
+    [req.params.eventId, body.name?.trim() ?? null, body.idleSeconds ?? null, body.assignmentMode ?? null, body.triviaEnabled ?? null],
+  );
+  if (updatedEvent.rows[0]) setEventTriviaEnabled(req.params.eventId, updatedEvent.rows[0].trivia_enabled !== false);
+  const tables = await tableRecords(req.params.eventId);
+  for (const table of tables) {
+    const state = getCachedGameState(table.game_id);
+    if (state) broadcastToGame(table.game_id, state, serializeState);
+  }
   enqueueEventDetail(req.params.eventId);
   const detail = await buildDetail(req.params.eventId, true);
   res.json(UpdateFacilitatorEventResponse.parse(detail));
@@ -549,8 +571,9 @@ router.get("/facilitator/events/:eventId/stream", async (req, res): Promise<void
 });
 
 router.get("/events/:code", async (req, res): Promise<void> => {
-  const row = (await pool.query(`SELECT id,code,name,status,assignment_mode FROM compost_events WHERE code=$1`, [normalizeCode(req.params.code)])).rows[0];
+  const row = (await pool.query(`SELECT id,code,name,status,assignment_mode,trivia_enabled FROM compost_events WHERE code=$1`, [normalizeCode(req.params.code)])).rows[0];
   if (!row) { res.status(404).json({ error: "Event not found" }); return; }
+  setEventTriviaEnabled(row.id, row.trivia_enabled !== false);
   const tables = await tableRecords(row.id);
   const result = [];
   for (const table of tables) {
@@ -562,7 +585,7 @@ router.get("/events/:code", async (req, res): Promise<void> => {
       phase: state?.phase ?? "waiting",
     });
   }
-  res.json(GetPublicEventResponse.parse({ code: row.code, name: row.name, status: row.status, assignmentMode: row.assignment_mode, tables: result }));
+  res.json(GetPublicEventResponse.parse({ code: row.code, name: row.name, status: row.status, assignmentMode: row.assignment_mode, triviaEnabled: row.trivia_enabled !== false, tables: result }));
 });
 
 router.post("/events/:code/join", async (req, res): Promise<void> => {

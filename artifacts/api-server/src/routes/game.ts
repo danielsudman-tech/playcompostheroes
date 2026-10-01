@@ -55,6 +55,7 @@ import {
   type PgClient,
   type PgQueryable,
 } from "../lib/gameStore.js";
+import { getEventTriviaEnabled } from "../lib/eventTriviaSettings.js";
 import { buildEffectAnnouncement, findEffectCard, serializeEffectAnnouncement } from "../lib/facilitatedEffects.js";
 import { sanitizeRecapLog } from "../lib/recapPrivacy.js";
 import { extractBearerToken, getUserByToken, isApprovedFacilitator, type CompostUser } from "../lib/userStore.js";
@@ -201,6 +202,7 @@ export function serializeState(state: GameState, viewerIndex?: number) {
 
   return {
     ...rest,
+    ...(state.eventId ? { triviaEnabled: getEventTriviaEnabled(state.eventId) } : {}),
     log: sanitizeRecapLog(state.log, knownCardNames),
     lastEffect,
     pendingDecision,

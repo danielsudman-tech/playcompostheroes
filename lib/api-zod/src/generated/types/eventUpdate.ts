@@ -20,4 +20,5 @@ export interface EventUpdate {
    */
   idleSeconds?: number;
   assignmentMode?: EventUpdateAssignmentMode;
+  triviaEnabled?: boolean;
 }

@@ -37,6 +37,7 @@ export const compostEvents = pgTable("compost_events", {
   status: text("status").notNull().default("upcoming"),
   assignmentMode: text("assignment_mode").notNull().default("auto"),
   idleSeconds: integer("idle_seconds").notNull().default(120),
+  triviaEnabled: boolean("trivia_enabled").notNull().default(true),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   lastMeaningfulActivityAt: timestamp("last_meaningful_activity_at", { withTimezone: true }).notNull().defaultNow(),
 });

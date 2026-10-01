@@ -79,9 +79,10 @@ export default function EventControl() {
   const [settings, setSettings] = useState(false);
   const [name, setName] = useState("");
   const [threshold, setThreshold] = useState(2);
+  const [triviaEnabled, setTriviaEnabled] = useState(true);
   const [copied, setCopied] = useState(false);
   const [opening, setOpening] = useState<string | null>(null);
-  useEffect(() => { if (event) { setName(event.name); setThreshold(event.idleThresholdMinutes ?? 2); } }, [event?.name, event?.idleThresholdMinutes]);
+  useEffect(() => { if (event) { setName(event.name); setThreshold(event.idleThresholdMinutes ?? 2); setTriviaEnabled(event.triviaEnabled !== false); } }, [event?.name, event?.idleThresholdMinutes, event?.triviaEnabled]);
   useEffect(() => {
     if (event?.status === "ending" || event?.status === "completed") {
       setConfirm(null);
@@ -133,9 +134,10 @@ export default function EventControl() {
           <button className="event-button event-button-primary" data-testid="button-copy-event-link" onClick={() => copy(shareLink)}>{copied ? <Check size={16} /> : <Link2 size={16} />} Copy guest link</button>
         </div>
       </section>
-      {settings && <form className="event-panel p-5 flex flex-wrap gap-3 items-end" onSubmit={e => { e.preventDefault(); update.mutate({ name: name.trim(), idleThresholdMinutes: threshold }, { onSuccess: () => { setSettings(false); toast({ title: "Event settings saved" }); }, onError: err => toast({ title: "Couldn't save settings", description: err.message, variant: "destructive" }) }); }}>
+      {settings && <form className="event-panel p-5 flex flex-wrap gap-3 items-end" onSubmit={e => { e.preventDefault(); update.mutate({ name: name.trim(), idleThresholdMinutes: threshold, triviaEnabled }, { onSuccess: () => { setSettings(false); toast({ title: "Event settings saved" }); }, onError: err => toast({ title: "Couldn't save settings", description: err.message, variant: "destructive" }) }); }}>
         <label className="flex-1 min-w-[200px] text-xs font-extrabold space-y-1">Event name<input className="event-input" value={name} maxLength={80} required onChange={e => setName(e.target.value)} data-testid="input-edit-event-name" /></label>
         <label className="w-44 text-xs font-extrabold space-y-1">Idle alert (minutes)<input className="event-input" type="number" min={2} max={60} value={threshold} onChange={e => setThreshold(Number(e.target.value))} data-testid="input-edit-idle-threshold" /></label>
+        <label className="flex items-center gap-2 text-xs font-extrabold"><input type="checkbox" checked={triviaEnabled} onChange={e => setTriviaEnabled(e.target.checked)} data-testid="checkbox-event-trivia-enabled" /> Enable optional compost trivia for guests</label>
         <button className="event-button event-button-primary" disabled={update.isPending || !name.trim()} data-testid="button-save-event">Save changes</button>
         <button type="button" className="event-button event-button-outline" onClick={() => setSettings(false)}>Cancel</button>
       </form>}

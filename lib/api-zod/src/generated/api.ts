@@ -155,6 +155,12 @@ export const GetGameResponse = zod.object({
     .describe(
       "Owning event for an event table; absent for standalone games and legacy rooms.",
     ),
+  triviaEnabled: zod
+    .boolean()
+    .optional()
+    .describe(
+      "Event trivia setting for direct table links; absent for non-event games.",
+    ),
   mode: zod.enum(["facilitator", "standalone", "online", "facilitated"]),
   phase: zod.enum([
     "waiting",
@@ -515,6 +521,11 @@ export const GetFacilitatorEventsResponseItem = zod.object({
   status: zod.enum(["upcoming", "active", "ending", "completed"]),
   assignmentMode: zod.enum(["choose", "auto"]),
   idleSeconds: zod.number(),
+  triviaEnabled: zod
+    .boolean()
+    .describe(
+      "Whether optional compost trivia is available at this event's tables.",
+    ),
   tableCount: zod.number(),
 });
 export const GetFacilitatorEventsResponse = zod.array(
@@ -581,6 +592,11 @@ export const GetFacilitatorEventResponse = zod
     status: zod.enum(["upcoming", "active", "ending", "completed"]),
     assignmentMode: zod.enum(["choose", "auto"]),
     idleSeconds: zod.number(),
+    triviaEnabled: zod
+      .boolean()
+      .describe(
+        "Whether optional compost trivia is available at this event's tables.",
+      ),
     tableCount: zod.number(),
   })
   .and(
@@ -647,6 +663,7 @@ export const UpdateFacilitatorEventBody = zod.object({
     .max(updateFacilitatorEventBodyIdleSecondsMax)
     .optional(),
   assignmentMode: zod.enum(["choose", "auto"]).optional(),
+  triviaEnabled: zod.boolean().optional(),
 });
 
 export const updateFacilitatorEventResponseTwoTablesItemProgressMin = 0;
@@ -660,6 +677,11 @@ export const UpdateFacilitatorEventResponse = zod
     status: zod.enum(["upcoming", "active", "ending", "completed"]),
     assignmentMode: zod.enum(["choose", "auto"]),
     idleSeconds: zod.number(),
+    triviaEnabled: zod
+      .boolean()
+      .describe(
+        "Whether optional compost trivia is available at this event's tables.",
+      ),
     tableCount: zod.number(),
   })
   .and(
@@ -802,6 +824,7 @@ export const GetPublicEventResponse = zod.object({
   name: zod.string(),
   status: zod.enum(["upcoming", "active", "ending", "completed"]),
   assignmentMode: zod.enum(["choose", "auto"]),
+  triviaEnabled: zod.boolean(),
   tables: zod
     .array(
       zod.object({
@@ -927,6 +950,12 @@ export const SendHostMessageResponse = zod.object({
     .optional()
     .describe(
       "Owning event for an event table; absent for standalone games and legacy rooms.",
+    ),
+  triviaEnabled: zod
+    .boolean()
+    .optional()
+    .describe(
+      "Event trivia setting for direct table links; absent for non-event games.",
     ),
   mode: zod.enum(["facilitator", "standalone", "online", "facilitated"]),
   phase: zod.enum([
@@ -1244,6 +1273,12 @@ export const ResolveQuestionResponse = zod.object({
     .describe(
       "Owning event for an event table; absent for standalone games and legacy rooms.",
     ),
+  triviaEnabled: zod
+    .boolean()
+    .optional()
+    .describe(
+      "Event trivia setting for direct table links; absent for non-event games.",
+    ),
   mode: zod.enum(["facilitator", "standalone", "online", "facilitated"]),
   phase: zod.enum([
     "waiting",
@@ -1542,6 +1577,12 @@ export const EndSessionResponse = zod.object({
     .optional()
     .describe(
       "Owning event for an event table; absent for standalone games and legacy rooms.",
+    ),
+  triviaEnabled: zod
+    .boolean()
+    .optional()
+    .describe(
+      "Event trivia setting for direct table links; absent for non-event games.",
     ),
   mode: zod.enum(["facilitator", "standalone", "online", "facilitated"]),
   phase: zod.enum([
@@ -1843,6 +1884,12 @@ export const PauseGameResponse = zod.object({
     .describe(
       "Owning event for an event table; absent for standalone games and legacy rooms.",
     ),
+  triviaEnabled: zod
+    .boolean()
+    .optional()
+    .describe(
+      "Event trivia setting for direct table links; absent for non-event games.",
+    ),
   mode: zod.enum(["facilitator", "standalone", "online", "facilitated"]),
   phase: zod.enum([
     "waiting",
@@ -2141,6 +2188,12 @@ export const FacilitatorResolveResponse = zod.object({
     .optional()
     .describe(
       "Owning event for an event table; absent for standalone games and legacy rooms.",
+    ),
+  triviaEnabled: zod
+    .boolean()
+    .optional()
+    .describe(
+      "Event trivia setting for direct table links; absent for non-event games.",
     ),
   mode: zod.enum(["facilitator", "standalone", "online", "facilitated"]),
   phase: zod.enum([
@@ -2463,6 +2516,12 @@ export const PerformActionResponse = zod.object({
     .describe(
       "Owning event for an event table; absent for standalone games and legacy rooms.",
     ),
+  triviaEnabled: zod
+    .boolean()
+    .optional()
+    .describe(
+      "Event trivia setting for direct table links; absent for non-event games.",
+    ),
   mode: zod.enum(["facilitator", "standalone", "online", "facilitated"]),
   phase: zod.enum([
     "waiting",
@@ -2767,6 +2826,12 @@ export const ReorderWaitingPlayersResponse = zod.object({
     .optional()
     .describe(
       "Owning event for an event table; absent for standalone games and legacy rooms.",
+    ),
+  triviaEnabled: zod
+    .boolean()
+    .optional()
+    .describe(
+      "Event trivia setting for direct table links; absent for non-event games.",
     ),
   mode: zod.enum(["facilitator", "standalone", "online", "facilitated"]),
   phase: zod.enum([

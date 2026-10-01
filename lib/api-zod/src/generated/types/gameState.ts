@@ -19,6 +19,8 @@ export interface GameState {
   gameId: string;
   /** Owning event for an event table; absent for standalone games and legacy rooms. */
   eventId?: string;
+  /** Event trivia setting for direct table links; absent for non-event games. */
+  readonly triviaEnabled?: boolean;
   mode: GameStateMode;
   phase: GameStatePhase;
   currentPlayerIndex: number;

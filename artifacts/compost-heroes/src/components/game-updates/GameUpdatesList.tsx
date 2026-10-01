@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import type { ReactNode } from "react";
 import { cn } from "@/lib/utils";
 import { isHighlighted, type GameUpdate } from "@/lib/gameUpdates";
 
@@ -51,17 +52,46 @@ export function GameUpdatesList({ updates, onOpenRecap }: { updates: GameUpdate[
 }
 
 /** Mobile: one-line strip above the hand, outside the drawer. Taps open Recap. */
-export function GameUpdatesStrip({ updates, onOpenRecap }: { updates: GameUpdate[]; onOpenRecap: () => void }) {
+export function GameUpdatesStrip({
+  updates,
+  onOpenRecap,
+  children,
+}: {
+  updates: GameUpdate[];
+  onOpenRecap: () => void;
+  children?: ReactNode;
+}) {
   const { now } = useHasFresh(updates);
   const latest = updates[0];
-  if (!latest) return null;
-  const hot = isHighlighted(latest, now);
+  if (!latest && !children) return null;
+  const hot = latest ? isHighlighted(latest, now) : false;
   return (
-    <button onClick={onOpenRecap} data-testid="button-updates-strip"
-      className={cn("md:hidden w-full flex items-center gap-2 px-3 py-1.5 text-xs text-left border-t border-border truncate transition-colors duration-700",
-        hot ? (latest.personal ? "bg-amber-500/20 text-foreground" : "bg-primary/10 text-foreground") : "bg-card/90 text-muted-foreground")}>
-      <span className="font-bold truncate">{latest.title}{latest.detail ? `: ${latest.detail}` : ""}</span>
-      <span className="ml-auto shrink-0 font-bold text-primary">Recap</span>
-    </button>
+    <div
+      data-testid="button-updates-strip"
+      aria-label="Latest game update"
+      aria-live="polite"
+      role="group"
+      className={cn(
+        "md:hidden w-full min-h-9 flex items-center gap-1 overflow-hidden px-2 text-xs border-t border-border transition-colors duration-700",
+        hot ? (latest?.personal ? "bg-amber-500/20 text-foreground" : "bg-primary/10 text-foreground") : "bg-card/90 text-muted-foreground",
+      )}
+    >
+      {latest ? (
+        <button
+          type="button"
+          onClick={onOpenRecap}
+          className="min-w-0 flex-1 flex items-center gap-2 py-1.5 text-left"
+          aria-label={`${latest.title}${latest.detail ? `: ${latest.detail}` : ""}. Open Game Recap.`}
+        >
+          <span className="font-bold truncate">
+            {latest.title}{latest.detail ? `: ${latest.detail}` : ""}
+          </span>
+          <span className="shrink-0 font-bold text-primary">Recap</span>
+        </button>
+      ) : (
+        <span className="sr-only">No game updates yet</span>
+      )}
+      {children && <div className="shrink-0">{children}</div>}
+    </div>
   );
 }

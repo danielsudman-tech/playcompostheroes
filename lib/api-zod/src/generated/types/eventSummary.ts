@@ -15,5 +15,7 @@ export interface EventSummary {
   status: EventSummaryStatus;
   assignmentMode: EventSummaryAssignmentMode;
   idleSeconds: number;
+  /** Whether optional compost trivia is available at this event's tables. */
+  readonly triviaEnabled: boolean;
   tableCount: number;
 }
