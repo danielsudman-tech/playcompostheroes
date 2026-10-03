@@ -43,6 +43,8 @@ interface PlayerBoardRowProps {
   onZoomCard?: (card: Card) => void;
   /** When provided, movable cards show a "move layer" button. Only pass for own row on own turn. */
   onMoveLayer?: (cardId: string) => void;
+  /** Online-host controls for this seat (rendered only for the host, on other seats). */
+  hostControls?: React.ReactNode;
 }
 
 export function PlayerBoardRow({
@@ -57,6 +59,7 @@ export function PlayerBoardRow({
   onViewPile,
   onZoomCard,
   onMoveLayer,
+  hostControls,
 }: PlayerBoardRowProps) {
   const collected = collectedCategoryCount(player.compostPile);
   const oneAway = collected === 4;
@@ -96,6 +99,7 @@ export function PlayerBoardRow({
             <span className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider flex items-center gap-1 mt-0.5">
               {isMe ? <><User className="w-3 h-3" /> You</> : "Opponent"}
             </span>
+            {hostControls}
           </div>
           <div className={cn(
             "shrink-0 flex flex-col items-center justify-center w-8 h-8 xl:w-10 xl:h-10 rounded-full border-2",

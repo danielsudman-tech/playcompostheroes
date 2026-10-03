@@ -23,6 +23,7 @@ export interface PlayerState {
   botSkillLevel?: BotSkillLevel;
   consecutiveMissedTurns?: number;
   botCovering?: boolean;
+  botCoverReason?: "timer" | "host";
 }
 
 export interface ActiveModifier {

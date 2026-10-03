@@ -84,6 +84,7 @@ export * from "./pendingDecision";
 export * from "./pendingDecisionMeta";
 export * from "./pendingDecisionOptionsItem";
 export * from "./playerState";
+export * from "./playerStateBotCoverReason";
 export * from "./playerStateBotSkillLevel";
 export * from "./poolDiagnostics";
 export * from "./publicEvent";

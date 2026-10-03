@@ -19,4 +19,6 @@ export const GameActionType = {
   reset_game: "reset_game",
   set_turn_timer: "set_turn_timer",
   take_back_seat: "take_back_seat",
+  cover_player: "cover_player",
+  remove_player: "remove_player",
 } as const;

@@ -2,7 +2,8 @@ import { Router, type IRouter } from "express";
 import "./../lib/turnTimerRuntime.js";
 import { buildAutoResolveData } from "../lib/autoResolve.js";
 import { validTurnTimer } from "../lib/turnClock.js";
-import { resetMissedTurns, returnCoveredSeat } from "../lib/playerCover.js";
+import { coverHumanSeat, resetMissedTurns, returnCoveredSeat } from "../lib/playerCover.js";
+import { revokeSeatTokens, withClientTransaction } from "../lib/gameStore.js";
 import { pool } from "@workspace/db";
 import { logEvent } from "../lib/analyticsStore.js";
 import {
@@ -85,14 +86,12 @@ function requestClient(req: unknown): PgClient | undefined {
   return (req as { gameMutationClient?: PgClient }).gameMutationClient;
 }
 
-// Serialize every mutation of an event-linked game with event joins and host
-// controls, and refresh the cache from durable state after acquiring the lock.
+// Every game mutation shares the timer/event advisory lock and held client.
+// Transfers take their own ordered two-game locks.
 router.use("/games/:gameId", (req, res, next) => {
   if (req.method === "GET" || req.originalUrl.includes("/waiting/transfer")) return next();
   void (async () => {
     const gameId = req.params.gameId;
-    const initialEvent = await getEventForGame(gameId);
-    if (!initialEvent) return next();
     const isEnd = req.originalUrl.split("?")[0].endsWith("/end");
     const client = await acquireGameMutationLock(gameId);
     let released = false;
@@ -932,6 +931,39 @@ router.post("/games/:gameId/action", async (req, res) => {
     await storeGame(next, client);
     broadcast(gameId, next, client);
     res.json(serializeState(next, seat!)); return;
+  }
+  if (type === "cover_player" || type === "remove_player") {
+    const seat = token ? await getPlayerIndexForToken(gameId, token, client) : null;
+    const user = await getRegisteredUser(req.body?.userToken, client);
+    if (state.mode !== "online" || seat !== 0 || !user || user.id !== state.facilitatorId || playerId !== state.players[0]?.id) {
+      res.status(403).json({ error: "Only the signed-in room host can manage other seats" }); return;
+    }
+    if (state.phase === "waiting" || state.phase === "game_over") {
+      res.status(409).json({ error: "Seat cover and replacement are only available during a game" }); return;
+    }
+    const targetId = req.body?.data?.playerId;
+    const index = state.players.findIndex(p => p.id === targetId);
+    const target = state.players[index];
+    if (!target || index === 0 || (target.isBot && !target.botCovering)) {
+      res.status(400).json({ error: "Choose another human or temporarily covered seat" }); return;
+    }
+    if (type === "cover_player" && target.botCovering) {
+      res.status(409).json({ error: "A bot is already covering this player" }); return;
+    }
+    if (!client) throw new Error("Seat management requires the held game mutation client");
+    let next = coverHumanSeat(state, target.id, type === "cover_player");
+    next = { ...next, log: [...next.log, type === "cover_player"
+      ? `A bot is covering for ${target.name}.`
+      : `${target.name} was removed from the game and permanently replaced by a bot.`] };
+    next = runBotTurnsIfNeeded(resetMissedTurns(next, playerId));
+    let removedTokens: string[] = [];
+    await withClientTransaction(client, async () => {
+      if (type === "remove_player") removedTokens = await revokeSeatTokens(gameId, index, client);
+      await storeGame(next, client);
+    });
+    for (const removed of removedTokens) sendKickedEvent(gameId, removed);
+    broadcast(gameId, next, client);
+    res.json(serializeState(next, 0)); return;
   }
   if (state.turnTimerSeconds && type !== "reset_game" && req.body?.turnDeadlineKey !== state.turnDeadlineKey) {
     res.status(409).json({ error: "The turn or choice changed. Use the current table controls." }); return;

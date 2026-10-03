@@ -341,6 +341,14 @@ export const GameStatePhase = {
   game_over: "game_over",
 } as const;
 
+export type PlayerStateBotCoverReason =
+  (typeof PlayerStateBotCoverReason)[keyof typeof PlayerStateBotCoverReason];
+
+export const PlayerStateBotCoverReason = {
+  timer: "timer",
+  host: "host",
+} as const;
+
 export type CardType = (typeof CardType)[keyof typeof CardType];
 
 export const CardType = {
@@ -383,6 +391,7 @@ export const PlayerStateBotSkillLevel = {
 export interface PlayerState {
   consecutiveMissedTurns?: number;
   botCovering?: boolean;
+  botCoverReason?: PlayerStateBotCoverReason;
   id: string;
   name: string;
   hand: Card[];
@@ -771,6 +780,8 @@ export const GameActionType = {
   reset_game: "reset_game",
   set_turn_timer: "set_turn_timer",
   take_back_seat: "take_back_seat",
+  cover_player: "cover_player",
+  remove_player: "remove_player",
 } as const;
 
 export type GameActionDecisionData = { [key: string]: unknown } | null;

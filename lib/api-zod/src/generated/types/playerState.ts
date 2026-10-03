@@ -6,11 +6,13 @@
  * OpenAPI spec version: 0.1.0
  */
 import type { Card } from "./card";
+import type { PlayerStateBotCoverReason } from "./playerStateBotCoverReason";
 import type { PlayerStateBotSkillLevel } from "./playerStateBotSkillLevel";
 
 export interface PlayerState {
   consecutiveMissedTurns?: number;
   botCovering?: boolean;
+  botCoverReason?: PlayerStateBotCoverReason;
   id: string;
   name: string;
   hand: Card[];

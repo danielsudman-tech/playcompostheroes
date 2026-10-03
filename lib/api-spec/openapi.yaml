@@ -1433,6 +1433,7 @@ components:
       properties:
         consecutiveMissedTurns: { type: integer }
         botCovering: { type: boolean }
+        botCoverReason: { type: string, enum: [timer, host] }
         id:
           type: string
         name:
@@ -1836,6 +1837,8 @@ components:
             - reset_game
             - set_turn_timer
             - take_back_seat
+            - cover_player
+            - remove_player
         playerId:
           type: string
         token:

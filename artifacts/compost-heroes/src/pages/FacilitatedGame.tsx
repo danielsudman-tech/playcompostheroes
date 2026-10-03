@@ -2,7 +2,7 @@ import { useState, useEffect, useLayoutEffect, useCallback, useRef } from "react
 import { createPortal } from "react-dom";
 import { useGameSounds } from "@/hooks/use-game-sounds";
 import { useCurrentUser } from "@/components/AppGate";
-import { forgetEventSeat, getGameEventCode, rememberedEventSeat, useEventPresence, useEventReadyStatus, useGuestEvent, useSetEventReady } from "@/hooks/use-events";
+import { userToken, forgetEventSeat, getGameEventCode, rememberedEventSeat, useEventPresence, useEventReadyStatus, useGuestEvent, useSetEventReady } from "@/hooks/use-events";
 import { useParams, useLocation } from "wouter";
 import { motion, AnimatePresence } from "framer-motion";
 import confetti from "canvas-confetti";
@@ -22,6 +22,7 @@ import {
 } from "@/hooks/use-game";
 import { TurnTimerChip } from "@/components/TurnTimerChip";
 import { coverTransitions, isCovered, missedTurnsCopy, type CoverFields } from "@/lib/botCover";
+import { HostSeatControls } from "@/components/HostSeatControls";
 import { GameCard } from "@/components/GameCard";
 import { DecisionModal, PLAYER_SELECTION_TYPES } from "@/components/DecisionModal";
 import { GameUpdatesList, GameUpdatesStrip } from "@/components/game-updates/GameUpdatesList";
@@ -319,7 +320,8 @@ export default function FacilitatedGame() {
     if (!gameState || gameState.phase === "waiting") return;
     const prev = coverSnap.current?.game === gameState.gameId ? coverSnap.current.map : {};
     for (const t of coverTransitions(prev, gameState.players as (PlayerState & CoverFields)[])) {
-      if (t.kind === "covering") logUpdate(missedTurnsCopy(t.name, t.missed), "notice", "A bot is covering for them.", `cover:${t.id}:${gameState.turnNumber}`);
+      if (t.kind === "covering" && t.reason === "host") logUpdate(`A bot is covering for ${t.name}.`, "notice", undefined, `cover:${t.id}:${gameState.turnNumber}`);
+      else if (t.kind === "covering") logUpdate(missedTurnsCopy(t.name, t.missed), "notice", "A bot is covering for them.", `cover:${t.id}:${gameState.turnNumber}`);
       else logUpdate(`${t.name} is back.`, "notice", undefined, `back:${t.id}:${gameState.turnNumber}`);
     }
     coverSnap.current = { game: gameState.gameId, map: Object.fromEntries(gameState.players.map((p) => [p.id, (p as CoverFields).botCovering === true])) };
@@ -535,9 +537,31 @@ export default function FacilitatedGame() {
   // While a bot covers this viewer's seat, humans can't act until they take it back.
   const ownCovered = isRemote && !!localPlayerId && me.id === localPlayerId && isCovered(me as CoverFields);
   const isMyTurn = localPlayerId === currentPlayer.id && !ownCovered;
+  // Only the signed-in creator holding the seat-0 token sees these; never spectators or other accounts.
+  const isOnlineHost = isOnline && !!localToken && !!currentUser && !!gameState.facilitatorId &&
+    gameState.facilitatorId === currentUser.id && claim?.playerIndex === 0 && !!claim.playerId &&
+    gameState.phase !== "game_over";
+  const hostSeatAction = (type: "cover_player" | "remove_player", target: PlayerState) => {
+    if (!claim?.playerId || actionMutation.isPending) return;
+    actionMutation.mutate({
+      type: type as GameAction["type"], playerId: claim.playerId, data: { playerId: target.id },
+      userToken: userToken() || undefined,
+    }, {
+      onSuccess: () => {
+        if (type === "remove_player") setViewingOpponent(null);
+        toast({ title: type === "cover_player" ? `A bot is covering ${target.name}` : `${target.name} was removed` });
+      },
+    });
+  };
+  const hostControlsFor = (p: PlayerState) => {
+    const covered = isCovered(p as CoverFields);
+    if (!isOnlineHost || p.id === claim?.playerId || (p.isBot && !covered)) return undefined;
+    return <HostSeatControls playerId={p.id} name={p.name} covered={covered} pending={actionMutation.isPending}
+      onCover={() => hostSeatAction("cover_player", p)} onRemove={() => hostSeatAction("remove_player", p)} />;
+  };
   const handleTakeBack = () => {
     if (!localPlayerId || actionMutation.isPending) return;
-    actionMutation.mutate({ type: "take_back_seat" as GameAction["type"], playerId: localPlayerId }, {
+    actionMutation.mutate({ type: "take_back_seat", playerId: localPlayerId }, {
       onSuccess: () => logUpdate("You're back", "notice", "You have your seat again."),
     });
   };
@@ -918,6 +942,7 @@ export default function FacilitatedGame() {
                   isEligibleTarget={eligibleTargetIds.has(p.id)}
                   onTarget={() => handleTargetOpponent(p)}
                   onViewPile={() => setViewingOpponent(p)}
+                  hostControls={hostControlsFor(p)}
                   onZoomCard={setZoomedCard}
                   onMoveLayer={p.id === localPlayerId && isMyTurn && !isInlineTargeting ? handleMoveLayer : undefined}
                 />
@@ -1448,7 +1473,7 @@ export default function FacilitatedGame() {
 
       {/* Opponent Pile viewer (still useful for zooming specific cards or seeing a stacked list clearly) */}
       {viewingOpponent && (
-        <OpponentPileModal player={viewingOpponent} onClose={() => setViewingOpponent(null)} />
+        <OpponentPileModal player={viewingOpponent} onClose={() => setViewingOpponent(null)} hostControls={hostControlsFor(gameState.players.find((q) => q.id === viewingOpponent.id) ?? viewingOpponent)} />
       )}
 
       {/* Decision Modal */}

@@ -19,9 +19,10 @@ const CATEGORIES = [
 interface OpponentPileModalProps {
   player: PlayerState;
   onClose: () => void;
+  hostControls?: React.ReactNode;
 }
 
-export function OpponentPileModal({ player, onClose }: OpponentPileModalProps) {
+export function OpponentPileModal({ player, onClose, hostControls }: OpponentPileModalProps) {
   const [zoomedCard, setZoomedCard] = useState<PlayerState["compostPile"][0] | null>(null);
 
   const collected = CATEGORIES.filter(cat =>
@@ -69,6 +70,7 @@ export function OpponentPileModal({ player, onClose }: OpponentPileModalProps) {
               <h2 className="font-display font-bold text-xl">{player.name}'s Compost Pile</h2>
               {(player as CoverFields).botCovering === true && <p className="text-xs font-bold text-violet-700" data-testid="label-pile-bot-covering">{coverLabel(player.name)}</p>}
               <p className="text-sm text-muted-foreground">{collected}/5 categories · tap a card to enlarge</p>
+              {hostControls}
             </div>
             <button
               onClick={onClose}

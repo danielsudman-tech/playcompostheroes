@@ -277,6 +277,7 @@ export async function reloadGameState(
         gameStoreCache.setState(state, Date.now(), isEventMember);
         gameStoreCache.setTokenIndex(gameId, tokenIndex);
       });
+      gameClock?.arm(state);
     }
     return JSON.parse(JSON.stringify(state)) as GameState;
   } finally {
@@ -1002,6 +1003,14 @@ export async function removePlayerTokenByIndex(
   }
 
   return removedToken;
+}
+
+/** Revoke a permanently replaced seat without shifting any other seat indexes. Caller holds the game lock. */
+export async function revokeSeatTokens(gameId: string, index: number, client: PgClient): Promise<string[]> {
+  const result = await client.query(
+    `DELETE FROM compost_game_tokens WHERE game_id=$1 AND player_index=$2 RETURNING token`, [gameId, index]);
+  recordUncachedGameChange(gameId, false);
+  return result.rows.map(row => row.token as string);
 }
 
 export async function removeEventWaitingPlayer(
