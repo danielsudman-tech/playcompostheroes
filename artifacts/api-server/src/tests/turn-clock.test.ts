@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { createGameState, drawCardAction, endTurn } from "../lib/gameEngine.js";
 import { syncTurnClock, expireTurnClock, clockIdentity } from "../lib/turnClock.js";
+import { armTurnTimer, disarmTurnTimer } from "../lib/turnTimerRuntime.js";
 
 function timed() {
   return syncTurnClock({ ...createGameState("clock-test", ["Sam", "Alex"], "online"), turnTimerSeconds: 30 }, 1000);
@@ -55,5 +56,30 @@ assert.equal(syncTurnClock({ ...timed(), mode: "standalone" }).turnDeadlineAt, n
   const next = expire(state);
   assert.equal(next.players[0].hand.length, 5);
   assert.equal(next.pendingDecision, null);
+}
+{
+  const first = timed();
+  const paused = syncTurnClock({ ...first, paused: true }, 2000);
+  const other = syncTurnClock({ ...paused, pendingDecision: {
+    type: "choose_function", playerId: first.players[1].id, cardId: "public-card", prompt: "Choose", options: ["Nitrogen"],
+  } }, 2001);
+  assert.equal(other.turnTimerRemainingMs, 30000, "new required actor while paused gets a fresh frozen window");
+  const changedPrivateOptions = { ...other, pendingDecision: { ...other.pendingDecision!, options: ["hidden-card-name"] } };
+  assert.equal(clockIdentity(changedPrivateOptions), clockIdentity(other), "deadline keys cannot be used to guess hidden options");
+  const one = expire(first), two = expireTurnClock(one, one.turnDeadlineKey!, one.turnDeadlineAt!, one.turnDeadlineAt! + 1);
+  assert.equal(two.systemUpdates?.length, 2);
+  assert.notEqual(one.systemUpdates?.[0].id, two.systemUpdates?.[1].id);
+}
+{
+  const set = globalThis.setTimeout;
+  let arms = 0;
+  globalThis.setTimeout = ((...args: Parameters<typeof set>) => { arms++; return set(...args); }) as typeof set;
+  try {
+    const first = syncTurnClock({ ...timed(), turnDeadlineAt: null }, Date.now());
+    armTurnTimer(first);
+    armTurnTimer({ ...first, turnDeadlineAt: first.turnDeadlineAt! + 30000 });
+    armTurnTimer(first, false);
+    assert.equal(arms, 2, "a stale read cannot replace the newer timer");
+  } finally { disarmTurnTimer("clock-test"); globalThis.setTimeout = set; }
 }
 console.log("turn-clock.test.ts: timer phase, decision, pause, race, lazy restart and hand-limit checks passed");

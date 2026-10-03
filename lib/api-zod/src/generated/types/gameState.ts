@@ -8,14 +8,18 @@
 import type { ActiveModifier } from "./activeModifier";
 import type { Card } from "./card";
 import type { EffectAnnouncement } from "./effectAnnouncement";
+import type { GameStateBotTurnUpdatesItem } from "./gameStateBotTurnUpdatesItem";
 import type { GameStateHostMessage } from "./gameStateHostMessage";
 import type { GameStateMode } from "./gameStateMode";
 import type { GameStatePhase } from "./gameStatePhase";
+import type { GameStateSystemUpdatesItem } from "./gameStateSystemUpdatesItem";
 import type { PendingDecision } from "./pendingDecision";
 import type { PlayerState } from "./playerState";
 import type { QuestionFlag } from "./questionFlag";
 
 export interface GameState {
+  botTurnUpdates?: GameStateBotTurnUpdatesItem[];
+  systemUpdates?: GameStateSystemUpdatesItem[];
   turnTimerSeconds?: number;
   /** @nullable */
   turnDeadlineAt?: number | null;

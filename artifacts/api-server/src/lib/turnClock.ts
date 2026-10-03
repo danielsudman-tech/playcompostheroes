@@ -2,6 +2,7 @@ import { drawCardAction, endTurn, resolveDecision, runBotTurnsIfNeeded, type Gam
 import { buildAutoResolveData } from "./autoResolve.js";
 import { createHash } from "node:crypto";
 import { recordMissedTurn } from "./playerCover.js";
+import { addSystemUpdate } from "./systemUpdates.js";
 
 export const TURN_TIMER_VALUES = [0, 30, 60, 90, 120] as const;
 export const validTurnTimer = (value: unknown): value is number =>
@@ -14,7 +15,7 @@ export function requiredActor(state: GameState): string | undefined {
 export function clockIdentity(state: GameState): string {
   const decision = state.pendingDecision;
   return createHash("sha256").update(JSON.stringify([state.turnNumber, state.turnSequence ?? 0, requiredActor(state),
-    decision ? [decision.type, decision.cardId, decision.prompt, decision.options] : "turn"])).digest("hex");
+    decision ? [decision.type, decision.cardId] : "turn"])).digest("hex");
 }
 
 export function syncTurnClock(state: GameState, now = Date.now()): GameState {
@@ -26,7 +27,8 @@ export function syncTurnClock(state: GameState, now = Date.now()): GameState {
   const actorKey = JSON.stringify([state.turnNumber, state.turnSequence ?? 0, requiredActor(state)]);
   if (state.paused) {
     return { ...state, turnDeadlineKey: key, turnTimerActorKey: actorKey, turnDeadlineAt: null,
-      turnTimerRemainingMs: state.turnDeadlineAt != null ? Math.max(0, state.turnDeadlineAt - now) :
+      turnTimerRemainingMs: state.turnTimerActorKey !== actorKey ? seconds * 1000 :
+        state.turnDeadlineAt != null ? Math.max(0, state.turnDeadlineAt - now) :
         state.turnTimerRemainingMs ?? seconds * 1000 };
   }
   const deadline = state.turnTimerActorKey === actorKey && state.turnDeadlineAt != null
@@ -70,5 +72,6 @@ export function expireTurnClock(state: GameState, expectedKey: string, expectedD
   next = { ...next, turnDeadlineAt: null, turnDeadlineKey: null, turnTimerRemainingMs: null,
     lastMeaningfulActivityAt: now,
     log: [...next.log, `Time ran out. ${actor.name}'s turn was finished automatically.`] };
+  next = addSystemUpdate(next, `Time ran out. ${actor.name}'s turn was finished automatically.`, now);
   return syncTurnClock(next, now);
 }

@@ -529,6 +529,22 @@ export interface QuestionFlag {
   resolved: boolean;
 }
 
+export type GameStateBotTurnUpdatesItem = {
+  id: string;
+  playerId: string;
+  playerName: string;
+  cardName?: string;
+  summary: string;
+  removalLine?: string;
+  ts: number;
+};
+
+export type GameStateSystemUpdatesItem = {
+  id: string;
+  text: string;
+  ts: number;
+};
+
 export type GameStateHostMessage = {
   id: string;
   text: string;
@@ -536,6 +552,8 @@ export type GameStateHostMessage = {
 } | null;
 
 export interface GameState {
+  botTurnUpdates?: GameStateBotTurnUpdatesItem[];
+  systemUpdates?: GameStateSystemUpdatesItem[];
   turnTimerSeconds?: number;
   /** @nullable */
   turnDeadlineAt?: number | null;

@@ -1688,6 +1688,28 @@ components:
     GameState:
       type: object
       properties:
+        botTurnUpdates:
+          type: array
+          items:
+            type: object
+            properties:
+              id: { type: string }
+              playerId: { type: string }
+              playerName: { type: string }
+              cardName: { type: string }
+              summary: { type: string }
+              removalLine: { type: string }
+              ts: { type: number }
+            required: [id, playerId, playerName, summary, ts]
+        systemUpdates:
+          type: array
+          items:
+            type: object
+            properties:
+              id: { type: string }
+              text: { type: string }
+              ts: { type: number }
+            required: [id, text, ts]
         turnTimerSeconds: { type: integer }
         turnDeadlineAt: { type: ["number", "null"] }
         turnDeadlineKey: { type: ["string", "null"] }

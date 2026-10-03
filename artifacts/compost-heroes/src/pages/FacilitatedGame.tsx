@@ -1,5 +1,6 @@
 import { useState, useEffect, useLayoutEffect, useCallback, useRef } from "react";
 import { createPortal } from "react-dom";
+import { useSoundEngine } from "@/hooks/use-sound-engine";
 import { useGameSounds } from "@/hooks/use-game-sounds";
 import { useCurrentUser } from "@/components/AppGate";
 import { userToken, forgetEventSeat, getGameEventCode, rememberedEventSeat, useEventPresence, useEventReadyStatus, useGuestEvent, useSetEventReady } from "@/hooks/use-events";
@@ -23,6 +24,7 @@ import {
 import { TurnTimerChip } from "@/components/TurnTimerChip";
 import { coverTransitions, isCovered, missedTurnsCopy, type CoverFields } from "@/lib/botCover";
 import { HostSeatControls } from "@/components/HostSeatControls";
+import { isTimerActor } from "@/lib/turnTimerCore";
 import { GameCard } from "@/components/GameCard";
 import { DecisionModal, PLAYER_SELECTION_TYPES } from "@/components/DecisionModal";
 import { GameUpdatesList, GameUpdatesStrip } from "@/components/game-updates/GameUpdatesList";
@@ -221,6 +223,7 @@ export default function FacilitatedGame() {
   );
 
   // Sound system
+  const { play } = useSoundEngine();
   const { muted: soundMuted, toggleMute: toggleSoundMute } = useGameSounds(gameState ?? undefined, localPlayerId ?? undefined);
 
   const [joinName, setJoinName] = useState("");
@@ -301,9 +304,15 @@ export default function FacilitatedGame() {
       viewerId: isRemote && localToken ? viewerFingerprint(localToken) : null,
     },
     lastEffect: gameState?.lastEffect ?? null,
+    botTurnUpdates: gameState?.botTurnUpdates,
+    serverLog: gameState?.log,
+    systemUpdates: gameState?.systemUpdates,
+    onYourTurn: (initial) => { if (!initial) play("action_card", true); },
+    botPlayerIds: gameState?.players.filter((p) => p.isBot).map((p) => p.id),
     localPlayerId,
     hidden: !!passScreen,
-    turn: gameState ? { turnNumber: gameState.turnNumber, currentPlayerId: gameState.players[gameState.currentPlayerIndex]?.id ?? null, phase: gameState.phase } : null,
+    turn: gameState ? { turnNumber: gameState.turnNumber, currentPlayerId: gameState.players[gameState.currentPlayerIndex]?.id ?? null,
+      phase: gameState.paused || gameState.players[gameState.currentPlayerIndex]?.isBot ? "inactive" : gameState.phase } : null,
   });
   useEffect(() => {
     if (!nudgedAt) return;
@@ -580,6 +589,8 @@ export default function FacilitatedGame() {
   const myRowPlayer = localIndex !== -1 ? gameState.players[localIndex] : null;
 
   const decision = gameState.pendingDecision;
+  const timerActorId = decision ? decision.playerId : currentPlayer.id;
+  const timerActor = isTimerActor(timerActorId, localPlayerId, !!gameState.players.find((p) => p.id === timerActorId)?.isBot);
   const isMyDecision = !!decision && decision.playerId === localPlayerId && !me.isBot;
 
   const isInlineTargeting = isMyDecision && PLAYER_SELECTION_TYPES.has(decision!.type);
@@ -816,7 +827,7 @@ export default function FacilitatedGame() {
               </button>
             </div>
           )}
-        <TurnTimerChip game={gameState} paused={gameState.paused === true} isActor={(decision ? decision.playerId : currentPlayer.id) === localPlayerId} testId="turn-timer-header" />
+        <TurnTimerChip game={gameState} paused={gameState.paused === true} isActor={timerActor} testId="turn-timer-header" />
           <button
             onClick={toggleSoundMute}
             title={soundMuted ? "Unmute sounds" : "Mute sounds"}
@@ -1029,7 +1040,7 @@ export default function FacilitatedGame() {
           )}
         >
           
-          <div className="px-3 pt-3 flex md:hidden"><TurnTimerChip game={gameState} paused={gameState.paused === true} isActor={(decision ? decision.playerId : currentPlayer.id) === localPlayerId} audible={false} testId="turn-timer-drawer" className="" /></div>
+          <div className="px-3 pt-3 flex md:hidden"><TurnTimerChip game={gameState} paused={gameState.paused === true} isActor={timerActor} audible={false} testId="turn-timer-drawer" className="" /></div>
           {/* Decks */}
           <div className="p-3 xl:p-6 border-b border-border/40 bg-muted/10 flex justify-center gap-4 xl:gap-6">
             {/* Draw pile */}
@@ -1149,7 +1160,7 @@ export default function FacilitatedGame() {
                   Activate Hot Pile Bonus
                 </Button>
               )}
-              <div className="hidden md:flex justify-center mb-1"><TurnTimerChip game={gameState} paused={gameState.paused === true} isActor={(decision ? decision.playerId : currentPlayer.id) === localPlayerId} audible={false} testId="turn-timer-controls" className="" /></div>
+              <div className="hidden md:flex justify-center mb-1"><TurnTimerChip game={gameState} paused={gameState.paused === true} isActor={timerActor} audible={false} testId="turn-timer-controls" className="" /></div>
               {gameState.phase !== "game_over" && isMyTurn ? (
                  gameState.phase === "draw" ? (
                    <>
@@ -1277,23 +1288,21 @@ export default function FacilitatedGame() {
               <button onClick={() => setShowLog(false)} className="text-muted-foreground hover:text-foreground"><X className="w-4 h-4" /></button>
             </div>
             <div className="p-4 flex-1 overflow-y-auto flex flex-col gap-2 custom-scrollbar">
-              {gameUpdates.length > 0 && (
-                <div className="flex flex-col gap-1.5 pb-2 border-b border-border" data-testid="recap-updates">
-                  <span className="text-[10px] font-bold uppercase tracking-widest text-primary">Your table updates</span>
+              {gameUpdates.length > 0 ? (
+                <div className="flex flex-col gap-2" data-testid="recap-updates">
                   {gameUpdates.map((u) => (
-                    <div key={u.id} className="text-xs leading-snug">
+                    <div key={u.id} className="text-xs leading-snug py-1 border-b border-border/30 last:border-0">
                       <p className="font-bold text-foreground">{u.title}</p>
-                      {(u.lines ?? []).map((line, li) => <p key={li} className="text-muted-foreground">{line}</p>)}
+                      {(u.lines ?? []).filter((line) => line !== u.title).map((line, li) => <p key={li} className="text-muted-foreground">{line}</p>)}
                     </div>
                   ))}
                 </div>
-              )}
-              {[...gameState.log].reverse().map((entry, i) => (
+              ) : [...gameState.log].reverse().map((entry, i) => (
                 <div key={i} className="text-xs text-muted-foreground py-1 border-b border-border/30 last:border-0 leading-snug">
                   {entry}
                 </div>
               ))}
-              {gameState.log.length === 0 && <p className="text-xs italic text-muted-foreground text-center">No moves yet.</p>}
+              {gameUpdates.length === 0 && gameState.log.length === 0 && <p className="text-xs italic text-muted-foreground text-center">No moves yet.</p>}
             </div>
           </motion.div>
         )}

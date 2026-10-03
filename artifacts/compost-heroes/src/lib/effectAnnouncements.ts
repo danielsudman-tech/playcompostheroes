@@ -180,8 +180,10 @@ function formatFact(
       return "Everyone passes compost piles to the left.";
     case "slot_change": {
       const ownerId = fact.targetPlayerId ?? playerIds[0];
-      const owner = ownerId === localPlayerId ? "your" : `${nameFor(effect, ownerId ?? "")}'s`;
-      return `${ownerId === localPlayerId ? "You change" : `${nameFor(effect, ownerId ?? "")} changes`} the ${fact.cardName ?? "card"} slot in ${owner} compost pile from ${fact.previousFunction ?? "one function"} to ${fact.function ?? "another function"}.`;
+      const who = ownerId === localPlayerId ? "You" : nameFor(effect, ownerId ?? "");
+      const card = fact.cardName ?? "a card";
+      if (fact.previousFunction && fact.function) return `${who} moved ${card} from ${fact.previousFunction} to ${fact.function}.`;
+      return `${who} filled the ${fact.function ?? "open"} slot with ${card}.`;
     }
     case "ongoing_set":
       return fact.previousCardName

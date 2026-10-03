@@ -53,7 +53,8 @@ export function addUpdate(list: GameUpdate[], update: GameUpdate, cap = GAME_UPD
 export function updateFromEffect(
   effect: EffectAnnouncementData,
   localPlayerId: string | null,
-  at: number
+  at: number,
+  turnNumber?: number
 ): GameUpdate {
   const level = getEffectAnnouncementLevel(effect, localPlayerId);
   const personal = level === "personal";
@@ -61,7 +62,7 @@ export function updateFromEffect(
   const lines = events.length ? events.map((e) => e.text) : effect.outcome ?? [];
   const title = getEffectAnnouncementHeading(effect, localPlayerId);
   return {
-    id: `effect:${effect.id}`,
+    id: effectUpdateId(effect, turnNumber),
     tone: personal ? "personal" : "effect",
     title,
     detail: lines.slice(0, 3).join(" / ") || undefined,
@@ -70,6 +71,14 @@ export function updateFromEffect(
     at,
     personal,
   };
+}
+
+/**
+ * One entry per play: a multi-slot hero's choose_function placeholder and its final
+ * placement share played-by + card + turn, so the later payload refreshes the same entry.
+ */
+export function effectUpdateId(effect: EffectAnnouncementData, turnNumber?: number): string {
+  return turnNumber == null ? `effect:${effect.id}` : `effect:${effect.playedById}:${effect.cardId}:${turnNumber}`;
 }
 
 export function noticeUpdate(id: string, title: string, at: number, tone: GameUpdateTone = "notice", detail?: string): GameUpdate {

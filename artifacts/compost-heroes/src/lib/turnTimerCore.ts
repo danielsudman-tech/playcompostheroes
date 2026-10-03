@@ -35,3 +35,8 @@ export function computeTimerView(i: TimerInput): TimerView {
 export function shouldCue(urgent: boolean, key: string, lastCued: string | null) {
   return urgent && key !== lastCued;
 }
+
+/** Urgent emphasis/sound is for a required HUMAN actor only; bots (incl. a covered own seat) never cue. */
+export function isTimerActor(actorId: string | null | undefined, localId: string | null | undefined, actorIsBot: boolean) {
+  return !!actorId && actorId === localId && !actorIsBot;
+}

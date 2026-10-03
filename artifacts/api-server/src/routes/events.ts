@@ -476,6 +476,9 @@ router.patch("/facilitator/events/:eventId", async (req, res): Promise<void> => 
     const locked = await requireHost(req.params.eventId, body.userToken, client);
     if ("failure" in locked) return { failure: Number(locked.failure), error: locked.error };
     const changed: GameState[] = [];
+    // Lazy expiries must commit before entering the settings transaction; never
+    // broadcast a timed transition that an enclosing rollback could undo.
+    const loaded = await Promise.all(initialTables.map(t => getGame(t.game_id, client)));
     await withClientTransaction(client, async () => {
       const updatedEvent = await client.query(
       `UPDATE compost_events
@@ -489,8 +492,7 @@ router.patch("/facilitator/events/:eventId", async (req, res): Promise<void> => 
         [req.params.eventId, body.name?.trim() ?? null, body.idleSeconds ?? null, body.assignmentMode ?? null, body.triviaEnabled ?? null, body.turnTimerSeconds ?? null],
       );
       if (!updatedEvent.rows[0]) throw new Error("Event disappeared during settings update");
-      for (const table of initialTables) {
-        const state = await getGame(table.game_id, client);
+      for (const state of loaded) {
         if (!state) continue;
         const next = body.turnTimerSeconds === undefined ? state : syncTurnClock({
           ...state, turnTimerSeconds: body.turnTimerSeconds, turnDeadlineAt: null,

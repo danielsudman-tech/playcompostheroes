@@ -20,4 +20,12 @@ assert.equal(isHighlighted(u, 9_999), true);
 assert.equal(isHighlighted(u, 10_001), false);
 assert.equal(isHighlighted({ ...u, personal: false }, 5_001), false);
 assert.notEqual(scopeKey({ gameId: "g", seatId: "a" }), scopeKey({ gameId: "g", seatId: "b" }));
+// Multi-slot hero: placeholder then final placement is one entry, refreshed in place.
+const placeholder = { ...effect, id: "e-a", events: [{ kind: "info" as const, text: "Choosing a slot" }] };
+const final = { ...effect, id: "e-b", events: [{ kind: "info" as const, text: "Ana filled the Nitrogen slot with Worm." }] };
+let heroList = addUpdate([], updateFromEffect(placeholder, "z", 1, 4));
+heroList = addUpdate(heroList, updateFromEffect(final, "z", 5, 4));
+assert.equal(heroList.length, 1);
+assert.match(heroList[0].detail!, /filled the Nitrogen slot/);
+assert.equal(heroList[0].at, 1);
 console.log("gameUpdates ok");

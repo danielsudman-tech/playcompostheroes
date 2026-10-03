@@ -45,6 +45,13 @@ try {
   assert.equal(results[1].status, 409, "late action loses to the overdue durable deadline");
   const persisted = (await pool.query(`SELECT state FROM compost_games WHERE game_id=$1`, [gameId])).rows[0].state;
   assert.equal(persisted.turnNumber, 2);
+  const reset = await request(`/games/${gameId}/action`, {
+    type: "reset_game", token, playerId: "player_0", turnDeadlineKey: persisted.turnDeadlineKey,
+  });
+  assert.equal(reset.status, 200);
+  assert.equal(reset.data.turnTimerSeconds, 30, "reset retains the host timer setting");
+  assert.ok(reset.data.turnDeadlineAt > Date.now());
+  assert.notEqual(reset.data.turnDeadlineKey, state.turnDeadlineKey, "old round requests cannot match a reset round");
   assert.equal(persisted.log.filter((l: string) => l.startsWith("Time ran out.")).length, 1);
   assert.ok(persisted.turnDeadlineAt > Date.now());
   let covered = syncTurnClock(recordMissedTurn(recordMissedTurn({

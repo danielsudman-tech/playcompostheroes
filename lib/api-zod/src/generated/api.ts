@@ -148,6 +148,28 @@ export const getGameResponseLastEffectPrivateFactsItemCountMin = 0;
 export const getGameResponseLastEffectEventsItemFactCountMin = 0;
 
 export const GetGameResponse = zod.object({
+  botTurnUpdates: zod
+    .array(
+      zod.object({
+        id: zod.string(),
+        playerId: zod.string(),
+        playerName: zod.string(),
+        cardName: zod.string().optional(),
+        summary: zod.string(),
+        removalLine: zod.string().optional(),
+        ts: zod.number(),
+      }),
+    )
+    .optional(),
+  systemUpdates: zod
+    .array(
+      zod.object({
+        id: zod.string(),
+        text: zod.string(),
+        ts: zod.number(),
+      }),
+    )
+    .optional(),
   turnTimerSeconds: zod.number().optional(),
   turnDeadlineAt: zod.number().nullish(),
   turnDeadlineKey: zod.string().nullish(),
@@ -996,6 +1018,28 @@ export const sendHostMessageResponseLastEffectPrivateFactsItemCountMin = 0;
 export const sendHostMessageResponseLastEffectEventsItemFactCountMin = 0;
 
 export const SendHostMessageResponse = zod.object({
+  botTurnUpdates: zod
+    .array(
+      zod.object({
+        id: zod.string(),
+        playerId: zod.string(),
+        playerName: zod.string(),
+        cardName: zod.string().optional(),
+        summary: zod.string(),
+        removalLine: zod.string().optional(),
+        ts: zod.number(),
+      }),
+    )
+    .optional(),
+  systemUpdates: zod
+    .array(
+      zod.object({
+        id: zod.string(),
+        text: zod.string(),
+        ts: zod.number(),
+      }),
+    )
+    .optional(),
   turnTimerSeconds: zod.number().optional(),
   turnDeadlineAt: zod.number().nullish(),
   turnDeadlineKey: zod.string().nullish(),
@@ -1325,6 +1369,28 @@ export const resolveQuestionResponseLastEffectPrivateFactsItemCountMin = 0;
 export const resolveQuestionResponseLastEffectEventsItemFactCountMin = 0;
 
 export const ResolveQuestionResponse = zod.object({
+  botTurnUpdates: zod
+    .array(
+      zod.object({
+        id: zod.string(),
+        playerId: zod.string(),
+        playerName: zod.string(),
+        cardName: zod.string().optional(),
+        summary: zod.string(),
+        removalLine: zod.string().optional(),
+        ts: zod.number(),
+      }),
+    )
+    .optional(),
+  systemUpdates: zod
+    .array(
+      zod.object({
+        id: zod.string(),
+        text: zod.string(),
+        ts: zod.number(),
+      }),
+    )
+    .optional(),
   turnTimerSeconds: zod.number().optional(),
   turnDeadlineAt: zod.number().nullish(),
   turnDeadlineKey: zod.string().nullish(),
@@ -1637,6 +1703,28 @@ export const endSessionResponseLastEffectPrivateFactsItemCountMin = 0;
 export const endSessionResponseLastEffectEventsItemFactCountMin = 0;
 
 export const EndSessionResponse = zod.object({
+  botTurnUpdates: zod
+    .array(
+      zod.object({
+        id: zod.string(),
+        playerId: zod.string(),
+        playerName: zod.string(),
+        cardName: zod.string().optional(),
+        summary: zod.string(),
+        removalLine: zod.string().optional(),
+        ts: zod.number(),
+      }),
+    )
+    .optional(),
+  systemUpdates: zod
+    .array(
+      zod.object({
+        id: zod.string(),
+        text: zod.string(),
+        ts: zod.number(),
+      }),
+    )
+    .optional(),
   turnTimerSeconds: zod.number().optional(),
   turnDeadlineAt: zod.number().nullish(),
   turnDeadlineKey: zod.string().nullish(),
@@ -1950,6 +2038,28 @@ export const pauseGameResponseLastEffectPrivateFactsItemCountMin = 0;
 export const pauseGameResponseLastEffectEventsItemFactCountMin = 0;
 
 export const PauseGameResponse = zod.object({
+  botTurnUpdates: zod
+    .array(
+      zod.object({
+        id: zod.string(),
+        playerId: zod.string(),
+        playerName: zod.string(),
+        cardName: zod.string().optional(),
+        summary: zod.string(),
+        removalLine: zod.string().optional(),
+        ts: zod.number(),
+      }),
+    )
+    .optional(),
+  systemUpdates: zod
+    .array(
+      zod.object({
+        id: zod.string(),
+        text: zod.string(),
+        ts: zod.number(),
+      }),
+    )
+    .optional(),
   turnTimerSeconds: zod.number().optional(),
   turnDeadlineAt: zod.number().nullish(),
   turnDeadlineKey: zod.string().nullish(),
@@ -2262,6 +2372,28 @@ export const facilitatorResolveResponseLastEffectPrivateFactsItemCountMin = 0;
 export const facilitatorResolveResponseLastEffectEventsItemFactCountMin = 0;
 
 export const FacilitatorResolveResponse = zod.object({
+  botTurnUpdates: zod
+    .array(
+      zod.object({
+        id: zod.string(),
+        playerId: zod.string(),
+        playerName: zod.string(),
+        cardName: zod.string().optional(),
+        summary: zod.string(),
+        removalLine: zod.string().optional(),
+        ts: zod.number(),
+      }),
+    )
+    .optional(),
+  systemUpdates: zod
+    .array(
+      zod.object({
+        id: zod.string(),
+        text: zod.string(),
+        ts: zod.number(),
+      }),
+    )
+    .optional(),
   turnTimerSeconds: zod.number().optional(),
   turnDeadlineAt: zod.number().nullish(),
   turnDeadlineKey: zod.string().nullish(),
@@ -2602,6 +2734,28 @@ export const performActionResponseLastEffectPrivateFactsItemCountMin = 0;
 export const performActionResponseLastEffectEventsItemFactCountMin = 0;
 
 export const PerformActionResponse = zod.object({
+  botTurnUpdates: zod
+    .array(
+      zod.object({
+        id: zod.string(),
+        playerId: zod.string(),
+        playerName: zod.string(),
+        cardName: zod.string().optional(),
+        summary: zod.string(),
+        removalLine: zod.string().optional(),
+        ts: zod.number(),
+      }),
+    )
+    .optional(),
+  systemUpdates: zod
+    .array(
+      zod.object({
+        id: zod.string(),
+        text: zod.string(),
+        ts: zod.number(),
+      }),
+    )
+    .optional(),
   turnTimerSeconds: zod.number().optional(),
   turnDeadlineAt: zod.number().nullish(),
   turnDeadlineKey: zod.string().nullish(),
@@ -2920,6 +3074,28 @@ export const reorderWaitingPlayersResponseLastEffectPrivateFactsItemCountMin = 0
 export const reorderWaitingPlayersResponseLastEffectEventsItemFactCountMin = 0;
 
 export const ReorderWaitingPlayersResponse = zod.object({
+  botTurnUpdates: zod
+    .array(
+      zod.object({
+        id: zod.string(),
+        playerId: zod.string(),
+        playerName: zod.string(),
+        cardName: zod.string().optional(),
+        summary: zod.string(),
+        removalLine: zod.string().optional(),
+        ts: zod.number(),
+      }),
+    )
+    .optional(),
+  systemUpdates: zod
+    .array(
+      zod.object({
+        id: zod.string(),
+        text: zod.string(),
+        ts: zod.number(),
+      }),
+    )
+    .optional(),
   turnTimerSeconds: zod.number().optional(),
   turnDeadlineAt: zod.number().nullish(),
   turnDeadlineKey: zod.string().nullish(),

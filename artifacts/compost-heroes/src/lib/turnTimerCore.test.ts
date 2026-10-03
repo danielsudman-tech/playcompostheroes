@@ -20,4 +20,8 @@ assert.equal(shouldCue(true, "a", null), true);
 assert.equal(shouldCue(true, "a", "a"), false);
 assert.equal(shouldCue(true, "b", "a"), true);
 assert.equal(shouldCue(false, "b", "a"), false);
+import { isTimerActor } from "./turnTimerCore";
+assert.equal(isTimerActor("a", "a", false), true);
+assert.equal(isTimerActor("a", "a", true), false);
+assert.equal(isTimerActor("a", "b", false), false);
 console.log("turnTimerCore ok");

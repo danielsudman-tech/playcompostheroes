@@ -100,6 +100,10 @@ export interface GameState {
   turnDeadlineKey?: string | null;
   turnTimerActorKey?: string | null;
   turnTimerRemainingMs?: number | null;
+  botTurnUpdates?: BotTurnUpdate[];
+  botUpdateSequence?: number;
+  systemUpdateSequence?: number;
+  systemUpdates?: Array<{ id: string; text: string; ts: number }>;
   extraTurn: boolean;
   heroPlayedThisTurn: boolean;
   actionPlayedThisTurn: boolean;
@@ -129,6 +133,16 @@ export interface GameState {
   endedAt?: number;
   /** Epoch ms for real game activity (player actions, start, facilitator resolve). */
   lastMeaningfulActivityAt?: number;
+}
+
+export interface BotTurnUpdate {
+  id: string;
+  playerId: string;
+  playerName: string;
+  cardName?: string;
+  summary: string;
+  removalLine?: string;
+  ts: number;
 }
 
 export interface QuestionFlag {
@@ -213,6 +227,7 @@ export interface EngineOperationTrace {
   draws: Array<{ playerId: string; cardIds: string[] }>;
   handDiscards: Array<{ playerId: string; card: Card }>;
   discardToHand: Array<{ playerId: string; card: Card }>;
+  plays?: Array<{ playerId: string; card: Card }>;
 }
 
 interface ActiveEngineOperationTrace extends EngineOperationTrace {
@@ -284,6 +299,7 @@ export function captureEngineOperations<T extends { state: GameState; error?: st
     draws: [],
     handDiscards: [],
     discardToHand: [],
+    plays: [],
     trackedHandOwners: new Map(before.players.flatMap((player) =>
       player.hand.map((card) => [card.id, player.id] as const))),
     trackedCards: new Map(before.players.flatMap((player) =>
@@ -302,9 +318,18 @@ export function captureEngineOperations<T extends { state: GameState; error?: st
         draws: trace.draws.map((draw) => ({ playerId: draw.playerId, cardIds: [...draw.cardIds] })),
         handDiscards: [...trace.handDiscards],
         discardToHand: [...trace.discardToHand],
+        plays: [...(trace.plays ?? [])],
       },
     };
   } finally {
+    if (previousTrace) {
+      previousTrace.draws.push(...trace.draws);
+      previousTrace.handDiscards.push(...trace.handDiscards);
+      previousTrace.discardToHand.push(...trace.discardToHand);
+      previousTrace.plays?.push(...(trace.plays ?? []));
+      for (const id of trace.playedCardIds) previousTrace.playedCardIds.add(id);
+      for (const id of trace.recordedHandDiscardIds) previousTrace.recordedHandDiscardIds.add(id);
+    }
     activeEngineOperationTrace = previousTrace;
   }
 }
@@ -1333,6 +1358,15 @@ export function playCard(
   state: GameState,
   playerId: string,
   cardId: string
+): { state: GameState; error?: string } {
+  const card = getPlayer(state, playerId)?.hand.find(c => c.id === cardId);
+  const result = playCardInternal(state, playerId, cardId);
+  if (!result.error && card) activeEngineOperationTrace?.plays?.push({ playerId, card });
+  return result;
+}
+
+function playCardInternal(
+  state: GameState, playerId: string, cardId: string,
 ): { state: GameState; error?: string } {
   const player = getPlayer(state, playerId);
   if (!player) return { state, error: "Player not found" };
@@ -3605,7 +3639,7 @@ function botTakeTurn(state: GameState, alreadyDrew = false): GameState {
  * (e.g. Soggy Pile forcing each bot to choose a card to discard from their compost).
  * Returns the new state after resolving as many bot decisions as possible.
  */
-function drainBotDecisions(state: GameState): GameState {
+export function drainBotDecisions(state: GameState): GameState {
   let s = state;
   let tries = 0;
   while (s.pendingDecision && tries++ < 12) {
@@ -3624,6 +3658,7 @@ function drainBotDecisions(state: GameState): GameState {
 }
 
 export function runBotTurnsIfNeeded(state: GameState): GameState {
+  if (state.paused) return state;
   // First: resolve any pending decision that targets a bot (victim decisions
   // created by a human player's action card)
   let s = drainBotDecisions(state);
@@ -3638,9 +3673,27 @@ export function runBotTurnsIfNeeded(state: GameState): GameState {
     s.players[s.currentPlayerIndex]?.isBot &&
     iterations < 20
   ) {
-    s = botTakeTurn(s, s.phase !== "draw");
+    const before = s;
+    const actor = s.players[s.currentPlayerIndex];
+    const captured = captureEngineOperations(s, () => ({ state: botTakeTurn(s, s.phase !== "draw") }));
+    s = captured.result.state;
     // After each bot turn, drain any victim decisions targeting other bots
     s = drainBotDecisions(s);
+    const plays = (captured.trace.plays ?? []).filter(p => p.playerId === actor.id);
+    const drawn = captured.trace.draws.filter(d => d.playerId === actor.id).length;
+    const oldOngoing = before.ongoingActionCard;
+    const removed = oldOngoing && s.ongoingActionCard?.id !== oldOngoing.id
+      ? ` ${oldOngoing.name} was removed.` : "";
+    const names = [...new Set(plays.map(p => p.card.name))];
+    const sequence = (s.botUpdateSequence ?? 0) + 1;
+    const update: BotTurnUpdate = {
+      id: `${s.gameId}-bot-${sequence}`, playerId: actor.id, playerName: actor.name,
+      ...(names.length ? { cardName: names.join(" and ") } : {}),
+      summary: `${actor.name}${drawn ? " drew a card and" : ""} ${names.length ? `played ${names.join(" and ")}` : "passed"}.`,
+      ...(removed ? { removalLine: removed.trim() } : {}),
+      ts: Date.now(),
+    };
+    s = { ...s, botUpdateSequence: sequence, botTurnUpdates: [...(s.botTurnUpdates ?? []).slice(-39), update] };
     iterations++;
     if (s.phase === "game_over") break;
   }

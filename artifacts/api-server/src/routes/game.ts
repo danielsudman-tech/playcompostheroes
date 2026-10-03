@@ -4,6 +4,7 @@ import { buildAutoResolveData } from "../lib/autoResolve.js";
 import { validTurnTimer } from "../lib/turnClock.js";
 import { coverHumanSeat, resetMissedTurns, returnCoveredSeat } from "../lib/playerCover.js";
 import { revokeSeatTokens, withClientTransaction } from "../lib/gameStore.js";
+import { addSystemUpdate } from "../lib/systemUpdates.js";
 import { pool } from "@workspace/db";
 import { logEvent } from "../lib/analyticsStore.js";
 import {
@@ -22,6 +23,7 @@ import {
   removePlayerFromRoom,
   resolveDecision,
   runBotTurnsIfNeeded,
+  drainBotDecisions,
   type BotSkillLevel,
   type EngineOperationTrace,
   type GameState,
@@ -157,7 +159,7 @@ const HIDDEN_CARD = {
 
 export function serializeState(state: GameState, viewerIndex?: number) {
   const isOnline = state.mode === "online" || state.mode === "facilitated";
-  const { deck, turnTimerActorKey: _timerActorKey, turnSequence: _turnSequence, ...rest } = state;
+  const { deck, turnTimerActorKey: _timerActorKey, turnSequence: _turnSequence, botUpdateSequence: _botSequence, systemUpdateSequence: _systemSequence, ...rest } = state;
   const viewerId = viewerIndex !== undefined && viewerIndex >= 0
     ? state.players[viewerIndex]?.id
     : undefined;
@@ -205,6 +207,8 @@ export function serializeState(state: GameState, viewerIndex?: number) {
 
   return {
     ...rest,
+    botTurnUpdates: state.botTurnUpdates ?? [],
+    systemUpdates: state.systemUpdates ?? [],
     ...(state.eventId ? { triviaEnabled: getEventTriviaEnabled(state.eventId) } : {}),
     log: sanitizeRecapLog(state.log, knownCardNames),
     lastEffect,
@@ -955,6 +959,7 @@ router.post("/games/:gameId/action", async (req, res) => {
     next = { ...next, log: [...next.log, type === "cover_player"
       ? `A bot is covering for ${target.name}.`
       : `${target.name} was removed from the game and permanently replaced by a bot.`] };
+    if (type === "remove_player") next = addSystemUpdate(next, `${target.name} was removed from the game and permanently replaced by a bot.`);
     next = runBotTurnsIfNeeded(resetMissedTurns(next, playerId));
     let removedTokens: string[] = [];
     await withClientTransaction(client, async () => {
@@ -1109,6 +1114,8 @@ router.post("/games/:gameId/action", async (req, res) => {
         newState.players = newState.players.map((player, index) => ({
           ...player,
           id: state.players[index].id,
+          botCovering: state.players[index].botCovering,
+          botCoverReason: state.players[index].botCoverReason,
         }));
         // Preserve facilitator/session metadata across resets so the room
         // stays on its creator's dashboard.
@@ -1117,6 +1124,10 @@ router.post("/games/:gameId/action", async (req, res) => {
         newState.createdAt = state.createdAt;
         newState.label = state.label;
         newState.maxPlayers = state.maxPlayers;
+        newState.turnTimerSeconds = state.turnTimerSeconds;
+        newState.turnSequence = (state.turnSequence ?? 0) + 1;
+        newState.botUpdateSequence = state.botUpdateSequence;
+        newState.systemUpdateSequence = state.systemUpdateSequence;
         if (state.hostIsSpectator === true) newState.hostIsSpectator = true;
         newState = runBotTurnsIfNeeded(newState);
         await storeGame(newState, client);
@@ -1144,12 +1155,14 @@ router.post("/games/:gameId/action", async (req, res) => {
   // the FULL transition (pre-action → after bots) so viewers see the completed
   // effect — not just the human's intermediate step of a bot-completed chain.
   result.state = resetMissedTurns(result.state, playerId);
+  const victimDecisions = captureEngineOperations(result.state, () => ({ state: drainBotDecisions(result.state) }));
+  const humanEffectState = victimDecisions.result.state;
   const botOperationsCapture = captureEngineOperations(
-    result.state,
-    () => ({ state: runBotTurnsIfNeeded(result.state) }),
+    humanEffectState,
+    () => ({ state: runBotTurnsIfNeeded(humanEffectState) }),
   );
   const botOperations = botOperationsCapture.trace;
-  const announcementOperations = mergeEngineOperationTraces(effectOperations, botOperations);
+  const announcementOperations = mergeEngineOperationTraces(effectOperations, victimDecisions.trace);
   let stateAfterBots = {
     ...botOperationsCapture.result.state,
     lastMeaningfulActivityAt: Date.now(),
@@ -1190,7 +1203,7 @@ router.post("/games/:gameId/action", async (req, res) => {
             : "played";
       const announcement = buildEffectAnnouncement(
         state,
-        stateAfterBots,
+        humanEffectState,
         effectCard,
         effectActorId,
         verb,
@@ -1201,18 +1214,10 @@ router.post("/games/:gameId/action", async (req, res) => {
       // Bots took autonomous turns after this action. If a bot played an action
       // card, attribute the announcement to it (newest card in the discard pile
       // or a newly set ongoing card); otherwise announce the overall outcome.
-      const beforeDiscard = new Set(result.state.discardPile.map((c) => c.id));
-      const botCard =
-        stateAfterBots.discardPile.find((c) => !beforeDiscard.has(c.id) && c.type === "action") ??
-        (stateAfterBots.ongoingActionCard &&
-        stateAfterBots.ongoingActionCard.id !== result.state.ongoingActionCard?.id
-          ? stateAfterBots.ongoingActionCard
-          : null);
+      const actualPlay = botOperations.plays?.at(-1);
+      const botCard = actualPlay?.card;
       if (botCard) {
-        const botActor =
-          result.state.players[result.state.currentPlayerIndex]?.isBot
-            ? result.state.players[result.state.currentPlayerIndex].id
-            : playerId;
+        const botActor = actualPlay!.playerId;
         const botActivatedOngoing =
           stateAfterBots.ongoingBenefitUsedThisTurn &&
           !result.state.ongoingBenefitUsedThisTurn &&

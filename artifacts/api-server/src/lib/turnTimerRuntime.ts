@@ -1,5 +1,6 @@
 import {
   registerGameClock, withGameMutationLocks, getGame, storeGame, broadcastToGame,
+  getCachedGameState,
   type PgQueryable, type PgClient,
 } from "./gameStore.js";
 import { expiredClock, expireTurnClock } from "./turnClock.js";
@@ -12,7 +13,9 @@ export function disarmTurnTimer(gameId: string): void {
   if (timer) clearTimeout(timer);
   timers.delete(gameId);
 }
-export function armTurnTimer(state: GameState): void {
+export function armTurnTimer(state: GameState, authoritative = true): void {
+  // A late read must not replace a timer armed by a newer acknowledged write.
+  if (!authoritative && timers.has(state.gameId)) return;
   disarmTurnTimer(state.gameId);
   if (state.paused || state.turnDeadlineAt == null || !state.turnTimerSeconds) return;
   const key = state.turnDeadlineKey!;
@@ -39,7 +42,10 @@ export function armTurnTimer(state: GameState): void {
 }
 
 async function readClock(state: GameState, client?: PgQueryable): Promise<GameState> {
-  if (!expiredClock(state, Date.now())) { armTurnTimer(state); return state; }
+  if (!expiredClock(state, Date.now())) {
+    armTurnTimer(getCachedGameState(state.gameId) ?? state, false);
+    return state;
+  }
   if (!client) {
     return withGameMutationLocks([state.gameId], async held => (await getGame(state.gameId, held)) ?? state);
   }
