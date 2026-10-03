@@ -1431,6 +1431,8 @@ components:
     PlayerState:
       type: object
       properties:
+        consecutiveMissedTurns: { type: integer }
+        botCovering: { type: boolean }
         id:
           type: string
         name:
@@ -1833,6 +1835,7 @@ components:
             - move_card_layer
             - reset_game
             - set_turn_timer
+            - take_back_seat
         playerId:
           type: string
         token:

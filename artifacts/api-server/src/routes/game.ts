@@ -2,6 +2,7 @@ import { Router, type IRouter } from "express";
 import "./../lib/turnTimerRuntime.js";
 import { buildAutoResolveData } from "../lib/autoResolve.js";
 import { validTurnTimer } from "../lib/turnClock.js";
+import { resetMissedTurns, returnCoveredSeat } from "../lib/playerCover.js";
 import { pool } from "@workspace/db";
 import { logEvent } from "../lib/analyticsStore.js";
 import {
@@ -918,6 +919,20 @@ router.post("/games/:gameId/action", async (req, res) => {
     broadcast(gameId, next, client);
     res.json(serializeState(next, 0)); return;
   }
+  if (type === "take_back_seat") {
+    const seat = token ? await getPlayerIndexForToken(gameId, token, client) : null;
+    const player = seat != null ? state.players[seat] : undefined;
+    if (!player || player.id !== playerId || !player.botCovering) {
+      res.status(403).json({ error: "A valid token for your covered seat is required" }); return;
+    }
+    if (state.phase === "waiting" || state.phase === "game_over") {
+      res.status(409).json({ error: "This game is not in progress" }); return;
+    }
+    const next = returnCoveredSeat(state, playerId);
+    await storeGame(next, client);
+    broadcast(gameId, next, client);
+    res.json(serializeState(next, seat!)); return;
+  }
   if (state.turnTimerSeconds && type !== "reset_game" && req.body?.turnDeadlineKey !== state.turnDeadlineKey) {
     res.status(409).json({ error: "The turn or choice changed. Use the current table controls." }); return;
   }
@@ -958,6 +973,9 @@ router.post("/games/:gameId/action", async (req, res) => {
       return;
     }
     const tokenPlayerId = state.players[tokenIndex]?.id;
+    if (type !== "reset_game" && state.players[tokenIndex]?.isBot) {
+      res.status(409).json({ error: "A bot is covering this seat. Take your seat back first." }); return;
+    }
     if (!facilitatorReset && (!tokenPlayerId || tokenPlayerId !== playerId)) {
       res.status(403).json({ error: "Token does not match the acting player" });
       return;
@@ -1093,6 +1111,7 @@ router.post("/games/:gameId/action", async (req, res) => {
   // Run bot turns/decisions FIRST, then build the facilitated announcement over
   // the FULL transition (pre-action → after bots) so viewers see the completed
   // effect — not just the human's intermediate step of a bot-completed chain.
+  result.state = resetMissedTurns(result.state, playerId);
   const botOperationsCapture = captureEngineOperations(
     result.state,
     () => ({ state: runBotTurnsIfNeeded(result.state) }),

@@ -21,6 +21,7 @@ import {
   storeToken,
 } from "@/hooks/use-game";
 import { TurnTimerChip } from "@/components/TurnTimerChip";
+import { coverTransitions, isCovered, missedTurnsCopy, type CoverFields } from "@/lib/botCover";
 import { GameCard } from "@/components/GameCard";
 import { DecisionModal, PLAYER_SELECTION_TYPES } from "@/components/DecisionModal";
 import { GameUpdatesList, GameUpdatesStrip } from "@/components/game-updates/GameUpdatesList";
@@ -40,7 +41,7 @@ import {
 } from "@/components/facilitated/PlayerBoardRow";
 import { Button } from "@/components/ui/button";
 import { useToast } from "@/hooks/use-toast";
-import type { PlayerState, Card } from "@workspace/api-client-react";
+import type { PlayerState, Card, GameAction } from "@workspace/api-client-react";
 import { isEventSeatReadyFromServer } from "@/hooks/event-readiness";
 import {
   Layers,
@@ -66,6 +67,7 @@ import {
   Send,
   LogOut,
   Leaf,
+  Bot,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -312,6 +314,16 @@ export default function FacilitatedGame() {
   useEffect(() => {
     if (isFacilitated && hostMsgId && hostMsgText) logUpdate(`Facilitator: ${hostMsgText}`, "facilitator", undefined, `host:${hostMsgId}`);
   }, [isFacilitated, hostMsgId, hostMsgText, logUpdate]);
+  const coverSnap = useRef<{ game: string; map: Record<string, boolean> } | null>(null);
+  useEffect(() => {
+    if (!gameState || gameState.phase === "waiting") return;
+    const prev = coverSnap.current?.game === gameState.gameId ? coverSnap.current.map : {};
+    for (const t of coverTransitions(prev, gameState.players as (PlayerState & CoverFields)[])) {
+      if (t.kind === "covering") logUpdate(missedTurnsCopy(t.name, t.missed), "notice", "A bot is covering for them.", `cover:${t.id}:${gameState.turnNumber}`);
+      else logUpdate(`${t.name} is back.`, "notice", undefined, `back:${t.id}:${gameState.turnNumber}`);
+    }
+    coverSnap.current = { game: gameState.gameId, map: Object.fromEntries(gameState.players.map((p) => [p.id, (p as CoverFields).botCovering === true])) };
+  }, [gameState, logUpdate]);
   const myOpenQuestion = !!(gameState?.questions ?? []).some((q) => q.playerId === localPlayerId && !q.resolved);
 
   const handleAskQuestion = () => {
@@ -519,8 +531,16 @@ export default function FacilitatedGame() {
   }
 
   const currentPlayer = gameState.players[gameState.currentPlayerIndex];
-  const isMyTurn = localPlayerId === currentPlayer.id;
   const me = gameState.players.find((p) => p.id === localPlayerId) ?? currentPlayer;
+  // While a bot covers this viewer's seat, humans can't act until they take it back.
+  const ownCovered = isRemote && !!localPlayerId && me.id === localPlayerId && isCovered(me as CoverFields);
+  const isMyTurn = localPlayerId === currentPlayer.id && !ownCovered;
+  const handleTakeBack = () => {
+    if (!localPlayerId || actionMutation.isPending) return;
+    actionMutation.mutate({ type: "take_back_seat" as GameAction["type"], playerId: localPlayerId }, {
+      onSuccess: () => logUpdate("You're back", "notice", "You have your seat again."),
+    });
+  };
   
   // Determine turn order so local player is at the bottom
   const localIndex = gameState.players.findIndex(p => p.id === localPlayerId);
@@ -791,6 +811,15 @@ export default function FacilitatedGame() {
           </div>}
         </div>
       </header>
+      {ownCovered && gameState.phase !== "game_over" && (
+        <div role="status" className="shrink-0 flex flex-wrap items-center gap-3 px-4 py-2.5 bg-violet-50 border-b border-violet-200 text-violet-900" data-testid="banner-bot-covering">
+          <Bot className="w-4 h-4 shrink-0" />
+          <p className="flex-1 min-w-[200px] text-sm font-semibold">A bot is playing your seat while you were away.</p>
+          <Button size="sm" onClick={handleTakeBack} disabled={actionMutation.isPending} data-testid="button-take-back-seat">
+            {actionMutation.isPending ? <Loader2 className="w-4 h-4 animate-spin" /> : "I'm back — take my seat"}
+          </Button>
+        </div>
+      )}
 
       {/* FACILITATOR BROADCAST BANNER */}
       <AnimatePresence>

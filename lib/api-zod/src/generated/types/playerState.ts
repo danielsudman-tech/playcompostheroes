@@ -9,6 +9,8 @@ import type { Card } from "./card";
 import type { PlayerStateBotSkillLevel } from "./playerStateBotSkillLevel";
 
 export interface PlayerState {
+  consecutiveMissedTurns?: number;
+  botCovering?: boolean;
   id: string;
   name: string;
   hand: Card[];

@@ -178,6 +178,8 @@ export const GetGameResponse = zod.object({
   currentPlayerIndex: zod.number(),
   players: zod.array(
     zod.object({
+      consecutiveMissedTurns: zod.number().optional(),
+      botCovering: zod.boolean().optional(),
       id: zod.string(),
       name: zod.string(),
       hand: zod.array(
@@ -1023,6 +1025,8 @@ export const SendHostMessageResponse = zod.object({
   currentPlayerIndex: zod.number(),
   players: zod.array(
     zod.object({
+      consecutiveMissedTurns: zod.number().optional(),
+      botCovering: zod.boolean().optional(),
       id: zod.string(),
       name: zod.string(),
       hand: zod.array(
@@ -1349,6 +1353,8 @@ export const ResolveQuestionResponse = zod.object({
   currentPlayerIndex: zod.number(),
   players: zod.array(
     zod.object({
+      consecutiveMissedTurns: zod.number().optional(),
+      botCovering: zod.boolean().optional(),
       id: zod.string(),
       name: zod.string(),
       hand: zod.array(
@@ -1658,6 +1664,8 @@ export const EndSessionResponse = zod.object({
   currentPlayerIndex: zod.number(),
   players: zod.array(
     zod.object({
+      consecutiveMissedTurns: zod.number().optional(),
+      botCovering: zod.boolean().optional(),
       id: zod.string(),
       name: zod.string(),
       hand: zod.array(
@@ -1968,6 +1976,8 @@ export const PauseGameResponse = zod.object({
   currentPlayerIndex: zod.number(),
   players: zod.array(
     zod.object({
+      consecutiveMissedTurns: zod.number().optional(),
+      botCovering: zod.boolean().optional(),
       id: zod.string(),
       name: zod.string(),
       hand: zod.array(
@@ -2277,6 +2287,8 @@ export const FacilitatorResolveResponse = zod.object({
   currentPlayerIndex: zod.number(),
   players: zod.array(
     zod.object({
+      consecutiveMissedTurns: zod.number().optional(),
+      botCovering: zod.boolean().optional(),
       id: zod.string(),
       name: zod.string(),
       hand: zod.array(
@@ -2561,6 +2573,7 @@ export const PerformActionBody = zod.object({
     "move_card_layer",
     "reset_game",
     "set_turn_timer",
+    "take_back_seat",
   ]),
   playerId: zod.string(),
   token: zod.string().nullish(),
@@ -2611,6 +2624,8 @@ export const PerformActionResponse = zod.object({
   currentPlayerIndex: zod.number(),
   players: zod.array(
     zod.object({
+      consecutiveMissedTurns: zod.number().optional(),
+      botCovering: zod.boolean().optional(),
       id: zod.string(),
       name: zod.string(),
       hand: zod.array(
@@ -2926,6 +2941,8 @@ export const ReorderWaitingPlayersResponse = zod.object({
   currentPlayerIndex: zod.number(),
   players: zod.array(
     zod.object({
+      consecutiveMissedTurns: zod.number().optional(),
+      botCovering: zod.boolean().optional(),
       id: zod.string(),
       name: zod.string(),
       hand: zod.array(

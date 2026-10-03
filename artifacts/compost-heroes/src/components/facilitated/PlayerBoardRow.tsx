@@ -1,3 +1,4 @@
+import { isCovered, coverLabel, type CoverFields } from "@/lib/botCover";
 import type { PlayerState, ActiveModifier, Card } from "@workspace/api-client-react";
 import { cn } from "@/lib/utils";
 import { assetUrl } from "@/lib/assetUrl";
@@ -91,6 +92,7 @@ export function PlayerBoardRow({
         <div className="flex items-start justify-between gap-2 mt-1">
           <div className="flex flex-col min-w-0">
             <span className="font-display font-bold text-sm xl:text-lg leading-tight truncate">{player.name}</span>
+            {isCovered(player as CoverFields) && <span className="shrink-0 rounded-full bg-violet-100 text-violet-700 border border-violet-200 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide" data-testid={`label-bot-covering-${player.id}`}>{coverLabel(player.name)}</span>}
             <span className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider flex items-center gap-1 mt-0.5">
               {isMe ? <><User className="w-3 h-3" /> You</> : "Opponent"}
             </span>

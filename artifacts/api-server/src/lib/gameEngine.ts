@@ -21,6 +21,8 @@ export interface PlayerState {
   drawsExtraCard: boolean;
   isBot: boolean;
   botSkillLevel?: BotSkillLevel;
+  consecutiveMissedTurns?: number;
+  botCovering?: boolean;
 }
 
 export interface ActiveModifier {

@@ -1,6 +1,7 @@
 import { drawCardAction, endTurn, resolveDecision, runBotTurnsIfNeeded, type GameState } from "./gameEngine.js";
 import { buildAutoResolveData } from "./autoResolve.js";
 import { createHash } from "node:crypto";
+import { recordMissedTurn } from "./playerCover.js";
 
 export const TURN_TIMER_VALUES = [0, 30, 60, 90, 120] as const;
 export const validTurnTimer = (value: unknown): value is number =>
@@ -64,6 +65,7 @@ export function expireTurnClock(state: GameState, expectedKey: string, expectedD
       next = resolved.state;
     }
   }
+  next = recordMissedTurn(next, actor.id);
   next = runBotTurnsIfNeeded(next);
   next = { ...next, turnDeadlineAt: null, turnDeadlineKey: null, turnTimerRemainingMs: null,
     lastMeaningfulActivityAt: now,

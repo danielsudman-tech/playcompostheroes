@@ -381,6 +381,8 @@ export const PlayerStateBotSkillLevel = {
 } as const;
 
 export interface PlayerState {
+  consecutiveMissedTurns?: number;
+  botCovering?: boolean;
   id: string;
   name: string;
   hand: Card[];
@@ -768,6 +770,7 @@ export const GameActionType = {
   move_card_layer: "move_card_layer",
   reset_game: "reset_game",
   set_turn_timer: "set_turn_timer",
+  take_back_seat: "take_back_seat",
 } as const;
 
 export type GameActionDecisionData = { [key: string]: unknown } | null;

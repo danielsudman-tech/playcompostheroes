@@ -7,6 +7,7 @@ import { createGameState } from "../lib/gameEngine.js";
 import { syncTurnClock } from "../lib/turnClock.js";
 import { invalidateGameCaches, withGameMutationLocks, storeGame } from "../lib/gameStore.js";
 import { disarmTurnTimer } from "../lib/turnTimerRuntime.js";
+import { recordMissedTurn } from "../lib/playerCover.js";
 
 const server = app.listen(0);
 const base = `http://127.0.0.1:${(server.address() as { port: number }).port}/api`;
@@ -46,6 +47,18 @@ try {
   assert.equal(persisted.turnNumber, 2);
   assert.equal(persisted.log.filter((l: string) => l.startsWith("Time ran out.")).length, 1);
   assert.ok(persisted.turnDeadlineAt > Date.now());
+  let covered = syncTurnClock(recordMissedTurn(recordMissedTurn({
+    ...createGameState(gameId, ["Sam", "Alex"], "online"), facilitatorId: id, turnTimerSeconds: 30,
+  }, "player_0"), "player_0"));
+  await withGameMutationLocks([gameId], client => storeGame(covered, client));
+  assert.equal((await request(`/games/${gameId}/action`, { type: "take_back_seat", token, playerId: "player_1" })).status, 403);
+  assert.equal((await request(`/games/${gameId}/action`, { type: "draw_card", token, playerId: "player_0", turnDeadlineKey: covered.turnDeadlineKey })).status, 409);
+  const returned = await request(`/games/${gameId}/action`, { type: "take_back_seat", token, playerId: "player_0" });
+  assert.equal(returned.status, 200);
+  assert.equal(returned.data.players[0].isBot, false);
+  assert.equal(returned.data.players[0].consecutiveMissedTurns, 0);
+  assert.equal(returned.data.currentPlayerIndex, 0);
+  assert.equal((await request(`/games/${gameId}/action`, { type: "draw_card", token, playerId: "player_0", turnDeadlineKey: returned.data.turnDeadlineKey })).status, 200);
   const event = await request("/facilitator/events", { userToken, name: "Timer event", tableCount: 2, turnTimerSeconds: 90 });
   assert.equal(event.status, 201);
   eventId = event.data.eventId;

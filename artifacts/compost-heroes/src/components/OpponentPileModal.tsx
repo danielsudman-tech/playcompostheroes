@@ -1,3 +1,4 @@
+import { coverLabel, type CoverFields } from "@/lib/botCover";
 import { useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { X } from "lucide-react";
@@ -66,6 +67,7 @@ export function OpponentPileModal({ player, onClose }: OpponentPileModalProps) {
           <div className="flex items-center justify-between px-5 py-4 border-b">
             <div>
               <h2 className="font-display font-bold text-xl">{player.name}'s Compost Pile</h2>
+              {(player as CoverFields).botCovering === true && <p className="text-xs font-bold text-violet-700" data-testid="label-pile-bot-covering">{coverLabel(player.name)}</p>}
               <p className="text-sm text-muted-foreground">{collected}/5 categories · tap a card to enlarge</p>
             </div>
             <button

@@ -18,4 +18,5 @@ export const GameActionType = {
   move_card_layer: "move_card_layer",
   reset_game: "reset_game",
   set_turn_timer: "set_turn_timer",
+  take_back_seat: "take_back_seat",
 } as const;
