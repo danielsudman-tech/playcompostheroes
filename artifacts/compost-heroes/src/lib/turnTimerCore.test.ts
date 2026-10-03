@@ -1,0 +1,23 @@
+import assert from "node:assert/strict";
+import { computeTimerView, shouldCue } from "./turnTimerCore";
+
+const base = { seconds: 60, deadlineAt: 100_000, remainingMs: null, isActor: true };
+assert.equal(computeTimerView({ ...base, seconds: 0, now: 0 }).visible, false);
+assert.equal(computeTimerView({ ...base, seconds: undefined, now: 0 }).visible, false);
+const run = computeTimerView({ ...base, now: 70_000 });
+assert.equal(run.remainingMs, 30_000);
+assert.equal(run.urgent, false);
+assert.equal(computeTimerView({ ...base, now: 95_000 }).urgent, true);
+assert.equal(computeTimerView({ ...base, isActor: false, now: 95_000 }).urgent, false);
+assert.equal(computeTimerView({ ...base, now: 200_000 }).remainingMs, 0);
+const paused = computeTimerView({ ...base, paused: true, remainingMs: 8_000, now: 999_999 });
+assert.equal(paused.remainingMs, 8_000);
+assert.equal(paused.urgent, false);
+assert.equal(paused.running, false);
+const frozen = computeTimerView({ ...base, deadlineAt: null, remainingMs: 5_000, now: 1 });
+assert.equal(frozen.paused, true);
+assert.equal(shouldCue(true, "a", null), true);
+assert.equal(shouldCue(true, "a", "a"), false);
+assert.equal(shouldCue(true, "b", "a"), true);
+assert.equal(shouldCue(false, "b", "a"), false);
+console.log("turnTimerCore ok");

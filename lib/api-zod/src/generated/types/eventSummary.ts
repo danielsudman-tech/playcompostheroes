@@ -9,6 +9,7 @@ import type { EventSummaryAssignmentMode } from "./eventSummaryAssignmentMode";
 import type { EventSummaryStatus } from "./eventSummaryStatus";
 
 export interface EventSummary {
+  turnTimerSeconds?: number;
   eventId: string;
   code: string;
   name: string;

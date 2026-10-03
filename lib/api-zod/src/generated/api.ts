@@ -148,6 +148,10 @@ export const getGameResponseLastEffectPrivateFactsItemCountMin = 0;
 export const getGameResponseLastEffectEventsItemFactCountMin = 0;
 
 export const GetGameResponse = zod.object({
+  turnTimerSeconds: zod.number().optional(),
+  turnDeadlineAt: zod.number().nullish(),
+  turnDeadlineKey: zod.string().nullish(),
+  turnTimerRemainingMs: zod.number().nullish(),
   gameId: zod.string(),
   eventId: zod
     .string()
@@ -515,6 +519,7 @@ export const GetFacilitatorRoomsResponse = zod.array(
  * @summary List events owned by the approved facilitator
  */
 export const GetFacilitatorEventsResponseItem = zod.object({
+  turnTimerSeconds: zod.number().optional(),
   eventId: zod.string(),
   code: zod.string(),
   name: zod.string(),
@@ -535,6 +540,7 @@ export const GetFacilitatorEventsResponse = zod.array(
 /**
  * @summary Create an event and its facilitated game tables atomically
  */
+export const createFacilitatorEventBodyTurnTimerSecondsDefault = 0;
 export const createFacilitatorEventBodyNameMax = 100;
 
 export const createFacilitatorEventBodyTableCountMax = 10;
@@ -551,6 +557,15 @@ export const createFacilitatorEventBodyIdleSecondsMax = 3600;
 export const createFacilitatorEventBodyAssignmentModeDefault = `auto`;
 
 export const CreateFacilitatorEventBody = zod.object({
+  turnTimerSeconds: zod
+    .union([
+      zod.literal(0),
+      zod.literal(30),
+      zod.literal(60),
+      zod.literal(90),
+      zod.literal(120),
+    ])
+    .default(createFacilitatorEventBodyTurnTimerSecondsDefault),
   userToken: zod.string(),
   name: zod.string().min(1).max(createFacilitatorEventBodyNameMax),
   tableCount: zod.number().min(1).max(createFacilitatorEventBodyTableCountMax),
@@ -586,6 +601,7 @@ export const getFacilitatorEventResponseTwoTablesItemProgressMax = 5;
 
 export const GetFacilitatorEventResponse = zod
   .object({
+    turnTimerSeconds: zod.number().optional(),
     eventId: zod.string(),
     code: zod.string(),
     name: zod.string(),
@@ -663,6 +679,15 @@ export const updateFacilitatorEventBodyIdleSecondsMin = 30;
 export const updateFacilitatorEventBodyIdleSecondsMax = 3600;
 
 export const UpdateFacilitatorEventBody = zod.object({
+  turnTimerSeconds: zod
+    .union([
+      zod.literal(0),
+      zod.literal(30),
+      zod.literal(60),
+      zod.literal(90),
+      zod.literal(120),
+    ])
+    .optional(),
   userToken: zod.string(),
   name: zod.string().min(1).max(updateFacilitatorEventBodyNameMax).optional(),
   idleSeconds: zod
@@ -679,6 +704,7 @@ export const updateFacilitatorEventResponseTwoTablesItemProgressMax = 5;
 
 export const UpdateFacilitatorEventResponse = zod
   .object({
+    turnTimerSeconds: zod.number().optional(),
     eventId: zod.string(),
     code: zod.string(),
     name: zod.string(),
@@ -967,6 +993,10 @@ export const sendHostMessageResponseLastEffectPrivateFactsItemCountMin = 0;
 export const sendHostMessageResponseLastEffectEventsItemFactCountMin = 0;
 
 export const SendHostMessageResponse = zod.object({
+  turnTimerSeconds: zod.number().optional(),
+  turnDeadlineAt: zod.number().nullish(),
+  turnDeadlineKey: zod.string().nullish(),
+  turnTimerRemainingMs: zod.number().nullish(),
   gameId: zod.string(),
   eventId: zod
     .string()
@@ -1289,6 +1319,10 @@ export const resolveQuestionResponseLastEffectPrivateFactsItemCountMin = 0;
 export const resolveQuestionResponseLastEffectEventsItemFactCountMin = 0;
 
 export const ResolveQuestionResponse = zod.object({
+  turnTimerSeconds: zod.number().optional(),
+  turnDeadlineAt: zod.number().nullish(),
+  turnDeadlineKey: zod.string().nullish(),
+  turnTimerRemainingMs: zod.number().nullish(),
   gameId: zod.string(),
   eventId: zod
     .string()
@@ -1594,6 +1628,10 @@ export const endSessionResponseLastEffectPrivateFactsItemCountMin = 0;
 export const endSessionResponseLastEffectEventsItemFactCountMin = 0;
 
 export const EndSessionResponse = zod.object({
+  turnTimerSeconds: zod.number().optional(),
+  turnDeadlineAt: zod.number().nullish(),
+  turnDeadlineKey: zod.string().nullish(),
+  turnTimerRemainingMs: zod.number().nullish(),
   gameId: zod.string(),
   eventId: zod
     .string()
@@ -1900,6 +1938,10 @@ export const pauseGameResponseLastEffectPrivateFactsItemCountMin = 0;
 export const pauseGameResponseLastEffectEventsItemFactCountMin = 0;
 
 export const PauseGameResponse = zod.object({
+  turnTimerSeconds: zod.number().optional(),
+  turnDeadlineAt: zod.number().nullish(),
+  turnDeadlineKey: zod.string().nullish(),
+  turnTimerRemainingMs: zod.number().nullish(),
   gameId: zod.string(),
   eventId: zod
     .string()
@@ -2205,6 +2247,10 @@ export const facilitatorResolveResponseLastEffectPrivateFactsItemCountMin = 0;
 export const facilitatorResolveResponseLastEffectEventsItemFactCountMin = 0;
 
 export const FacilitatorResolveResponse = zod.object({
+  turnTimerSeconds: zod.number().optional(),
+  turnDeadlineAt: zod.number().nullish(),
+  turnDeadlineKey: zod.string().nullish(),
+  turnTimerRemainingMs: zod.number().nullish(),
   gameId: zod.string(),
   eventId: zod
     .string()
@@ -2505,6 +2551,7 @@ export const PerformActionParams = zod.object({
 });
 
 export const PerformActionBody = zod.object({
+  turnDeadlineKey: zod.string().nullish(),
   type: zod.enum([
     "draw_card",
     "play_card",
@@ -2513,6 +2560,7 @@ export const PerformActionBody = zod.object({
     "activate_ongoing",
     "move_card_layer",
     "reset_game",
+    "set_turn_timer",
   ]),
   playerId: zod.string(),
   token: zod.string().nullish(),
@@ -2525,6 +2573,7 @@ export const PerformActionBody = zod.object({
   targetPlayerId: zod.string().nullish(),
   targetCardId: zod.string().nullish(),
   decisionData: zod.record(zod.string(), zod.unknown()).nullish(),
+  data: zod.record(zod.string(), zod.unknown()).optional(),
 });
 
 export const performActionResponseLastEffectPrivateFactsItemCountMin = 0;
@@ -2532,6 +2581,10 @@ export const performActionResponseLastEffectPrivateFactsItemCountMin = 0;
 export const performActionResponseLastEffectEventsItemFactCountMin = 0;
 
 export const PerformActionResponse = zod.object({
+  turnTimerSeconds: zod.number().optional(),
+  turnDeadlineAt: zod.number().nullish(),
+  turnDeadlineKey: zod.string().nullish(),
+  turnTimerRemainingMs: zod.number().nullish(),
   gameId: zod.string(),
   eventId: zod
     .string()
@@ -2843,6 +2896,10 @@ export const reorderWaitingPlayersResponseLastEffectPrivateFactsItemCountMin = 0
 export const reorderWaitingPlayersResponseLastEffectEventsItemFactCountMin = 0;
 
 export const ReorderWaitingPlayersResponse = zod.object({
+  turnTimerSeconds: zod.number().optional(),
+  turnDeadlineAt: zod.number().nullish(),
+  turnDeadlineKey: zod.string().nullish(),
+  turnTimerRemainingMs: zod.number().nullish(),
   gameId: zod.string(),
   eventId: zod
     .string()

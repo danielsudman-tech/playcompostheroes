@@ -13,6 +13,17 @@ export interface EventStreamTicket {
   ticket: string;
 }
 
+export type EventInputTurnTimerSeconds =
+  (typeof EventInputTurnTimerSeconds)[keyof typeof EventInputTurnTimerSeconds];
+
+export const EventInputTurnTimerSeconds = {
+  NUMBER_0: 0,
+  NUMBER_30: 30,
+  NUMBER_60: 60,
+  NUMBER_90: 90,
+  NUMBER_120: 120,
+} as const;
+
 export type EventInputAssignmentMode =
   (typeof EventInputAssignmentMode)[keyof typeof EventInputAssignmentMode];
 
@@ -22,6 +33,7 @@ export const EventInputAssignmentMode = {
 } as const;
 
 export interface EventInput {
+  turnTimerSeconds?: EventInputTurnTimerSeconds;
   userToken: string;
   /**
    * @minLength 1
@@ -46,6 +58,17 @@ export interface EventInput {
   assignmentMode?: EventInputAssignmentMode;
 }
 
+export type EventUpdateTurnTimerSeconds =
+  (typeof EventUpdateTurnTimerSeconds)[keyof typeof EventUpdateTurnTimerSeconds];
+
+export const EventUpdateTurnTimerSeconds = {
+  NUMBER_0: 0,
+  NUMBER_30: 30,
+  NUMBER_60: 60,
+  NUMBER_90: 90,
+  NUMBER_120: 120,
+} as const;
+
 export type EventUpdateAssignmentMode =
   (typeof EventUpdateAssignmentMode)[keyof typeof EventUpdateAssignmentMode];
 
@@ -55,6 +78,7 @@ export const EventUpdateAssignmentMode = {
 } as const;
 
 export interface EventUpdate {
+  turnTimerSeconds?: EventUpdateTurnTimerSeconds;
   userToken: string;
   /**
    * @minLength 1
@@ -203,6 +227,7 @@ export const EventSummaryAssignmentMode = {
 } as const;
 
 export interface EventSummary {
+  turnTimerSeconds?: number;
   eventId: string;
   code: string;
   name: string;
@@ -500,6 +525,13 @@ export type GameStateHostMessage = {
 } | null;
 
 export interface GameState {
+  turnTimerSeconds?: number;
+  /** @nullable */
+  turnDeadlineAt?: number | null;
+  /** @nullable */
+  turnDeadlineKey?: string | null;
+  /** @nullable */
+  turnTimerRemainingMs?: number | null;
   gameId: string;
   /** Owning event for an event table; absent for standalone games and legacy rooms. */
   eventId?: string;
@@ -735,11 +767,16 @@ export const GameActionType = {
   activate_ongoing: "activate_ongoing",
   move_card_layer: "move_card_layer",
   reset_game: "reset_game",
+  set_turn_timer: "set_turn_timer",
 } as const;
 
 export type GameActionDecisionData = { [key: string]: unknown } | null;
 
+export type GameActionData = { [key: string]: unknown };
+
 export interface GameAction {
+  /** @nullable */
+  turnDeadlineKey?: string | null;
   type: GameActionType;
   playerId: string;
   token?: string | null;
@@ -750,6 +787,7 @@ export interface GameAction {
   targetPlayerId?: string | null;
   targetCardId?: string | null;
   decisionData?: GameActionDecisionData;
+  data?: GameActionData;
 }
 
 export type AdminHealthCheckParams = {

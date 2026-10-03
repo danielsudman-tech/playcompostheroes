@@ -53,6 +53,7 @@ export function OnlineRoomEntry({
         token={joinedToken}
         hasPassword={hasPassword}
         isFacilitated={false}
+        turnTimerSeconds={gameState.turnTimerSeconds ?? 0}
       />
     );
   }

@@ -13,7 +13,7 @@ import {
   controlFacilitatorEvent, controlFacilitatorEventTable, getPublicEvent, joinEvent, setEventReady,
   heartbeatEventPresence,
   getGetFacilitatorEventsQueryKey, getGetFacilitatorEventQueryKey, getGetPublicEventQueryKey,
-  type EventDetail, type EventSummary, type PublicEvent, type EventControlResult, type EventTableResult, type EventInput,
+  type EventDetail, type EventSummary, type PublicEvent, type EventControlResult, type EventTableResult, type EventInput, type EventUpdate,
 } from "@workspace/api-client-react";
 
 export interface EventSeat { playerId?: string; name?: string; playerName?: string; ready?: boolean; connected?: boolean; present?: boolean; lastSeenAt?: number | null }
@@ -27,7 +27,7 @@ export interface EventTable {
 export interface EventRecord {
   id?: string; eventId?: string; code: string; name: string; status: "upcoming" | "active" | "ending" | "completed";
   tableCount?: number; maxPlayersPerTable?: number; playersPerTable?: number; assignmentMode?: "choose" | "auto";
-  idleThresholdMinutes?: number; idleSeconds?: number; triviaEnabled?: boolean; tables: EventTable[]; createdAt?: number; paused?: boolean;
+  idleThresholdMinutes?: number; idleSeconds?: number; triviaEnabled?: boolean; turnTimerSeconds?: number; tables: EventTable[]; createdAt?: number; paused?: boolean;
 }
 export interface GuestEvent { code: string; name: string; status: string; assignmentMode?: "choose" | "auto"; triviaEnabled?: boolean; tables: EventTable[]; maxPlayersPerTable?: number; playersPerTable?: number }
 export interface EventJoin { gameId: string; token: string; playerId?: string; playerName?: string; tableNumber?: number }
@@ -193,7 +193,7 @@ export function useCreateEvent() {
 }
 export function useUpdateEvent(id: string) {
   const qc = useQueryClient();
-  return useMutation({ mutationFn: async (data: { name?: string; idleThresholdMinutes?: number; triviaEnabled?: boolean }) => normalizeEvent(await updateFacilitatorEvent(id, { name: data.name, idleSeconds: data.idleThresholdMinutes ? data.idleThresholdMinutes * 60 : undefined, triviaEnabled: data.triviaEnabled, userToken: userToken() })), onSuccess: (event) => { qc.setQueryData(eventKey(id), event); qc.invalidateQueries({ queryKey: facilitatorEventsKey() }); } });
+  return useMutation({ mutationFn: async (data: { name?: string; idleThresholdMinutes?: number; triviaEnabled?: boolean; turnTimerSeconds?: number }) => normalizeEvent(await updateFacilitatorEvent(id, { name: data.name, idleSeconds: data.idleThresholdMinutes ? data.idleThresholdMinutes * 60 : undefined, triviaEnabled: data.triviaEnabled, turnTimerSeconds: data.turnTimerSeconds as EventUpdate["turnTimerSeconds"], userToken: userToken() })), onSuccess: (event) => { qc.setQueryData(eventKey(id), event); qc.invalidateQueries({ queryKey: facilitatorEventsKey() }); } });
 }
 export function useDeleteEvent(id: string) {
   const qc = useQueryClient();

@@ -998,6 +998,7 @@ components:
     EventInput:
       type: object
       properties:
+        turnTimerSeconds: { type: integer, enum: [0, 30, 60, 90, 120], default: 0 }
         userToken: { type: string }
         name: { type: string, minLength: 1, maxLength: 100 }
         tableCount: { type: integer, minimum: 1, maximum: 10 }
@@ -1008,6 +1009,7 @@ components:
     EventUpdate:
       type: object
       properties:
+        turnTimerSeconds: { type: integer, enum: [0, 30, 60, 90, 120] }
         userToken: { type: string }
         name: { type: string, minLength: 1, maxLength: 100 }
         idleSeconds: { type: integer, minimum: 30, maximum: 3600 }
@@ -1095,6 +1097,7 @@ components:
     EventSummary:
       type: object
       properties:
+        turnTimerSeconds: { type: integer }
         eventId: { type: string }
         code: { type: string }
         name: { type: string }
@@ -1682,6 +1685,10 @@ components:
     GameState:
       type: object
       properties:
+        turnTimerSeconds: { type: integer }
+        turnDeadlineAt: { type: ["number", "null"] }
+        turnDeadlineKey: { type: ["string", "null"] }
+        turnTimerRemainingMs: { type: ["number", "null"] }
         gameId:
           type: string
         eventId:
@@ -1814,6 +1821,7 @@ components:
     GameAction:
       type: object
       properties:
+        turnDeadlineKey: { type: ["string", "null"] }
         type:
           type: string
           enum:
@@ -1824,6 +1832,7 @@ components:
             - activate_ongoing
             - move_card_layer
             - reset_game
+            - set_turn_timer
         playerId:
           type: string
         token:
@@ -1847,6 +1856,9 @@ components:
         decisionData:
           type: object
           nullable: true
+          additionalProperties: true
+        data:
+          type: object
           additionalProperties: true
       required:
         - type

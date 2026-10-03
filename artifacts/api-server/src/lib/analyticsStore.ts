@@ -67,6 +67,7 @@ export async function runStartupMigrations(): Promise<void> {
     await pool.query(
       `ALTER TABLE compost_events ADD COLUMN IF NOT EXISTS trivia_enabled BOOLEAN NOT NULL DEFAULT TRUE`
     );
+    await pool.query(`ALTER TABLE compost_events ADD COLUMN IF NOT EXISTS turn_timer_seconds INTEGER NOT NULL DEFAULT 0`);
     await hydrateEventTriviaSettings();
     console.log("[analytics] startup migrations done");
   } catch (error) {

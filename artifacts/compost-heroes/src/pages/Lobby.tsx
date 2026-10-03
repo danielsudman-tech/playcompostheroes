@@ -4,6 +4,7 @@ import { motion, AnimatePresence } from "framer-motion";
 import { useCreateNewGame, useRooms, type RoomInfo } from "@/hooks/use-game";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { TurnTimerSelect } from "@/components/TurnTimerChip";
 import { assetUrl } from "@/lib/assetUrl";
 import compostHeroesLogo from "@assets/Compost_Heroes_Logo_no_background_1773537933517.png";
 import greenCampsLogo from "@assets/Green_Camps_Logo_no_background_1774982775801.png";
@@ -127,6 +128,7 @@ export default function Lobby() {
   const [hostName, setHostName] = useState("");
   const [maxPlayers, setMaxPlayers] = useState(4);
   const [gamePassword, setGamePassword] = useState("");
+  const [turnTimerSeconds, setTurnTimerSeconds] = useState(0);
 
   // Facilitated: participants join with a code; hosts use /facilitator.
   const [joinCode, setJoinCode] = useState("");
@@ -212,7 +214,7 @@ export default function Lobby() {
         return;
       }
       createGame.mutate(
-        { hostName: name, maxPlayers, mode, password: gamePassword.trim() || undefined },
+        { hostName: name, maxPlayers, mode, password: gamePassword.trim() || undefined, ...(mode === "online" && turnTimerSeconds > 0 ? { turnTimerSeconds } : {}) },
         {
           onSuccess: (data) => setLocation(`/game/${data.gameId}`),
           onError: (err) => toast({ title: "Failed to create room", description: err.message, variant: "destructive" }),
@@ -453,6 +455,10 @@ export default function Lobby() {
                           </button>
                         ))}
                       </div>
+                    </div>
+                    <div className="flex items-center justify-between gap-3">
+                      <label htmlFor="lobby-turn-timer" className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Turn timer</label>
+                      <TurnTimerSelect value={turnTimerSeconds} onChange={setTurnTimerSeconds} testId="select-lobby-turn-timer" />
                     </div>
                     <div className="relative">
                       <Lock className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground/60 pointer-events-none" />

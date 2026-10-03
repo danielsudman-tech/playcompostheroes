@@ -1,4 +1,7 @@
 import { Router, type IRouter } from "express";
+import "./../lib/turnTimerRuntime.js";
+import { buildAutoResolveData } from "../lib/autoResolve.js";
+import { validTurnTimer } from "../lib/turnClock.js";
 import { pool } from "@workspace/db";
 import { logEvent } from "../lib/analyticsStore.js";
 import {
@@ -154,7 +157,7 @@ const HIDDEN_CARD = {
 
 export function serializeState(state: GameState, viewerIndex?: number) {
   const isOnline = state.mode === "online" || state.mode === "facilitated";
-  const { deck, ...rest } = state;
+  const { deck, turnTimerActorKey: _timerActorKey, turnSequence: _turnSequence, ...rest } = state;
   const viewerId = viewerIndex !== undefined && viewerIndex >= 0
     ? state.players[viewerIndex]?.id
     : undefined;
@@ -236,7 +239,7 @@ router.get("/rooms", async (_req, res) => {
 
 // POST /api/games — create a new game
 router.post("/games", async (req, res) => {
-  const { playerNames, mode, password, hostName, maxPlayers, botPlayerIndices, botSkillLevels } = req.body as {
+  const { playerNames, mode, password, hostName, maxPlayers, botPlayerIndices, botSkillLevels, turnTimerSeconds = 0 } = req.body as {
     playerNames?: string[];
     mode: "facilitator" | "standalone" | "online" | "facilitated";
     password?: string;
@@ -244,7 +247,11 @@ router.post("/games", async (req, res) => {
     maxPlayers?: number;
     botPlayerIndices?: number[];
     botSkillLevels?: Record<number, BotSkillLevel>;
+    turnTimerSeconds?: number;
   };
+  if (!validTurnTimer(turnTimerSeconds)) {
+    res.status(400).json({ error: "Choose Off, 30, 60, 90, or 120 seconds" }); return;
+  }
 
   if (mode !== "facilitator" && mode !== "standalone" && mode !== "online" && mode !== "facilitated") {
     res.status(400).json({ error: "mode must be facilitator, standalone, online, or facilitated" });
@@ -280,18 +287,16 @@ router.post("/games", async (req, res) => {
     const state = createWaitingRoom(gameId, name, max, mode, mode === "facilitated");
     state.createdAt = Date.now();
     state.facilitatorId = creator.id;
+    state.turnTimerSeconds = turnTimerSeconds;
     const label = ((req.body as { label?: string }).label ?? "").trim();
     if (label) state.label = label.slice(0, 60);
-    await storeGame(state);
+    const creatorToken = await withGameMutationLocks([gameId], async client => {
+      await storeGame(state, client);
+      if (password && password.trim()) await setGamePassword(gameId, password.trim(), client);
+      return mode === "facilitated" ? createSpectatorHostToken(gameId, client) : (await claimSlot(gameId, undefined, client))?.token ?? null;
+    });
     logEvent("game_created", { gameId, metadata: { mode, maxPlayers: max, hostName: name } });
 
-    if (password && password.trim()) {
-      await setGamePassword(gameId, password.trim());
-    }
-
-    const creatorToken = mode === "facilitated"
-      ? await createSpectatorHostToken(gameId)
-      : (await claimSlot(gameId))?.token ?? null;
     const creatorIndex = mode === "facilitated" ? -1 : 0;
     const serialized = serializeState(state, creatorToken ? creatorIndex : undefined);
     res.status(201).json({
@@ -845,35 +850,6 @@ router.post("/games/:gameId/end", async (req, res) => {
  * valid option(s). Never reveals hidden hand info to the facilitator — the
  * choice is made server-side.
  */
-function buildAutoResolveData(decision: NonNullable<GameState["pendingDecision"]>): Record<string, unknown> {
-  const opts = (decision.options ?? []) as any[];
-  const meta = (decision.meta ?? {}) as Record<string, unknown>;
-  switch (decision.type) {
-    case "choose_rot_roulette_keep":
-      return { keepCardIds: opts.slice(0, (meta.keepCount as number) ?? 2).map((o) => o.cardId) };
-    case "choose_discard_for_spread":
-    case "choose_discard_to_limit":
-      return { cardIds: opts.slice(0, (meta.count as number) ?? 1).map((o) => o.cardId) };
-    case "choose_rot_regrow_discard":
-      return { cardIds: opts.slice(0, 3).map((o) => o.cardId) };
-    case "choose_rainstorm_play":
-      return { cardIds: [] };
-    case "choose_target_player":
-    case "choose_opponent_for_steal":
-    case "choose_swap_opponent_breezy": {
-      const o = opts[0];
-      return { targetPlayerId: o?.targetPlayerId ?? o?.playerId, targetCardId: o?.targetCardId };
-    }
-    case "choose_function":
-    case "choose_move_function":
-      return { function: opts[0]?.function };
-    default:
-      if (meta.optional === true || opts.some((o) => o?.skip)) return { skip: true };
-      if (opts[0] && typeof opts[0] === "object") return { ...opts[0] };
-      return { skip: true };
-  }
-}
-
 // POST /api/games/:gameId/facilitator-resolve — host resolves a stuck decision
 router.post("/games/:gameId/facilitator-resolve", async (req, res) => {
   const { gameId } = req.params as { gameId: string };
@@ -928,6 +904,23 @@ router.post("/games/:gameId/action", async (req, res) => {
     decisionData?: Record<string, unknown>;
     token?: string;
   };
+  if (type === "set_turn_timer") {
+    const index = token ? await getPlayerIndexForToken(gameId, token, client) : null;
+    const user = await getRegisteredUser(req.body?.userToken, client);
+    const seconds = req.body?.data?.turnTimerSeconds;
+    if (state.mode !== "online" || index !== 0 || !user || user.id !== state.facilitatorId) {
+      res.status(403).json({ error: "Only the signed-in room host can change the timer" }); return;
+    }
+    if (state.phase !== "waiting") { res.status(409).json({ error: "Change the timer before starting" }); return; }
+    if (!validTurnTimer(seconds)) { res.status(400).json({ error: "Invalid turn timer" }); return; }
+    const next = { ...state, turnTimerSeconds: seconds };
+    await storeGame(next, client);
+    broadcast(gameId, next, client);
+    res.json(serializeState(next, 0)); return;
+  }
+  if (state.turnTimerSeconds && type !== "reset_game" && req.body?.turnDeadlineKey !== state.turnDeadlineKey) {
+    res.status(409).json({ error: "The turn or choice changed. Use the current table controls." }); return;
+  }
 
   // Facilitated: while paused, no game actions are allowed (facilitator
   // assist endpoints remain available).

@@ -20,6 +20,7 @@ import {
   getStoredToken,
   storeToken,
 } from "@/hooks/use-game";
+import { TurnTimerChip } from "@/components/TurnTimerChip";
 import { GameCard } from "@/components/GameCard";
 import { DecisionModal, PLAYER_SELECTION_TYPES } from "@/components/DecisionModal";
 import { GameUpdatesList, GameUpdatesStrip } from "@/components/game-updates/GameUpdatesList";
@@ -771,6 +772,7 @@ export default function FacilitatedGame() {
               </button>
             </div>
           )}
+        <TurnTimerChip game={gameState} paused={gameState.paused === true} isActor={(decision ? decision.playerId : currentPlayer.id) === localPlayerId} testId="turn-timer-header" />
           <button
             onClick={toggleSoundMute}
             title={soundMuted ? "Unmute sounds" : "Mute sounds"}
@@ -973,6 +975,7 @@ export default function FacilitatedGame() {
           )}
         >
           
+          <div className="px-3 pt-3 flex md:hidden"><TurnTimerChip game={gameState} paused={gameState.paused === true} isActor={(decision ? decision.playerId : currentPlayer.id) === localPlayerId} audible={false} testId="turn-timer-drawer" className="" /></div>
           {/* Decks */}
           <div className="p-3 xl:p-6 border-b border-border/40 bg-muted/10 flex justify-center gap-4 xl:gap-6">
             {/* Draw pile */}
@@ -1092,6 +1095,7 @@ export default function FacilitatedGame() {
                   Activate Hot Pile Bonus
                 </Button>
               )}
+              <div className="hidden md:flex justify-center mb-1"><TurnTimerChip game={gameState} paused={gameState.paused === true} isActor={(decision ? decision.playerId : currentPlayer.id) === localPlayerId} audible={false} testId="turn-timer-controls" className="" /></div>
               {gameState.phase !== "game_over" && isMyTurn ? (
                  gameState.phase === "draw" ? (
                    <>

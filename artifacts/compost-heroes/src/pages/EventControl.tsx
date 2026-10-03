@@ -4,6 +4,7 @@ import { ArrowLeft, Check, Clock3, Copy, ExternalLink, HelpCircle, Link2, Megaph
 import { recoverHostToken } from "@workspace/api-client-react";
 import { getStoredToken, storeToken } from "@/hooks/use-game";
 import { useToast } from "@/hooks/use-toast";
+import { TurnTimerSelect } from "@/components/TurnTimerChip";
 import { useCurrentUser } from "@/components/AppGate";
 import { type EventTable, useDeleteEvent, useEvent, useEventControl, useEventStream, useTableControl, useUpdateEvent, userToken } from "@/hooks/use-events";
 
@@ -82,9 +83,10 @@ export default function EventControl() {
   const [name, setName] = useState("");
   const [threshold, setThreshold] = useState(2);
   const [triviaEnabled, setTriviaEnabled] = useState(true);
+  const [turnTimer, setTurnTimer] = useState(0);
   const [copied, setCopied] = useState(false);
   const [opening, setOpening] = useState<string | null>(null);
-  useEffect(() => { if (event) { setName(event.name); setThreshold(event.idleThresholdMinutes ?? 2); setTriviaEnabled(event.triviaEnabled !== false); } }, [event?.name, event?.idleThresholdMinutes, event?.triviaEnabled]);
+  useEffect(() => { if (event) { setName(event.name); setThreshold(event.idleThresholdMinutes ?? 2); setTriviaEnabled(event.triviaEnabled !== false); setTurnTimer(event.turnTimerSeconds ?? 0); } }, [event?.name, event?.idleThresholdMinutes, event?.triviaEnabled, event?.turnTimerSeconds]);
   useEffect(() => {
     if (event?.status === "ending" || event?.status === "completed") {
       setConfirm(null);
@@ -137,9 +139,10 @@ export default function EventControl() {
           {event.status === "completed" && <button className="event-button event-button-warn" data-testid="button-delete-completed-event" onClick={() => setConfirmDelete(true)}><Trash2 size={15} /> Delete event</button>}
         </div>
       </section>
-      {settings && <form className="event-panel p-5 flex flex-wrap gap-3 items-end" onSubmit={e => { e.preventDefault(); update.mutate({ name: name.trim(), idleThresholdMinutes: threshold, triviaEnabled }, { onSuccess: () => { setSettings(false); toast({ title: "Event settings saved" }); }, onError: err => toast({ title: "Couldn't save settings", description: err.message, variant: "destructive" }) }); }}>
+      {settings && <form className="event-panel p-5 flex flex-wrap gap-3 items-end" onSubmit={e => { e.preventDefault(); update.mutate({ name: name.trim(), idleThresholdMinutes: threshold, triviaEnabled, turnTimerSeconds: turnTimer }, { onSuccess: () => { setSettings(false); toast({ title: "Event settings saved" }); }, onError: err => toast({ title: "Couldn't save settings", description: err.message, variant: "destructive" }) }); }}>
         <label className="flex-1 min-w-[200px] text-xs font-extrabold space-y-1">Event name<input className="event-input" value={name} maxLength={80} required onChange={e => setName(e.target.value)} data-testid="input-edit-event-name" /></label>
         <label className="w-44 text-xs font-extrabold space-y-1">Idle alert (minutes)<input className="event-input" type="number" min={2} max={60} value={threshold} onChange={e => setThreshold(Number(e.target.value))} data-testid="input-edit-idle-threshold" /></label>
+        <label className="text-xs font-extrabold space-y-1 block">Turn timer<TurnTimerSelect className="block w-36" value={turnTimer} onChange={setTurnTimer} testId="select-event-turn-timer" /></label>
         <label className="flex items-center gap-2 text-xs font-extrabold"><input type="checkbox" checked={triviaEnabled} onChange={e => setTriviaEnabled(e.target.checked)} data-testid="checkbox-event-trivia-enabled" /> Enable optional compost trivia for guests</label>
         <button className="event-button event-button-primary" disabled={update.isPending || !name.trim()} data-testid="button-save-event">Save changes</button>
         <button type="button" className="event-button event-button-outline" onClick={() => setSettings(false)}>Cancel</button>

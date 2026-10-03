@@ -8,6 +8,7 @@ import {
   unlockThenReleaseDatabaseClient,
 } from "./databaseSafeguards.js";
 import { GameStoreCache } from "./gameStoreCache.js";
+import { syncTurnClock } from "./turnClock.js";
 
 export type PgQueryResult = { rows: any[]; rowCount?: number | null };
 export type PgQueryable = { query: (...args: any[]) => Promise<PgQueryResult> };
@@ -23,6 +24,8 @@ const gameBroadcastListeners = new Set<(gameId: string) => void>();
 const deferredBroadcastsByClient = new WeakMap<PgClient, Set<string>>();
 const destroyedClients = new WeakSet<PgClient>();
 let tokenPublicationEpoch = 0;
+let gameClock: { arm: (state: GameState) => void; read: (state: GameState, client?: PgQueryable) => Promise<GameState>; remove: (id: string) => void } | undefined;
+export function registerGameClock(clock: NonNullable<typeof gameClock>): void { gameClock = clock; }
 
 const cacheEvictionTimer = setInterval(() => {
   gameStoreCache.evict();
@@ -36,6 +39,7 @@ export function evictGameStoreCache(now = Date.now(), maxEntries?: number): stri
 
 /** Invalidate every process-local cache for a game after a durable deletion. */
 export function invalidateGameCaches(gameId: string): void {
+  gameClock?.remove(gameId);
   tokenPublicationEpoch++;
   gameStoreCache.deleteGame(gameId);
   const clients = sseClientsByToken.get(gameId);
@@ -117,6 +121,7 @@ export function createGameId(): string {
 // ── Game state ────────────────────────────────────────────────────────────────
 
 export async function storeGame(state: GameState, client: PgQueryable = pool): Promise<void> {
+  Object.assign(state, syncTurnClock(state));
   // Stamp the finish time once, regardless of how the game ended (win or
   // manual end), so post-session summaries can show duration.
   const snapshot = JSON.parse(JSON.stringify(state)) as GameState;
@@ -141,12 +146,14 @@ export async function storeGame(state: GameState, client: PgQueryable = pool): P
     recordUncachedGameChange(snapshot.gameId, true);
     if (snapshot.eventId) gameStoreCache.markEventMembership(snapshot.gameId, true);
   }
+  gameClock?.arm(snapshot);
 }
 
 /** Keep the durable transaction's committed state visible to normal game readers. */
 export function updateGameStateCache(state: GameState): void {
   recordAuthoritativeGameChange(state.gameId);
   gameStoreCache.setState(state);
+  gameClock?.arm(state);
 }
 
 /** Read an already cached snapshot without falling through to a database query. */
@@ -175,7 +182,7 @@ export async function getGame(gameId: string, client?: PgQueryable): Promise<Gam
           gameStoreCache.finishRead(read);
         }
       }
-      return cached;
+      return gameClock ? gameClock.read(cached, canCache ? undefined : client) : cached;
     }
   }
   const read = canCache ? gameStoreCache.beginRead(gameId) : undefined;
@@ -197,7 +204,8 @@ export async function getGame(gameId: string, client?: PgQueryable): Promise<Gam
       gameStoreCache.publishIfCurrent(read, () =>
         gameStoreCache.setState(state, Date.now(), isEventMember));
     }
-    return JSON.parse(JSON.stringify(state)) as GameState;
+    const copy = JSON.parse(JSON.stringify(state)) as GameState;
+    return gameClock ? gameClock.read(copy, canCache ? undefined : client) : copy;
   } finally {
     if (read) gameStoreCache.finishRead(read);
   }
@@ -412,6 +420,7 @@ export async function withGameMutationLocks<T>(
         throw asDatabaseSafeguardError(unlockError, actionStarted ? "unknown" : "not-started");
       }
       client.release();
+      flushDeferredBroadcasts(client);
     }
   }
 }

@@ -405,6 +405,7 @@ export function useCreateNewGame() {
       label?: string;
       botPlayerIndices?: number[];
       botSkillLevels?: Record<number, "easy" | "medium" | "hard">;
+      turnTimerSeconds?: number;
     }) => {
       const r = await fetch("/api/games", {
         method: "POST",
@@ -437,8 +438,13 @@ export interface GameActionCallbacks {
 export function useGameAction(gameId: string, token?: string | null, callbacks?: GameActionCallbacks) {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: async (action: GameAction) => {
-      const body = token ? { ...action, token } : action;
+    mutationFn: async (action: GameAction & { turnDeadlineKey?: string }) => {
+      // Gameplay actions on a timed game carry the deadline key from the cached
+      // snapshot so the server can reject stale turn/decision races.
+      const snap = queryClient.getQueryData<GameState>(gameStateKey(gameId, token));
+      const key = snap?.turnTimerSeconds && action.type !== "set_turn_timer" ? snap.turnDeadlineKey : undefined;
+      const withKey = key ? { ...action, turnDeadlineKey: key } : action;
+      const body = token ? { ...withKey, token } : withKey;
       const r = await fetch(`/api/games/${gameId}/action`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },

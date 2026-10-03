@@ -5,10 +5,13 @@
  * Compost Heroes Game API
  * OpenAPI spec version: 0.1.0
  */
+import type { GameActionData } from "./gameActionData";
 import type { GameActionDecisionData } from "./gameActionDecisionData";
 import type { GameActionType } from "./gameActionType";
 
 export interface GameAction {
+  /** @nullable */
+  turnDeadlineKey?: string | null;
   type: GameActionType;
   playerId: string;
   token?: string | null;
@@ -19,4 +22,5 @@ export interface GameAction {
   targetPlayerId?: string | null;
   targetCardId?: string | null;
   decisionData?: GameActionDecisionData;
+  data?: GameActionData;
 }

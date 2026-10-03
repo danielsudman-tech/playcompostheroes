@@ -91,6 +91,12 @@ export interface GameState {
   log: string[];
   winner: string | null;
   turnNumber: integer;
+  turnSequence?: number;
+  turnTimerSeconds?: number;
+  turnDeadlineAt?: number | null;
+  turnDeadlineKey?: string | null;
+  turnTimerActorKey?: string | null;
+  turnTimerRemainingMs?: number | null;
   extraTurn: boolean;
   heroPlayedThisTurn: boolean;
   actionPlayedThisTurn: boolean;
@@ -2412,6 +2418,7 @@ export function drawCardAction(
 // END TURN
 // ─────────────────────────────────────────────
 function advanceTurnState(s: GameState): GameState {
+  s = { ...s, turnSequence: (s.turnSequence ?? 0) + 1 };
   if (s.extraTurn) {
     const cp = s.players[s.currentPlayerIndex];
     addLog(s, `${cp.name} takes another turn!`);

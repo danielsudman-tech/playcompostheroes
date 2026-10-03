@@ -2,9 +2,11 @@ import { useState } from "react";
 import { useLocation } from "wouter";
 import { motion } from "framer-motion";
 import { Button } from "@/components/ui/button";
-import { useStartGame, useLeaveRoom } from "@/hooks/use-game";
+import { useStartGame, useLeaveRoom, useGameAction } from "@/hooks/use-game";
 import { useToast } from "@/hooks/use-toast";
 import { Copy, Check, Crown, Loader2, Users, Lock, LogOut, UserX, Bot, Plus, X } from "lucide-react";
+import { TurnTimerSelect, turnTimerLabel } from "@/components/TurnTimerChip";
+import { Timer } from "lucide-react";
 import { assetUrl } from "@/lib/assetUrl";
 
 interface PlayerSlot {
@@ -25,6 +27,7 @@ interface WaitingRoomProps {
   token: string | null;
   hasPassword?: boolean;
   isFacilitated?: boolean;
+  turnTimerSeconds?: number;
 }
 
 const SKILL_COLORS: Record<string, string> = {
@@ -41,13 +44,16 @@ const SKILL_LABELS: Record<string, string> = {
 
 const BOT_NAMES = ["Compost Carl", "Worm Wendy", "Rot Rita", "Pile Pete", "Mulch Max", "Decay Dana"];
 
-export function WaitingRoom({ gameId, players, maxPlayers, playerIndex, token, hasPassword, isFacilitated }: WaitingRoomProps) {
+export function WaitingRoom({ gameId, players, maxPlayers, playerIndex, token, hasPassword, isFacilitated, turnTimerSeconds = 0 }: WaitingRoomProps) {
   const [, setLocation] = useLocation();
   const { toast } = useToast();
   const [copied, setCopied] = useState(false);
   const [botSlots, setBotSlots] = useState<BotSlot[]>([]);
   const startGame = useStartGame(gameId, token);
   const leaveRoom = useLeaveRoom(gameId, token);
+  const timerAction = useGameAction(gameId, token, {
+    onError: (m) => toast({ title: "Couldn't change turn timer", description: m, variant: "destructive" }),
+  });
 
   const isHost = playerIndex === 0;
   const myPlayerId = playerIndex !== null ? players[playerIndex]?.id : null;
@@ -58,6 +64,12 @@ export function WaitingRoom({ gameId, players, maxPlayers, playerIndex, token, h
   const totalCount = players.length + botSlots.length;
   const emptySlots = Math.max(0, maxPlayers - totalCount);
   const canStart = isHost && totalCount >= 2;
+
+  const userToken = (() => { try { return localStorage.getItem("compost_user_token") ?? undefined; } catch { return undefined; } })();
+  const handleTimer = (value: number) => {
+    if (!isHost || !myPlayerId) return;
+    timerAction.mutate({ type: "set_turn_timer", playerId: myPlayerId, data: { turnTimerSeconds: value }, token, userToken });
+  };
 
   const handleCopy = () => {
     navigator.clipboard.writeText(shareUrl).then(() => {
@@ -171,6 +183,17 @@ export function WaitingRoom({ gameId, players, maxPlayers, playerIndex, token, h
               <Lock className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
               <p className="text-xs text-amber-700">This room is password protected. Share the password alongside this link.</p>
             </div>
+          )}
+        </div>
+
+        <div className="bg-card/80 backdrop-blur-xl rounded-3xl shadow-xl border border-border px-6 py-4 flex items-center justify-between gap-3" data-testid="panel-turn-timer">
+          <label className="text-xs font-bold text-muted-foreground uppercase tracking-wider flex items-center gap-2">
+            <Timer className="w-3.5 h-3.5" /> Turn timer
+          </label>
+          {isHost ? (
+            <TurnTimerSelect value={turnTimerSeconds} onChange={handleTimer} disabled={timerAction.isPending} testId="select-waiting-turn-timer" />
+          ) : (
+            <span className="text-sm font-bold text-foreground" data-testid="text-waiting-turn-timer">{turnTimerLabel(turnTimerSeconds)}</span>
           )}
         </div>
 

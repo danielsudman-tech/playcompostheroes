@@ -1,4 +1,5 @@
 import { randomBytes, randomUUID } from "node:crypto";
+import { syncTurnClock, validTurnTimer } from "../lib/turnClock.js";
 import { Router, type IRouter } from "express";
 import { pool } from "@workspace/db";
 import {
@@ -60,7 +61,7 @@ async function eventRecord(eventId: string, client: PgQueryable = pool) {
   const triviaRead = beginEventTriviaRead(eventId);
   try {
     const result = await client.query(
-      `SELECT id, code, facilitator_id, name, status, assignment_mode, idle_seconds, trivia_enabled,
+      `SELECT id, code, facilitator_id, name, status, assignment_mode, idle_seconds, trivia_enabled, turn_timer_seconds,
               EXTRACT(EPOCH FROM last_meaningful_activity_at) * 1000 AS last_activity
          FROM compost_events WHERE id = $1`, [eventId],
     );
@@ -95,7 +96,7 @@ async function buildDetail(eventId: string, includeTokens = false, client: PgQue
   let eventTables;
   try {
     eventTables = await client.query(
-      `SELECT e.id, e.code, e.name, e.status, e.assignment_mode, e.idle_seconds, e.trivia_enabled,
+      `SELECT e.id, e.code, e.name, e.status, e.assignment_mode, e.idle_seconds, e.trivia_enabled, e.turn_timer_seconds,
               EXTRACT(EPOCH FROM e.last_meaningful_activity_at) * 1000 AS last_activity,
               t.game_id, t.table_number, t.capacity
          FROM compost_events e
@@ -177,7 +178,7 @@ async function buildDetail(eventId: string, includeTokens = false, client: PgQue
   const detail: any = {
     eventId: event.id, code: event.code, name: event.name, status: event.status,
     assignmentMode: event.assignment_mode,
-    idleSeconds: event.idle_seconds, triviaEnabled: event.trivia_enabled !== false,
+    idleSeconds: event.idle_seconds, triviaEnabled: event.trivia_enabled !== false, turnTimerSeconds: event.turn_timer_seconds ?? 0,
     tableCount: tables.length, tables: summaries,
   };
   if (includeTokens) {
@@ -284,15 +285,15 @@ router.get("/facilitator/events", async (req, res): Promise<void> => {
   if (!isApprovedFacilitator(user)) { res.status(403).json({ error: "Facilitator approval is required" }); return; }
   const rows = (await pool.query(
     `SELECT e.id, e.code, e.name, e.status, e.idle_seconds,
-            e.assignment_mode, e.trivia_enabled,
+             e.assignment_mode, e.trivia_enabled, e.turn_timer_seconds,
             (SELECT COUNT(*) FROM compost_event_tables t WHERE t.event_id = e.id) AS table_count
        FROM compost_events e WHERE e.facilitator_id = $1 ORDER BY e.created_at DESC`, [user.id],
   )).rows;
-  res.json(GetFacilitatorEventsResponse.parse(rows.map((r) => ({ eventId: r.id, code: r.code, name: r.name, status: r.status, assignmentMode: r.assignment_mode, idleSeconds: r.idle_seconds, triviaEnabled: r.trivia_enabled !== false, tableCount: Number(r.table_count) }))));
+  res.json(GetFacilitatorEventsResponse.parse(rows.map((r) => ({ eventId: r.id, code: r.code, name: r.name, status: r.status, assignmentMode: r.assignment_mode, idleSeconds: r.idle_seconds, triviaEnabled: r.trivia_enabled !== false, turnTimerSeconds: r.turn_timer_seconds ?? 0, tableCount: Number(r.table_count) }))));
 });
 
 router.post("/facilitator/events", async (req, res): Promise<void> => {
-  const body = req.body as { userToken?: string; name?: string; tableCount?: number; tableCapacities?: number[]; idleSeconds?: number; assignmentMode?: "choose" | "auto" };
+  const body = req.body as { userToken?: string; name?: string; tableCount?: number; tableCapacities?: number[]; idleSeconds?: number; assignmentMode?: "choose" | "auto"; turnTimerSeconds?: number };
   const parsedBody = CreateFacilitatorEventBody.safeParse(body);
   if (!parsedBody.success) { res.status(400).json({ error: parsedBody.error.message }); return; }
   const user = typeof body.userToken === "string" ? await getUserByToken(body.userToken) : null;
@@ -322,8 +323,8 @@ router.post("/facilitator/events", async (req, res): Promise<void> => {
       code = createCode();
     }
     await client.query(
-     `INSERT INTO compost_events (id, code, facilitator_id, name, status, assignment_mode, idle_seconds)
-       VALUES ($1,$2,$3,$4,'upcoming',$5,$6)`, [eventId, code, user.id, name, body.assignmentMode ?? "auto", idleSeconds],
+     `INSERT INTO compost_events (id, code, facilitator_id, name, status, assignment_mode, idle_seconds, turn_timer_seconds)
+       VALUES ($1,$2,$3,$4,'upcoming',$5,$6,$7)`, [eventId, code, user.id, name, body.assignmentMode ?? "auto", idleSeconds, body.turnTimerSeconds ?? 0],
     );
     for (let i = 0; i < count; i++) {
       const gameId = createGameId();
@@ -331,6 +332,7 @@ router.post("/facilitator/events", async (req, res): Promise<void> => {
       state.createdAt = Date.now();
       state.facilitatorId = user.id;
       state.eventId = eventId;
+      state.turnTimerSeconds = body.turnTimerSeconds ?? 0;
       const token = randomBytes(32).toString("base64url");
       await client.query(
         `INSERT INTO compost_games (game_id, state, updated_at) VALUES ($1,$2,NOW())`,
@@ -462,37 +464,53 @@ router.delete("/facilitator/events/:eventId", async (req, res): Promise<void> =>
 });
 
 router.patch("/facilitator/events/:eventId", async (req, res): Promise<void> => {
-  const body = req.body as { userToken?: string; name?: string; idleSeconds?: number; assignmentMode?: "choose" | "auto"; triviaEnabled?: boolean };
+  const body = req.body as { userToken?: string; name?: string; idleSeconds?: number; assignmentMode?: "choose" | "auto"; triviaEnabled?: boolean; turnTimerSeconds?: number };
   const parsedBody = UpdateFacilitatorEventBody.safeParse(body);
   if (!parsedBody.success) { res.status(400).json({ error: parsedBody.error.message }); return; }
   const check = await requireHost(req.params.eventId, body.userToken);
   if ("failure" in check) { res.status(Number(check.failure)).json({ error: check.error }); return; }
   if (body.name !== undefined && (!body.name.trim() || body.name.trim().length > 100)) { res.status(400).json({ error: "Event name must be 1-100 characters" }); return; }
   if (body.idleSeconds !== undefined && (!Number.isInteger(body.idleSeconds) || body.idleSeconds < 30 || body.idleSeconds > 3600)) { res.status(400).json({ error: "idleSeconds must be between 30 and 3600" }); return; }
-  const triviaRead = beginEventTriviaRead(req.params.eventId);
-  let updatedEvent;
-  try {
-    updatedEvent = await pool.query(
+  const initialTables = await tableRecords(req.params.eventId);
+  const outcome = await withGameMutationLocks(initialTables.map(t => t.game_id), async client => {
+    const locked = await requireHost(req.params.eventId, body.userToken, client);
+    if ("failure" in locked) return { failure: Number(locked.failure), error: locked.error };
+    const changed: GameState[] = [];
+    await withClientTransaction(client, async () => {
+      const updatedEvent = await client.query(
       `UPDATE compost_events
           SET name = COALESCE($2,name),
               idle_seconds = COALESCE($3,idle_seconds),
               assignment_mode = COALESCE($4,assignment_mode),
-              trivia_enabled = COALESCE($5,trivia_enabled)
+              trivia_enabled = COALESCE($5,trivia_enabled),
+              turn_timer_seconds = COALESCE($6,turn_timer_seconds)
         WHERE id = $1
         RETURNING trivia_enabled`,
-      [req.params.eventId, body.name?.trim() ?? null, body.idleSeconds ?? null, body.assignmentMode ?? null, body.triviaEnabled ?? null],
-    );
-    if (updatedEvent.rows[0]) {
-      setEventTriviaEnabledIfCurrent(triviaRead, updatedEvent.rows[0].trivia_enabled !== false);
+        [req.params.eventId, body.name?.trim() ?? null, body.idleSeconds ?? null, body.assignmentMode ?? null, body.triviaEnabled ?? null, body.turnTimerSeconds ?? null],
+      );
+      if (!updatedEvent.rows[0]) throw new Error("Event disappeared during settings update");
+      for (const table of initialTables) {
+        const state = await getGame(table.game_id, client);
+        if (!state) continue;
+        const next = body.turnTimerSeconds === undefined ? state : syncTurnClock({
+          ...state, turnTimerSeconds: body.turnTimerSeconds, turnDeadlineAt: null,
+          turnDeadlineKey: null, turnTimerRemainingMs: null,
+        });
+        if (body.turnTimerSeconds !== undefined) {
+          await client.query(`UPDATE compost_games SET state=$2, updated_at=NOW() WHERE game_id=$1`,
+            [next.gameId, JSON.stringify(next)]);
+        }
+        changed.push(next);
+      }
+    });
+    if (body.triviaEnabled !== undefined) setEventTriviaEnabled(req.params.eventId, body.triviaEnabled);
+    for (const state of changed) {
+      updateGameStateCache(state);
+      broadcastToGame(state.gameId, state, serializeState, client);
     }
-  } finally {
-    finishEventTriviaRead(triviaRead);
-  }
-  const tables = await tableRecords(req.params.eventId);
-  for (const table of tables) {
-    const state = getCachedGameState(table.game_id);
-    if (state) broadcastToGame(table.game_id, state, serializeState);
-  }
+    return { success: true };
+  });
+  if ("failure" in outcome) { res.status(outcome.failure!).json({ error: outcome.error }); return; }
   enqueueEventDetail(req.params.eventId);
   const detail = await buildDetail(req.params.eventId, true);
   res.json(UpdateFacilitatorEventResponse.parse(detail));
@@ -533,6 +551,7 @@ async function changeTable(client: PgClient, gameId: string, action: string, tex
       next = { ...state, hostMessage: { id: uuid(), text: message.slice(0, 300), ts: Date.now() } };
     }
     if (next !== state) {
+      next = syncTurnClock(next);
       await client.query(`UPDATE compost_games SET state = $2, updated_at = NOW() WHERE game_id = $1`, [gameId, JSON.stringify(next)]);
       updateGameStateCache(next);
       return { gameId, success: true, error: null, nextState: next };

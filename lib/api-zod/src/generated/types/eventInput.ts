@@ -6,8 +6,10 @@
  * OpenAPI spec version: 0.1.0
  */
 import type { EventInputAssignmentMode } from "./eventInputAssignmentMode";
+import type { EventInputTurnTimerSeconds } from "./eventInputTurnTimerSeconds";
 
 export interface EventInput {
+  turnTimerSeconds?: EventInputTurnTimerSeconds;
   userToken: string;
   /**
    * @minLength 1
