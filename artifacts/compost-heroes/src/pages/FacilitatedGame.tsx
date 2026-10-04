@@ -8,6 +8,7 @@ import { useParams, useLocation } from "wouter";
 import { motion, AnimatePresence } from "framer-motion";
 import confetti from "canvas-confetti";
 import { assetUrl } from "@/lib/assetUrl";
+import { turnButtonView, handCardLabel, drawAndCloseDrawer } from "@/lib/tableTurn";
 import { isMissingGameError } from "@/lib/gameRouteStatus";
 import compostHeroesLogo from "@assets/Compost_Heroes_Logo_no_background_1773537933517.png";
 import {
@@ -617,13 +618,17 @@ export default function FacilitatedGame() {
   };
 
   const handleDrawCard = () => {
-    if (!isMyTurn || !localPlayerId || actionMutation.isPending) return;
-    actionMutation.mutate({ type: "draw_card", playerId: localPlayerId });
+    drawAndCloseDrawer(
+      { isMyTurn, hasPlayer: !!localPlayerId, pending: actionMutation.isPending },
+      (opts) => actionMutation.mutate({ type: "draw_card", playerId: localPlayerId! }, opts),
+      () => setMobileControlsOpen(false),
+    );
   };
   const handleEndTurn = () => {
     if (!isMyTurn || !localPlayerId || actionMutation.isPending) return;
     actionMutation.mutate({ type: "end_turn", playerId: localPlayerId });
   };
+  const mobileTurn = turnButtonView({ isMyTurn, phase: gameState.phase, pending: actionMutation.isPending || !!gameState.pendingDecision });
   const handlePlayCard = (cardId: string) => {
     if (!isMyTurn || !localPlayerId || actionMutation.isPending) return;
     setConfirmCard(null);
@@ -740,7 +745,7 @@ export default function FacilitatedGame() {
               />
               <Button
                 size="lg"
-                className="w-full font-bold text-lg rounded-2xl"
+                className="mt-6 w-full font-bold text-lg rounded-2xl"
                 onClick={() => setPassScreen(null)}
                 data-testid="button-handoff-reveal"
               >
@@ -881,7 +886,7 @@ export default function FacilitatedGame() {
         {mobileControlsOpen && (
           <button
             type="button"
-            className="absolute inset-0 z-20 bg-black/30 md:hidden"
+            className="absolute inset-x-0 top-0 bottom-16 z-20 bg-black/30 md:hidden"
             onClick={() => setMobileControlsOpen(false)}
             aria-label="Close controls and return to the table"
             data-testid="button-close-controls-backdrop"
@@ -1012,41 +1017,71 @@ export default function FacilitatedGame() {
                       animate={{ opacity: isBlocked ? 0.5 : 1, y: 0 }}
                        className="shrink-0 h-full py-1 md:py-2 flex items-center"
                     >
+                      <button
+                        type="button"
+                        aria-label={handCardLabel(card)}
+                        data-testid="button-hand-card"
+                        onClick={() => playable ? handleCardClick(card) : setZoomedCard(card)}
+                        className="shrink-0 rounded-lg md:rounded-xl focus:outline-none focus-visible:ring-4 focus-visible:ring-primary/60"
+                      >
                       <GameCard 
                         card={card} 
                          size="sm"
                         showText={false}
-                        onClick={() => playable ? handleCardClick(card) : setZoomedCard(card)}
                         className={cn(
                            "md:w-[var(--hand-card-w)] md:h-[var(--hand-card-h)] md:rounded-xl cursor-zoom-in transition-all duration-300",
                           playable ? "cursor-pointer hover:-translate-y-4 hover:scale-105 hover:shadow-2xl hover:border-primary ring-offset-background" : "",
                           isBlocked && "grayscale-[20%]"
                         )}
                       />
+                      </button>
                     </motion.div>
                   );
                 })}
              </div>
           </div>
           )}
+
+          {/* Narrow screens: always-visible turn button and countdown (desktop uses the sidebar). */}
+          <div className="md:hidden shrink-0 flex items-center gap-2 border-t border-border/60 bg-card px-3 py-2 z-20" data-testid="mobile-turn-bar">
+            <TurnTimerChip game={gameState} paused={gameState.paused === true} isActor={timerActor} audible={false} testId="turn-timer-drawer" className="" />
+            {mobileTurn.kind ? (
+              <Button
+                size="lg"
+                variant={mobileTurn.kind === "end" ? "secondary" : "default"}
+                onClick={mobileTurn.kind === "draw" ? handleDrawCard : handleEndTurn}
+                disabled={mobileTurn.disabled}
+                className="h-12 flex-1 font-bold text-base"
+                data-testid={mobileTurn.kind === "draw" ? "button-mobile-draw" : "button-mobile-end-turn"}
+              >
+                {actionMutation.isPending ? <Loader2 className="w-5 h-5 animate-spin" /> : mobileTurn.label}
+              </Button>
+            ) : (
+              <span className="flex-1 truncate text-center text-sm font-semibold text-muted-foreground">
+                {gameState.phase === "game_over" ? "Game over" : `Waiting for ${currentPlayer.name}`}
+              </span>
+            )}
+          </div>
         </div>
 
         {/* RIGHT SIDEBAR */}
         <div
           id="table-controls"
           className={cn(
-            "absolute inset-y-0 right-0 w-[calc(100vw-48px)] max-w-[320px] shrink-0 bg-card/95 backdrop-blur-2xl border-l border-border/60 flex flex-col shadow-[-10px_0_40px_rgba(0,0,0,0.1)] z-30 transition-transform duration-300 motion-reduce:transition-none md:static md:w-[280px] xl:w-[320px] md:max-w-none md:translate-x-0 md:pointer-events-auto",
-            mobileControlsOpen ? "translate-x-0 pointer-events-auto" : "translate-x-full pointer-events-none"
+            "absolute top-0 bottom-16 right-0 w-[calc(100vw-48px)] max-w-[320px] shrink-0 bg-card/95 backdrop-blur-2xl border-l border-border/60 flex flex-col shadow-[-10px_0_40px_rgba(0,0,0,0.1)] z-30 transition-transform duration-300 motion-reduce:transition-none md:static md:w-[280px] xl:w-[320px] md:max-w-none md:translate-x-0 md:pointer-events-auto md:visible",
+            mobileControlsOpen ? "visible translate-x-0 pointer-events-auto" : "invisible translate-x-full pointer-events-none"
           )}
         >
           
-          <div className="px-3 pt-3 flex md:hidden"><TurnTimerChip game={gameState} paused={gameState.paused === true} isActor={timerActor} audible={false} testId="turn-timer-drawer" className="" /></div>
           {/* Decks */}
           <div className="p-3 xl:p-6 border-b border-border/40 bg-muted/10 flex justify-center gap-4 xl:gap-6">
             {/* Draw pile */}
             <div className="flex flex-col items-center gap-2">
               <span className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground flex items-center gap-1"><Layers className="w-3 h-3"/> Draw ({gameState.deckCount ?? 0})</span>
-              <div
+              <button
+                type="button"
+                aria-label="Draw a card from the pile"
+                disabled={gameState.phase !== "draw" || !isMyTurn || actionMutation.isPending || !!gameState.pendingDecision}
                 className={cn("relative transition-all", gameState.phase === "draw" && isMyTurn && "cursor-pointer hover:-translate-y-1")}
                 onClick={gameState.phase === "draw" && isMyTurn ? handleDrawCard : undefined}
                 data-testid="draw-pile"
@@ -1060,7 +1095,7 @@ export default function FacilitatedGame() {
                   )}
                   style={{ backgroundImage: `url('${assetUrl(CARD_BACK.imageKey)}')` }}
                 />
-              </div>
+              </button>
             </div>
 
             {/* Discard pile */}
@@ -1165,14 +1200,14 @@ export default function FacilitatedGame() {
                  gameState.phase === "draw" ? (
                    <>
                      <div className="text-center text-sm font-bold text-primary mb-1 uppercase tracking-widest animate-pulse">Your Turn!</div>
-                     <Button size="lg" onClick={handleDrawCard} disabled={actionMutation.isPending} className="font-bold text-lg w-full h-16 shadow-xl hover:-translate-y-0.5 transition-transform bg-primary hover:bg-primary/90">
+                     <Button size="lg" onClick={handleDrawCard} disabled={actionMutation.isPending} className="hidden md:inline-flex font-bold text-lg w-full h-16 shadow-xl hover:-translate-y-0.5 transition-transform bg-primary hover:bg-primary/90">
                        {actionMutation.isPending ? <Loader2 className="w-5 h-5 animate-spin" /> : "Draw a Card"}
                      </Button>
                    </>
                  ) : (
                    <>
                      <div className="text-center text-[11px] font-bold text-muted-foreground mb-1 uppercase tracking-widest">Play cards or end turn</div>
-                     <Button size="lg" variant="secondary" onClick={handleEndTurn} disabled={actionMutation.isPending} className="font-bold text-lg w-full h-16 border-2 hover:bg-card shadow-md">
+                     <Button size="lg" variant="secondary" onClick={handleEndTurn} disabled={actionMutation.isPending} className="hidden md:inline-flex font-bold text-lg w-full h-16 border-2 hover:bg-card shadow-md">
                        {actionMutation.isPending ? <Loader2 className="w-5 h-5 animate-spin" /> : "End Turn"}
                      </Button>
                    </>
