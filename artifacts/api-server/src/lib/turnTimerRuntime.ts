@@ -7,39 +7,86 @@ import { expiredClock, expireTurnClock } from "./turnClock.js";
 import type { GameState } from "./gameEngine.js";
 import { serializeState } from "../routes/game.js";
 
-const timers = new Map<string, ReturnType<typeof setTimeout>>();
-export function disarmTurnTimer(gameId: string): void {
-  const timer = timers.get(gameId);
-  if (timer) clearTimeout(timer);
-  timers.delete(gameId);
+export const MAX_TIMER_ATTEMPTS = 3;
+
+/** Scheduling is injectable so retry exhaustion can be tested without real waits. */
+export function createTurnTimerScheduler(deps: {
+  run: (state: GameState) => Promise<void>;
+  schedule?: typeof setTimeout;
+  cancel?: typeof clearTimeout;
+  report?: (error: unknown) => void;
+}) {
+  const timers = new Map<string, ReturnType<typeof setTimeout>>();
+  const identities = new Map<string, string>();
+  const failures = new Map<string, number>();
+  const inFlight = new Map<string, string>();
+  const schedule = deps.schedule ?? setTimeout;
+  const cancel = deps.cancel ?? clearTimeout;
+  function clearTimer(gameId: string) {
+    const timer = timers.get(gameId);
+    if (timer) cancel(timer);
+    timers.delete(gameId);
+  }
+  function disarm(gameId: string) {
+    clearTimer(gameId);
+    identities.delete(gameId);
+    failures.delete(gameId);
+  }
+  function arm(state: GameState, authoritative = true) {
+    if (!authoritative && timers.has(state.gameId)) return;
+    clearTimer(state.gameId);
+    if (state.paused || state.turnDeadlineAt == null || !state.turnTimerSeconds) {
+      disarm(state.gameId);
+      return;
+    }
+    const identity = `${state.turnDeadlineKey}:${state.turnDeadlineAt}`;
+    if (inFlight.get(state.gameId) === identity) return;
+    if (identities.get(state.gameId) !== identity) failures.delete(state.gameId);
+    identities.set(state.gameId, identity);
+    if ((failures.get(state.gameId) ?? 0) >= MAX_TIMER_ATTEMPTS) return;
+    const fire = () => {
+      if (identities.get(state.gameId) !== identity || inFlight.has(state.gameId) ||
+        (failures.get(state.gameId) ?? 0) >= MAX_TIMER_ATTEMPTS) return;
+      timers.delete(state.gameId);
+      inFlight.set(state.gameId, identity);
+      void deps.run(state).catch(error => {
+        // A failure from a superseded timer must not overwrite a newer timer.
+        if (identities.get(state.gameId) !== identity) return;
+        const count = (failures.get(state.gameId) ?? 0) + 1;
+        failures.set(state.gameId, count);
+        deps.report?.(error);
+        clearTimer(state.gameId);
+        if (count >= MAX_TIMER_ATTEMPTS) return;
+        // Keep the ORIGINAL durable deadline/key for retries.
+        const retry = schedule(fire, 1000);
+        retry.unref();
+        timers.set(state.gameId, retry);
+      }).finally(() => {
+        if (inFlight.get(state.gameId) === identity) inFlight.delete(state.gameId);
+      });
+    };
+    const timer = schedule(fire, Math.max(1, Math.min(2147483647, state.turnDeadlineAt - Date.now())));
+    timer.unref();
+    timers.set(state.gameId, timer);
+  }
+  return { arm, disarm };
 }
-export function armTurnTimer(state: GameState, authoritative = true): void {
-  // A late read must not replace a timer armed by a newer acknowledged write.
-  if (!authoritative && timers.has(state.gameId)) return;
-  disarmTurnTimer(state.gameId);
-  if (state.paused || state.turnDeadlineAt == null || !state.turnTimerSeconds) return;
-  const key = state.turnDeadlineKey!;
-  const deadline = state.turnDeadlineAt;
-  const timer = setTimeout(() => {
-    timers.delete(state.gameId);
-    void withGameMutationLocks([state.gameId], async client => {
+
+const scheduler = createTurnTimerScheduler({
+  async run(state) {
+    await withGameMutationLocks([state.gameId], async client => {
       const latest = await getGame(state.gameId, client);
-      if (!latest) return;
-      const next = expireTurnClock(latest, key, deadline);
+      if (!latest) { disarmTurnTimer(state.gameId); return; }
+      const next = expireTurnClock(latest, state.turnDeadlineKey!, state.turnDeadlineAt!);
       if (next === latest) { armTurnTimer(latest); return; }
       await storeGame(next, client);
       broadcastToGame(next.gameId, next, serializeState, client);
-    }).catch(error => {
-      console.error("[turn timer] expiry failed", error instanceof Error ? error.message : "unknown");
-      // A bounded retry timer is not a client poll. Durable deadlines remain authoritative.
-      const retry = setTimeout(() => armTurnTimer({ ...state, turnDeadlineAt: Date.now() + 1000 }), 1000);
-      retry.unref();
-      timers.set(state.gameId, retry);
     });
-  }, Math.max(1, Math.min(2147483647, deadline - Date.now())));
-  timer.unref();
-  timers.set(state.gameId, timer);
-}
+  },
+  report(error) { console.error("[turn timer] expiry failed", error instanceof Error ? error.message : "unknown"); },
+});
+export const armTurnTimer = scheduler.arm;
+export const disarmTurnTimer = scheduler.disarm;
 
 async function readClock(state: GameState, client?: PgQueryable): Promise<GameState> {
   if (!expiredClock(state, Date.now())) {

@@ -56,7 +56,7 @@ try {
   assert.ok(persisted.turnDeadlineAt > Date.now());
   let covered = syncTurnClock(recordMissedTurn(recordMissedTurn({
     ...createGameState(gameId, ["Sam", "Alex"], "online"), facilitatorId: id, turnTimerSeconds: 30,
-  }, "player_0"), "player_0"));
+  }, "player_0", 1), "player_0", 3));
   await withGameMutationLocks([gameId], client => storeGame(covered, client));
   assert.equal((await request(`/games/${gameId}/action`, { type: "take_back_seat", token, playerId: "player_1" })).status, 403);
   assert.equal((await request(`/games/${gameId}/action`, { type: "draw_card", token, playerId: "player_0", turnDeadlineKey: covered.turnDeadlineKey })).status, 409);

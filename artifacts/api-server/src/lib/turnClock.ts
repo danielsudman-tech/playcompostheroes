@@ -41,37 +41,69 @@ export function expiredClock(state: GameState, now: number): boolean {
     state.phase !== "game_over" && state.turnDeadlineAt != null && state.turnDeadlineAt <= now;
 }
 
+/** Engine rejection must not keep an unattended decision alive indefinitely. */
+function resolveTimedDecision(state: GameState): { state: GameState; cleared: boolean } {
+  const decision = state.pendingDecision!;
+  for (const choose of [() => buildAutoResolveData(decision), () => ({ skip: true })]) {
+    try {
+      const data = choose();
+      const result = resolveDecision(state, decision.playerId, data);
+      if (!result.error) return { state: result.state, cleared: false };
+    } catch { /* Use the same clear-and-continue fallback as bots. */ }
+  }
+  return { state: { ...state, pendingDecision: null }, cleared: true };
+}
+
+function finishTimedTurn(state: GameState, playerId: string): GameState {
+  let next = state;
+  if (next.phase === "draw") {
+    const drawn = drawCardAction(next, playerId);
+    if (drawn.error) throw new Error(drawn.error);
+    next = drawn.state;
+  }
+  const ended = endTurn(next, playerId);
+  if (ended.error) throw new Error(ended.error);
+  next = ended.state;
+  // Each successful discard reduces the hand. An invalid legacy choice is
+  // cleared before a fresh endTurn rebuilds valid hand-limit options.
+  for (let i = 0; next.pendingDecision?.type === "choose_discard_to_limit" && i < 32; i++) {
+    const resolved = resolveTimedDecision(next);
+    next = resolved.state;
+    if (resolved.cleared) {
+      const retry = endTurn(next, playerId);
+      if (retry.error) throw new Error(retry.error);
+      next = retry.state;
+    }
+  }
+  if (next.pendingDecision?.type === "choose_discard_to_limit") throw new Error("Timed hand-limit completion did not converge");
+  return next;
+}
+
 export function expireTurnClock(state: GameState, expectedKey: string, expectedDeadline: number, now = Date.now()): GameState {
   if (!expiredClock(state, now) || state.turnDeadlineKey !== expectedKey || state.turnDeadlineAt !== expectedDeadline ||
       clockIdentity(state) !== expectedKey) return state;
   const actor = state.players.find(p => p.id === requiredActor(state));
   if (!actor) return state;
+  const isOwnTurn = state.players[state.currentPlayerIndex]?.id === actor.id;
   let next = state;
+  let cleared = false;
   if (next.pendingDecision) {
-    const result = resolveDecision(next, actor.id, buildAutoResolveData(next.pendingDecision));
-    if (result.error) throw new Error(`Timed decision could not resolve: ${result.error}`);
-    next = result.state;
+    const resolved = resolveTimedDecision(next);
+    next = resolved.state;
+    cleared = resolved.cleared;
+    if (cleared && isOwnTurn && next.phase !== "game_over") next = finishTimedTurn(next, actor.id);
   } else {
-    if (next.phase === "draw") {
-      const drawn = drawCardAction(next, actor.id);
-      if (drawn.error) throw new Error(drawn.error);
-      next = drawn.state;
-    }
-    const ended = endTurn(next, actor.id);
-    if (ended.error) throw new Error(ended.error);
-    next = ended.state;
-    // Hand-limit decisions are part of finishing this same timed-out turn.
-    for (let i = 0; next.pendingDecision?.type === "choose_discard_to_limit" && i < 8; i++) {
-      const resolved = resolveDecision(next, actor.id, buildAutoResolveData(next.pendingDecision));
-      if (resolved.error) throw new Error(resolved.error);
-      next = resolved.state;
-    }
+    next = finishTimedTurn(next, actor.id);
   }
-  next = recordMissedTurn(next, actor.id);
+  const turnEnded = isOwnTurn && (next.turnNumber !== state.turnNumber ||
+    next.turnSequence !== state.turnSequence || next.currentPlayerIndex !== state.currentPlayerIndex);
+  if (turnEnded) next = recordMissedTurn(next, actor.id, state.turnNumber);
   next = runBotTurnsIfNeeded(next);
+  const message = turnEnded ? `Time ran out. ${actor.name}'s turn was finished automatically.`
+    : `Time ran out. ${actor.name}'s choice was ${cleared ? "skipped" : "made"} automatically.`;
   next = { ...next, turnDeadlineAt: null, turnDeadlineKey: null, turnTimerRemainingMs: null,
     lastMeaningfulActivityAt: now,
-    log: [...next.log, `Time ran out. ${actor.name}'s turn was finished automatically.`] };
-  next = addSystemUpdate(next, `Time ran out. ${actor.name}'s turn was finished automatically.`, now);
+    log: [...next.log, message] };
+  next = addSystemUpdate(next, message, now);
   return syncTurnClock(next, now);
 }

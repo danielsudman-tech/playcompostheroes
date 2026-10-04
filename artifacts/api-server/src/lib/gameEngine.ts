@@ -22,6 +22,8 @@ export interface PlayerState {
   isBot: boolean;
   botSkillLevel?: BotSkillLevel;
   consecutiveMissedTurns?: number;
+  /** Server-only dedupe marker for timed completion of an own turn. */
+  lastMissedTurnNumber?: number;
   botCovering?: boolean;
   botCoverReason?: "timer" | "host";
 }

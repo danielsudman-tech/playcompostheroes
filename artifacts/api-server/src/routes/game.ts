@@ -216,10 +216,11 @@ export function serializeState(state: GameState, viewerIndex?: number) {
     questions,
     deckCount: deck.length,
     players: state.players.map((player, idx) => {
+      const { lastMissedTurnNumber: _missedTurn, ...publicPlayer } = player;
       if (!isOnline || idx === viewerIndex) {
-        return player;
+        return publicPlayer;
       }
-      return { ...player, hand: player.hand.map(() => HIDDEN_CARD) };
+      return { ...publicPlayer, hand: player.hand.map(() => HIDDEN_CARD) };
     }),
   };
 }

@@ -10,11 +10,12 @@ export function coverHumanSeat(state: GameState, playerId: string, temporary = t
     ? { ...p, isBot: true, botSkillLevel: "medium", botCovering: temporary, botCoverReason: temporary ? "host" : undefined } : p) };
 }
 
-export function recordMissedTurn(state: GameState, playerId: string): GameState {
+export function recordMissedTurn(state: GameState, playerId: string, turnNumber: number): GameState {
   const actor = state.players.find(p => p.id === playerId);
-  if (!actor || actor.isBot) return state;
+  if (!actor || actor.isBot || actor.lastMissedTurnNumber === turnNumber) return state;
   const count = (actor.consecutiveMissedTurns ?? 0) + 1;
-  let next = { ...state, players: state.players.map(p => p.id === playerId ? { ...p, consecutiveMissedTurns: count } : p) };
+  let next = { ...state, players: state.players.map(p => p.id === playerId
+    ? { ...p, consecutiveMissedTurns: count, lastMissedTurnNumber: turnNumber } : p) };
   if (count >= 2) {
     next = coverHumanSeat(next, playerId);
     next = { ...next, players: next.players.map(p => p.id === playerId ? { ...p, botCoverReason: "timer" as const } : p) };
