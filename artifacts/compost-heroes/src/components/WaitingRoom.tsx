@@ -4,9 +4,10 @@ import { motion } from "framer-motion";
 import { Button } from "@/components/ui/button";
 import { useStartGame, useLeaveRoom, useGameAction } from "@/hooks/use-game";
 import { useToast } from "@/hooks/use-toast";
-import { Copy, Check, Crown, Loader2, Users, Lock, LogOut, UserX, Bot, Plus, X } from "lucide-react";
+import { Share2, Copy, Check, Crown, Loader2, Users, Lock, LogOut, UserX, Bot, Plus, X } from "lucide-react";
 import { TurnTimerSelect, turnTimerLabel } from "@/components/TurnTimerChip";
 import { Timer } from "lucide-react";
+import { shareInvite } from "@/lib/shareInvite";
 import { assetUrl } from "@/lib/assetUrl";
 
 interface PlayerSlot {
@@ -71,11 +72,28 @@ export function WaitingRoom({ gameId, players, maxPlayers, playerIndex, token, h
     timerAction.mutate({ type: "set_turn_timer", playerId: myPlayerId, data: { turnTimerSeconds: value }, token, userToken });
   };
 
+  const flashCopied = () => {
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
+  };
+
   const handleCopy = () => {
-    navigator.clipboard.writeText(shareUrl).then(() => {
-      setCopied(true);
-      setTimeout(() => setCopied(false), 2000);
+    navigator.clipboard.writeText(shareUrl).then(flashCopied).catch(() => {
+      toast({ title: "Couldn't copy the link", description: "Select the link and copy it manually.", variant: "destructive" });
     });
+  };
+
+  const handleShare = async () => {
+    const result = await shareInvite(shareUrl, {
+      share: typeof navigator.share === "function" ? (d) => navigator.share(d) : undefined,
+      writeText: navigator.clipboard ? (t) => navigator.clipboard.writeText(t) : undefined,
+    });
+    if (result === "copied") {
+      flashCopied();
+      toast({ title: "Link copied" });
+    } else if (result === "failed") {
+      toast({ title: "Couldn't share the link", description: "Select the link and copy it manually.", variant: "destructive" });
+    }
   };
 
   const handleAddBot = () => {
@@ -170,7 +188,16 @@ export function WaitingRoom({ gameId, players, maxPlayers, playerIndex, token, h
                 className="flex-1 h-11 px-3 rounded-xl border-2 border-border bg-background/50 font-mono text-xs text-muted-foreground focus:outline-none focus:border-primary/50 select-all"
               />
               <button
+                onClick={handleShare}
+                aria-label="Share invite link"
+                data-testid="button-share-invite"
+                className="h-11 w-11 shrink-0 rounded-xl border-2 border-border bg-background/50 flex items-center justify-center hover:bg-muted/50 transition-colors"
+              >
+                <Share2 className="w-4 h-4 text-muted-foreground" />
+              </button>
+              <button
                 onClick={handleCopy}
+                aria-label="Copy invite link"
                 className="h-11 w-11 shrink-0 rounded-xl border-2 border-border bg-background/50 flex items-center justify-center hover:bg-muted/50 transition-colors"
               >
                 {copied ? <Check className="w-4 h-4 text-green-500" /> : <Copy className="w-4 h-4 text-muted-foreground" />}
@@ -229,7 +256,6 @@ export function WaitingRoom({ gameId, players, maxPlayers, playerIndex, token, h
                     {isMe && (
                       <span className="text-[10px] text-primary bg-primary/10 border border-primary/20 rounded-full px-2 py-0.5 font-bold uppercase tracking-wide">You</span>
                     )}
-                    <span className="w-2 h-2 bg-green-400 rounded-full" />
                     {canKick && (
                       <button
                         onClick={() => handleKick(p.id, p.name)}

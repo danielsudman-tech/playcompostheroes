@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useLocation } from "wouter";
 import { motion, AnimatePresence } from "framer-motion";
 import { useCreateNewGame, useRooms, type RoomInfo } from "@/hooks/use-game";
@@ -133,6 +133,11 @@ export default function Lobby() {
   // Facilitated: participants join with a code; hosts use /facilitator.
   const [joinCode, setJoinCode] = useState("");
   const [joiningCode, setJoiningCode] = useState(false);
+
+  useEffect(() => {
+    const accountName = currentUser?.name?.trim();
+    if (accountName) setHostName((prev) => (prev ? prev : accountName));
+  }, [currentUser?.name]);
 
   const requestSignIn = () => {
     window.location.search = "signin=1";

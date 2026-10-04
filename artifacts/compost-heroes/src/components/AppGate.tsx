@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback, createContext, useContext, type ReactNode } from "react";
 import { useLocation as useWouterLocation } from "wouter";
-import { Loader2, Lock, Eye, EyeOff, HelpCircle, X } from "lucide-react";
+import { Loader2, Lock, Eye, EyeOff, HelpCircle, X, ArrowLeft } from "lucide-react";
 import compostHeroesLogo from "@assets/Compost_Heroes_Logo_no_background_1773537933517.png";
 import { PHYSICAL_GAME_URL } from "@/lib/links";
 import { gameRouteGateForResponse } from "@/lib/gameRouteStatus";
@@ -214,6 +214,18 @@ export function AppGate({ children }: { children: ReactNode }) {
     setErrorMsg(null);
   }, []);
 
+  const leaveGate = () => {
+    try {
+      const params = new URLSearchParams(window.location.search);
+      params.delete("signin");
+      const qs = params.toString();
+      window.history.replaceState({}, "", window.location.pathname + (qs ? `?${qs}` : "") + window.location.hash);
+    } catch {}
+    setForceGate(false);
+    setMode("start");
+    navigate("/");
+  };
+
   function switchMode(m: Mode) {
     setMode(m);
     setErrorMsg(null);
@@ -329,6 +341,14 @@ export function AppGate({ children }: { children: ReactNode }) {
       <div className="absolute top-[-10%] left-[-10%] w-[40%] h-[40%] bg-primary/20 blur-[100px] rounded-full pointer-events-none" />
       <div className="absolute bottom-[-10%] right-[-10%] w-[50%] h-[50%] bg-secondary/20 blur-[120px] rounded-full pointer-events-none" />
       <div className="relative z-10 w-full max-w-md flex flex-col gap-8">
+        <button
+          type="button"
+          onClick={leaveGate}
+          data-testid="link-back-to-home"
+          className="self-start flex items-center gap-1.5 text-sm font-semibold text-muted-foreground hover:text-primary transition-colors -mb-4"
+        >
+          <ArrowLeft className="w-4 h-4" /> Back to home
+        </button>
 
         {/* Hero section */}
         <div className="text-center space-y-4">
@@ -457,6 +477,11 @@ export function AppGate({ children }: { children: ReactNode }) {
                   </button>
                 </>
               )}
+            </p>
+            <p className="text-center text-xs">
+              <button type="button" onClick={leaveGate} data-testid="link-keep-guest" className="text-muted-foreground font-semibold hover:text-primary hover:underline">
+                Keep playing as a guest
+              </button>
             </p>
           </form>
 
