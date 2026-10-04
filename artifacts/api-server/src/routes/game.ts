@@ -564,51 +564,49 @@ router.post("/games/:gameId/start", async (req, res) => {
 router.get("/games/:gameId/events", async (req, res) => {
   const { gameId } = req.params as { gameId: string };
   const token = req.query.token as string | undefined;
-  const state = await getGame(gameId);
-
-  if (!state) {
-    res.status(404).json({ error: "Game not found" });
-    return;
-  }
-
   if (!token) {
     res.status(400).json({ error: "token query param required" });
     return;
   }
-
-  const tokenIndex = await getPlayerIndexForToken(gameId, token);
-  if (tokenIndex === null) {
-    res.status(403).json({ error: "Invalid token" });
-    return;
-  }
-  const viewerIndex = tokenIndex;
-
-  res.setHeader("Content-Type", "text/event-stream");
-  res.setHeader("Cache-Control", "no-cache");
-  res.setHeader("Connection", "keep-alive");
-  res.setHeader("X-Accel-Buffering", "no");
-  res.flushHeaders();
 
   const sseWrite = (chunk: string) => {
     res.write(chunk);
     (res as any).flush?.();
   };
 
-  sseWrite(`data: ${JSON.stringify(serializeState(state, viewerIndex))}\n\n`);
-
-  addSseClient(gameId, token, res);
-
-  const ping = setInterval(() => {
-    try {
-      sseWrite(": ping\n\n");
-    } catch {
-      clearInterval(ping);
-    }
-  }, 15000);
-
+  let ping: ReturnType<typeof setInterval> | undefined;
+  let closed = false;
   req.on("close", () => {
+    closed = true;
     clearInterval(ping);
-    removeSseClient(gameId, token);
+    removeSseClient(gameId, token, res);
+  });
+
+  // Resolve the state, credential and stream seat atomically with seat mutations.
+  // A reorder between separate reads must not expose the hand now at the old index.
+  await withGameMutationLocks([gameId], async client => {
+    const state = await getGame(gameId, client);
+    if (closed) return;
+    if (!state) {
+      res.status(404).json({ error: "Game not found" });
+      return;
+    }
+    const viewerIndex = await getPlayerIndexForToken(gameId, token, client);
+    if (closed) return;
+    if (viewerIndex === null || (viewerIndex !== -1 && !state.players[viewerIndex])) {
+      res.status(403).json({ error: "Invalid token" });
+      return;
+    }
+    res.setHeader("Content-Type", "text/event-stream");
+    res.setHeader("Cache-Control", "no-cache");
+    res.setHeader("Connection", "keep-alive");
+    res.setHeader("X-Accel-Buffering", "no");
+    res.flushHeaders();
+    addSseClient(gameId, token, res, viewerIndex, state.players[viewerIndex]?.id);
+    sseWrite(`data: ${JSON.stringify(serializeState(state, viewerIndex))}\n\n`);
+    ping = setInterval(() => {
+      try { sseWrite(": ping\n\n"); } catch { clearInterval(ping); }
+    }, 15000);
   });
 });
 

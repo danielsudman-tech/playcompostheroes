@@ -1,5 +1,6 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useCallback, useEffect, useRef, useState } from "react";
+import { createStreamRefresh } from "@/lib/gameStreamRefresh";
 import { getGetGameQueryKey } from "@workspace/api-client-react";
 import type { GameAction, GameState } from "@workspace/api-client-react";
 import { gameStateKey, nextClaimIdentity, shouldAttemptClaim, shouldRetireClaim, type ClaimIdentity } from "@/lib/gameCache";
@@ -269,6 +270,11 @@ export function useGameSse(
         setSseConnected(true);
       } catch {}
     };
+
+    source.addEventListener("refresh", createStreamRefresh(
+      () => queryClient.invalidateQueries({ queryKey: stateKey, exact: true }, { cancelRefetch: false }),
+      () => active,
+    ));
 
     source.addEventListener("kicked", () => {
       source.close();

@@ -102,7 +102,8 @@ export class GameStoreCache<T extends CacheableGameState> {
   /** Drop a state snapshot after a custom-client write without trusting its transaction status. */
   invalidateState(gameId: string): void {
     this.advanceGeneration(gameId);
-    this.clearGameContents(gameId);
+    this.states.delete(gameId);
+    if (!this.tokenIndexes.has(gameId)) this.timings.delete(gameId);
   }
 
   deleteGame(gameId: string): void {

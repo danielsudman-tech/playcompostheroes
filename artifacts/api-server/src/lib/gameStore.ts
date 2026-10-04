@@ -15,7 +15,13 @@ export type PgQueryable = { query: (...args: any[]) => Promise<PgQueryResult> };
 export type PgClient = PgQueryable & { release: (error?: Error | boolean) => void };
 
 // ── In-memory only: live SSE connections (can't persist HTTP streams) ──────────
-const sseClientsByToken = new Map<string, Map<string, Response>>();
+type SseConnection = {
+  res: Response;
+  playerIndex: number | undefined;
+  playerId?: string;
+  revoked: boolean;
+};
+const sseClientsByToken = new Map<string, Map<string, SseConnection>>();
 
 // ── In-memory game state cache ────────────────────────────────────────────────
 // Eliminates a DB read on every action — the DB remains the durable backup.
@@ -44,7 +50,7 @@ export function invalidateGameCaches(gameId: string): void {
   gameStoreCache.deleteGame(gameId);
   const clients = sseClientsByToken.get(gameId);
   sseClientsByToken.delete(gameId);
-  for (const response of clients?.values() ?? []) {
+  for (const { res: response } of clients?.values() ?? []) {
     try {
       response.write(`event: event-removed\ndata: {"error":"This event has been removed"}\n\n`);
       response.end();
@@ -61,6 +67,49 @@ function recordUncachedGameChange(gameId: string, invalidateState: boolean): voi
   tokenPublicationEpoch++;
   if (invalidateState) gameStoreCache.invalidateState(gameId);
   else gameStoreCache.invalidateTokenIndex(gameId);
+}
+
+/** Publish committed credentials without making streams depend on cache lifetime. */
+function publishTokenIndex(gameId: string, index: Map<string, number>, complete = false): void {
+  gameStoreCache.setTokenIndex(gameId, index);
+  const state = complete ? gameStoreCache.getState(gameId) : undefined;
+  for (const [token, connection] of sseClientsByToken.get(gameId) ?? []) {
+    const seat = index.get(token);
+    if (seat !== undefined && !connection.revoked) {
+      connection.playerIndex = seat;
+      if (state) connection.playerId = state.players[seat]?.id;
+    } else if (complete && seat === undefined) {
+      connection.revoked = true;
+      connection.playerIndex = undefined;
+    }
+  }
+}
+
+function revokeSseToken(gameId: string, token: string): void {
+  const connection = sseClientsByToken.get(gameId)?.get(token);
+  if (connection) {
+    connection.revoked = true;
+    connection.playerIndex = undefined;
+  }
+}
+
+function repairUnknownSseSeat(gameId: string, token: string, playerIndex: number): void {
+  const connection = sseClientsByToken.get(gameId)?.get(token);
+  if (connection && !connection.revoked && connection.playerIndex === undefined) {
+    connection.playerIndex = playerIndex;
+  }
+}
+
+/** Also shift live seats when the token cache has been evicted or invalidated. */
+function removeSseSeat(gameId: string, removedIndex: number, shift: boolean): void {
+  for (const connection of sseClientsByToken.get(gameId)?.values() ?? []) {
+    if (connection.playerIndex === removedIndex) {
+      connection.revoked = true;
+      connection.playerIndex = undefined;
+    } else if (shift && connection.playerIndex !== undefined && connection.playerIndex > removedIndex) {
+      connection.playerIndex--;
+    }
+  }
 }
 
 /**
@@ -275,7 +324,7 @@ export async function reloadGameState(
         [row.token, Number(row.player_index)]));
       gameStoreCache.publishIfCurrent(read, () => {
         gameStoreCache.setState(state, Date.now(), isEventMember);
-        gameStoreCache.setTokenIndex(gameId, tokenIndex);
+        publishTokenIndex(gameId, tokenIndex, true);
       });
       gameClock?.arm(state);
     }
@@ -601,7 +650,7 @@ export async function claimSlot(
   if (queryable === pool) {
     const nextIndexMap = new Map(gameStoreCache.getTokenIndex(gameId) ?? []);
     nextIndexMap.set(token, nextIndex);
-    gameStoreCache.setTokenIndex(gameId, nextIndexMap);
+    publishTokenIndex(gameId, nextIndexMap);
   } else {
     recordUncachedGameChange(gameId, false);
   }
@@ -632,7 +681,7 @@ export async function createSpectatorHostToken(gameId: string, client: PgQueryab
   if (client === pool) {
     const nextIndexMap = new Map(gameStoreCache.getTokenIndex(gameId) ?? []);
     nextIndexMap.set(token, -1);
-    gameStoreCache.setTokenIndex(gameId, nextIndexMap);
+    publishTokenIndex(gameId, nextIndexMap);
   } else {
     recordUncachedGameChange(gameId, false);
   }
@@ -739,7 +788,7 @@ export async function reorderWaitingPlayers(
         if (newIndex >= guestOffset) nextMap.set(row.token, newIndex);
       }
     }
-    gameStoreCache.setTokenIndex(gameId, nextMap);
+    publishTokenIndex(gameId, nextMap, true);
     return nextState;
   } catch (error) {
     if (committed) throw safelyClassifyFailedTransaction(error, false);
@@ -895,10 +944,12 @@ export async function transferWaitingPlayer(
     const sourceMap = new Map(gameStoreCache.getTokenIndex(sourceGameId) ?? []);
     sourceMap.delete(movedToken);
     for (const [key, index] of sourceMap) if (index > playerIndex) sourceMap.set(key, index - 1);
-    gameStoreCache.setTokenIndex(sourceGameId, sourceMap);
+    removeSseSeat(sourceGameId, playerIndex, true);
+    revokeSseToken(sourceGameId, movedToken);
+    publishTokenIndex(sourceGameId, sourceMap);
     const targetMap = new Map(gameStoreCache.getTokenIndex(targetGameId) ?? []);
     targetMap.set(movedToken, target.players.length);
-    gameStoreCache.setTokenIndex(targetGameId, targetMap);
+    publishTokenIndex(targetGameId, targetMap);
     return { source: nextSource, target: nextTarget, token: movedToken };
   } catch (error) {
     if (committed) throw safelyClassifyFailedTransaction(error, false);
@@ -931,7 +982,10 @@ export async function getPlayerIndexForToken(
   const queryable = client ?? pool;
   const canCache = queryable === pool;
   const cached = canCache ? gameStoreCache.getTokenIndex(gameId)?.get(token) : undefined;
-  if (cached !== undefined) return cached;
+  if (cached !== undefined) {
+    repairUnknownSseSeat(gameId, token, cached);
+    return cached;
+  }
   const read = canCache ? gameStoreCache.beginRead(gameId) : undefined;
   try {
     const result = await queryable.query(
@@ -941,6 +995,7 @@ export async function getPlayerIndexForToken(
     );
     if (result.rows.length === 0) return null;
     const playerIndex = Number(result.rows[0].player_index);
+    repairUnknownSseSeat(gameId, token, playerIndex);
     if (read) {
       const eventMembership = gameStoreCache.knowsEventMembership(gameId)
         ? undefined
@@ -949,7 +1004,7 @@ export async function getPlayerIndexForToken(
         if (eventMembership !== undefined) gameStoreCache.markEventMembership(gameId, eventMembership);
         const nextIndexMap = new Map(gameStoreCache.getTokenIndex(gameId) ?? []);
         nextIndexMap.set(token, playerIndex);
-        gameStoreCache.setTokenIndex(gameId, nextIndexMap);
+        publishTokenIndex(gameId, nextIndexMap);
       });
     }
     return playerIndex;
@@ -985,11 +1040,19 @@ export async function removePlayerTokenByIndex(
       [gameId, removedIndex]
     );
   } catch (error) {
+    // A delete can commit before the following index-shift statement fails.
+    // Fail closed until surviving credentials are resolved again.
+    if (removedToken) revokeSseToken(gameId, removedToken);
+    for (const connection of sseClientsByToken.get(gameId)?.values() ?? []) {
+      connection.playerIndex = undefined;
+    }
     recordUncachedGameChange(gameId, false);
     throw error;
   }
 
   // Mutate a private copy only after every durable statement has succeeded.
+  removeSseSeat(gameId, removedIndex, true);
+  if (removedToken) revokeSseToken(gameId, removedToken);
   if (client !== pool) {
     recordUncachedGameChange(gameId, false);
   } else {
@@ -999,7 +1062,7 @@ export async function removePlayerTokenByIndex(
     for (const [tok, idx] of tokenMap) {
       if (idx > removedIndex) tokenMap.set(tok, idx - 1);
     }
-    gameStoreCache.setTokenIndex(gameId, tokenMap);
+    publishTokenIndex(gameId, tokenMap);
   }
 
   return removedToken;
@@ -1007,10 +1070,19 @@ export async function removePlayerTokenByIndex(
 
 /** Revoke a permanently replaced seat without shifting any other seat indexes. Caller holds the game lock. */
 export async function revokeSeatTokens(gameId: string, index: number, client: PgClient): Promise<string[]> {
-  const result = await client.query(
-    `DELETE FROM compost_game_tokens WHERE game_id=$1 AND player_index=$2 RETURNING token`, [gameId, index]);
-  recordUncachedGameChange(gameId, false);
-  return result.rows.map(row => row.token as string);
+  try {
+    const result = await client.query(
+      `DELETE FROM compost_game_tokens WHERE game_id=$1 AND player_index=$2 RETURNING token`, [gameId, index]);
+    removeSseSeat(gameId, index, false);
+    for (const row of result.rows) revokeSseToken(gameId, row.token);
+    recordUncachedGameChange(gameId, false);
+    return result.rows.map(row => row.token as string);
+  } catch (error) {
+    // The server may have committed a delete before the connection failed.
+    removeSseSeat(gameId, index, false);
+    recordUncachedGameChange(gameId, false);
+    throw error;
+  }
 }
 
 export async function removeEventWaitingPlayer(
@@ -1074,11 +1146,13 @@ export async function removeEventWaitingPlayer(
     recordAuthoritativeGameChange(gameId);
     gameStoreCache.setState(nextState);
     gameStoreCache.markEventMembership(gameId, true);
+    removeSseSeat(gameId, removedIndex, true);
+    if (tokenRow) revokeSseToken(gameId, tokenRow.token);
     const tokenMap = new Map(gameStoreCache.getTokenIndex(gameId) ?? []);
     if (tokenMap) {
       if (tokenRow) tokenMap.delete(tokenRow.token);
       for (const [token, index] of tokenMap) if (index > removedIndex) tokenMap.set(token, index - 1);
-      gameStoreCache.setTokenIndex(gameId, tokenMap);
+      publishTokenIndex(gameId, tokenMap);
     }
     return { state: nextState, removedToken: (tokenRow?.token as string | undefined) ?? null };
   } catch (error) {
@@ -1229,6 +1303,8 @@ export async function kickFacilitatedPlayer(
     recordAuthoritativeGameChange(gameId);
     gameStoreCache.setState(nextState);
     if (eventId) gameStoreCache.markEventMembership(gameId, true);
+    removeSseSeat(gameId, removedIndex, !active);
+    if (removedToken) revokeSseToken(gameId, removedToken);
     const tokenMap = new Map(gameStoreCache.getTokenIndex(gameId) ?? []);
     if (tokenMap) {
       if (removedToken) tokenMap.delete(removedToken);
@@ -1237,7 +1313,7 @@ export async function kickFacilitatedPlayer(
           if (index > removedIndex) tokenMap.set(token, index - 1);
         }
       }
-      gameStoreCache.setTokenIndex(gameId, tokenMap);
+      publishTokenIndex(gameId, tokenMap);
     }
     return { state: nextState, removedToken, active };
   } catch (error) {
@@ -1251,25 +1327,29 @@ export async function kickFacilitatedPlayer(
 
 // ── SSE (in-memory only) ──────────────────────────────────────────────────────
 
-export function addSseClient(gameId: string, token: string, res: Response): void {
+export function addSseClient(
+  gameId: string, token: string, res: Response, playerIndex?: number, playerId?: string,
+): void {
   if (!sseClientsByToken.has(gameId)) {
     sseClientsByToken.set(gameId, new Map());
   }
-  sseClientsByToken.get(gameId)!.set(token, res);
+  sseClientsByToken.get(gameId)!.set(token, { res, playerIndex, playerId, revoked: false });
 }
 
-export function removeSseClient(gameId: string, token: string): void {
-  sseClientsByToken.get(gameId)?.delete(token);
+export function removeSseClient(gameId: string, token: string, res?: Response): void {
+  const clients = sseClientsByToken.get(gameId);
+  if (!res || clients?.get(token)?.res === res) clients?.delete(token);
 }
 
 export function sendKickedEvent(gameId: string, token: string): void {
   const clients = sseClientsByToken.get(gameId);
   if (!clients) return;
-  const res = clients.get(token);
+  const res = clients.get(token)?.res;
   if (res) {
     try {
       res.write(`event: kicked\ndata: {}\n\n`);
       (res as any).flush?.();
+      res.end();
     } catch {}
     clients.delete(token);
   }
@@ -1282,7 +1362,7 @@ export function sendRoomTransferEvent(
   targetToken: string
 ): void {
   const clients = sseClientsByToken.get(sourceGameId);
-  const res = clients?.get(token);
+  const res = clients?.get(token)?.res;
   if (!res) return;
   try {
     res.write(`event: room_transfer\ndata: ${JSON.stringify({ gameId, targetToken })}\n\n`);
@@ -1301,7 +1381,8 @@ export async function sendNudgeEvent(gameId: string, targetPlayerIndex: number, 
   const targetToken = result.rows[0].token as string;
   const clients = sseClientsByToken.get(gameId);
   if (!clients) return;
-  const res = clients.get(targetToken);
+  const connection = clients.get(targetToken);
+  const res = connection?.revoked ? undefined : connection?.res;
   if (!res) return;
   try {
     res.write(`event: nudge\ndata: ${JSON.stringify({ from: fromName })}\n\n`);
@@ -1326,12 +1407,18 @@ export function broadcastToGame(
   const clients = sseClientsByToken.get(gameId);
   if (!clients || clients.size === 0) return;
 
-  const tokenMap = gameStoreCache.getTokenIndex(gameId);
-  for (const [token, res] of clients) {
-    const playerIndex = tokenMap?.get(token);
-    const payload = serializeFn(state, playerIndex);
+  for (const [token, connection] of clients) {
+    if (connection.revoked) continue;
+    const { res, playerIndex, playerId } = connection;
+    const seatKnown = playerIndex === -1 ||
+      (playerIndex !== undefined && Number.isInteger(playerIndex) && playerIndex >= 0 &&
+        !!state.players[playerIndex] && (!playerId || state.players[playerIndex].id === playerId));
     try {
-      res.write(`data: ${JSON.stringify(payload)}\n\n`);
+      if (!seatKnown) {
+        res.write(`event: refresh\ndata: {}\n\n`);
+      } else {
+        res.write(`data: ${JSON.stringify(serializeFn(state, playerIndex))}\n\n`);
+      }
       (res as any).flush?.();
     } catch {
       clients.delete(token);
