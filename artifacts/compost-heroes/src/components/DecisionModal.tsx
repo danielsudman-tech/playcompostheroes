@@ -6,6 +6,7 @@ import { GameCard } from "./GameCard";
 import { User, CheckSquare } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { assetUrl } from "@/lib/assetUrl";
+import { compareCompostFunctions, decisionOriginCardName, decisionTitle, showStepBanner } from "@/lib/compostFunctions";
 
 const FUNCTION_META: Record<string, { label: string; iconSrc: string; color: string; bg: string }> = {
   Airflow:    { label: "Airflow",    iconSrc: assetUrl("icon-airflow.png"),    color: "text-cyan-700",   bg: "bg-cyan-50 border-cyan-400" },
@@ -101,6 +102,8 @@ export function DecisionModal({ decision, gameState, onResolve, stepInfo }: Deci
   const isPlayerSelection = PLAYER_SELECTION_TYPES.has(type);
   const isCardSelection = CARD_SELECTION_TYPES.has(type);
   const isFunctionSelection = FUNCTION_SELECTION_TYPES.has(type);
+  const decisionCardName = decisionOriginCardName(decision,
+    [...gameState.players.flatMap((p) => [...p.hand, ...p.compostPile]), ...gameState.discardPile, ...(gameState.ongoingActionCard ? [gameState.ongoingActionCard] : [])]);
 
   const toggleCard = (cardId: string) => {
     setSelectedIds(prev => {
@@ -155,7 +158,7 @@ export function DecisionModal({ decision, gameState, onResolve, stepInfo }: Deci
           className="bg-card w-full max-w-2xl max-h-[calc(100dvh-2rem)] overflow-y-auto rounded-3xl shadow-2xl border border-border"
         >
           <div className="p-6 bg-primary/10 border-b border-border">
-            {stepInfo && (
+            {showStepBanner(stepInfo) && stepInfo && (
               <div className="flex items-center justify-center gap-2 mb-2">
                 <span className="text-[11px] font-bold uppercase tracking-widest bg-primary text-primary-foreground rounded-full px-3 py-0.5">
                   Step {stepInfo.step} of {stepInfo.total}
@@ -163,7 +166,7 @@ export function DecisionModal({ decision, gameState, onResolve, stepInfo }: Deci
                 <span className="text-xs font-semibold text-muted-foreground">{stepInfo.label}</span>
               </div>
             )}
-            <h2 className="text-2xl font-display font-bold text-foreground text-center">Action Required</h2>
+            <h2 className="text-2xl font-display font-bold text-foreground text-center">{decisionTitle(type, decisionCardName, stepInfo?.label)}</h2>
             <p className="text-center text-muted-foreground mt-2 text-lg">{decision.prompt}</p>
             {isFixedMulti && (
               <p className="text-center text-sm text-primary mt-1 font-bold">
@@ -267,10 +270,7 @@ export function DecisionModal({ decision, gameState, onResolve, stepInfo }: Deci
 
             {isFunctionSelection && (
               <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
-                {[...options].sort((a: any, b: any) => {
-                  const ORDER = ["Moisture", "Carbon", "Decomposer", "Nitrogen", "Airflow"];
-                  return (ORDER.indexOf(a.function) ?? 99) - (ORDER.indexOf(b.function) ?? 99);
-                }).map((opt: any, i: number) => {
+                {[...options].sort((a: any, b: any) => compareCompostFunctions(a.function, b.function)).map((opt: any, i: number) => {
                   const fn = opt.function as string;
                   const meta = FUNCTION_META[fn] ?? { label: fn, iconSrc: null, color: "text-muted-foreground", bg: "bg-muted border-border" };
                   return (

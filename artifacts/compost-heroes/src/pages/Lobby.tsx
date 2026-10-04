@@ -16,6 +16,7 @@ import {
 import { useToast } from "@/hooks/use-toast";
 import { useCurrentUser, useLogout } from "@/components/AppGate";
 import { getPublicEvent } from "@workspace/api-client-react";
+import { HOME_WIN_COPY } from "@/lib/compostFunctions";
 import { GREEN_CAMPS_URL, PHYSICAL_GAME_URL } from "@/lib/links";
 
 // ── Room Browser ────────────────────────────────────────────────────────────
@@ -597,7 +598,7 @@ export default function Lobby() {
         </AnimatePresence>
 
         <div className="mt-5 flex flex-col items-center gap-3">
-          <p className="text-sm text-muted-foreground text-center">Collect 1 Hero from each of the 5 layers to win!</p>
+          <p className="text-sm text-muted-foreground text-center">{HOME_WIN_COPY}</p>
           <a
             href={PHYSICAL_GAME_URL}
             target="_blank"

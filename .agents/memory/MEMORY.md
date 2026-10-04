@@ -8,3 +8,4 @@
 - [Event results privacy](event-results-privacy.md) — share table phases publicly, but require a guest seat token for individual results; face-up discards remain public game state.
 - [Fresh browser diagnostics](fresh-browser-diagnostics.md) — distinguish stale hook warnings from live edits from reproducible errors in a fresh post-restart context.
 - [Long browser waits](long-browser-waits.md) — avoid a single >45-second wait in workshop browser checks; it can reset saved contexts.
+- [Printed-card game language](game-language.md) — collect functions in function slots; preserve the distinct real layer used by card rules.

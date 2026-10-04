@@ -1,14 +1,15 @@
-import type { PlayerState, ActiveModifier, Card } from "@workspace/api-client-react";
+import type { PlayerState, Card } from "@workspace/api-client-react";
 import { cn } from "@/lib/utils";
+import { matchesCompostFunction } from "@/lib/compostFunctions";
 import { assetUrl } from "@/lib/assetUrl";
-import { AlertTriangle, Sparkles, Crosshair } from "lucide-react";
+import { AlertTriangle, Crosshair } from "lucide-react";
 
 export const PILE_CATEGORIES = [
-  { key: "moisture",   label: "Moisture",   iconSrc: assetUrl("icon-moisture.png"),   dotFilled: "bg-blue-500",   dotEmpty: "bg-blue-200/60 dark:bg-blue-900/40",   match: (fn: string) => fn.toLowerCase().includes("moisture") },
-  { key: "carbon",     label: "Carbon",     iconSrc: assetUrl("icon-carbon.png"),     dotFilled: "bg-amber-500",  dotEmpty: "bg-amber-200/60 dark:bg-amber-900/40",  match: (fn: string) => fn.toLowerCase().includes("carbon") },
-  { key: "decomposer", label: "Decomposer", iconSrc: assetUrl("icon-decomposer.png"), dotFilled: "bg-orange-500", dotEmpty: "bg-orange-200/60 dark:bg-orange-900/40", match: (fn: string) => fn.toLowerCase().includes("decomp") || fn.toLowerCase().includes("fire") },
-  { key: "nitrogen",   label: "Nitrogen",   iconSrc: assetUrl("icon-nitrogen.png"),   dotFilled: "bg-lime-500",   dotEmpty: "bg-lime-200/60 dark:bg-lime-900/40",   match: (fn: string) => fn.toLowerCase().includes("nitrogen") },
-  { key: "airflow",    label: "Airflow",    iconSrc: assetUrl("icon-airflow.png"),    dotFilled: "bg-cyan-500",   dotEmpty: "bg-cyan-200/60 dark:bg-cyan-900/40",   match: (fn: string) => fn.toLowerCase().includes("air") },
+  { key: "moisture",   label: "Moisture",   iconSrc: assetUrl("icon-moisture.png"),   dotFilled: "bg-blue-500",   dotEmpty: "bg-blue-200/60 dark:bg-blue-900/40",   match: (fn: string) => matchesCompostFunction("Moisture", fn) },
+  { key: "carbon",     label: "Carbon",     iconSrc: assetUrl("icon-carbon.png"),     dotFilled: "bg-amber-500",  dotEmpty: "bg-amber-200/60 dark:bg-amber-900/40",  match: (fn: string) => matchesCompostFunction("Carbon", fn) },
+  { key: "decomposer", label: "Decomposer", iconSrc: assetUrl("icon-decomposer.png"), dotFilled: "bg-orange-500", dotEmpty: "bg-orange-200/60 dark:bg-orange-900/40", match: (fn: string) => matchesCompostFunction("Decomposer", fn) },
+  { key: "nitrogen",   label: "Nitrogen",   iconSrc: assetUrl("icon-nitrogen.png"),   dotFilled: "bg-lime-500",   dotEmpty: "bg-lime-200/60 dark:bg-lime-900/40",   match: (fn: string) => matchesCompostFunction("Nitrogen", fn) },
+  { key: "airflow",    label: "Airflow",    iconSrc: assetUrl("icon-airflow.png"),    dotFilled: "bg-cyan-500",   dotEmpty: "bg-cyan-200/60 dark:bg-cyan-900/40",   match: (fn: string) => matchesCompostFunction("Airflow", fn) },
 ];
 
 export function getEffectiveFn(card: Card): string {
@@ -22,7 +23,6 @@ export function collectedCategoryCount(pile: Card[]): number {
 interface OpponentSummaryProps {
   player: PlayerState;
   isTurn: boolean;
-  modifiers: ActiveModifier[];
   /** Adaptive targeting: a decision is asking me to pick a player. */
   targetingActive: boolean;
   /** This opponent is an eligible target for the pending decision. */
@@ -38,7 +38,6 @@ interface OpponentSummaryProps {
 export function OpponentSummary({
   player,
   isTurn,
-  modifiers,
   targetingActive,
   isEligibleTarget,
   onClick,
@@ -113,27 +112,18 @@ export function OpponentSummary({
         })}
         {/* card count */}
         <div className="ml-auto flex flex-col items-end gap-0.5">
-          <span className="text-[10px] font-bold text-muted-foreground whitespace-nowrap">🂠 {player.hand.length}</span>
+          <span className="text-[10px] font-bold text-muted-foreground whitespace-nowrap">{player.hand.length}</span>
         </div>
       </div>
 
       {/* Active effects */}
-      {(player.skipsNextTurn || modifiers.length > 0) && (
+      {player.skipsNextTurn && (
         <div className="flex flex-wrap items-center gap-1 mt-1">
           {player.skipsNextTurn && (
             <span className="inline-flex items-center gap-0.5 text-[9px] font-bold text-destructive bg-destructive/10 border border-destructive/30 rounded-full px-1.5 py-px">
               <AlertTriangle className="w-2.5 h-2.5" /> Skips turn
             </span>
           )}
-          {modifiers.map((m, i) => (
-            <span
-              key={i}
-              title={m.effect}
-              className="inline-flex items-center gap-0.5 text-[9px] font-bold text-primary bg-primary/10 border border-primary/25 rounded-full px-1.5 py-px max-w-[8rem] truncate"
-            >
-              <Sparkles className="w-2.5 h-2.5 shrink-0" /> <span className="truncate">{m.cardName}</span>
-            </span>
-          ))}
         </div>
       )}
     </button>

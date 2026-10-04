@@ -7,13 +7,14 @@ import { GameCard } from "./GameCard";
 import { cn } from "@/lib/utils";
 import { CheckCircle2 } from "lucide-react";
 import { assetUrl } from "@/lib/assetUrl";
+import { matchesCompostFunction } from "@/lib/compostFunctions";
 
 const CATEGORIES = [
-  { label: "Airflow",    iconSrc: assetUrl("icon-airflow.png"),    match: (fn: string) => fn.toLowerCase().includes("air"),     color: "text-cyan-600" },
-  { label: "Carbon",     iconSrc: assetUrl("icon-carbon.png"),     match: (fn: string) => fn.toLowerCase().includes("carbon"),  color: "text-amber-700" },
-  { label: "Moisture",   iconSrc: assetUrl("icon-moisture.png"),   match: (fn: string) => fn.toLowerCase().includes("moisture"),color: "text-blue-600" },
-  { label: "Nitrogen",   iconSrc: assetUrl("icon-nitrogen.png"),   match: (fn: string) => fn.toLowerCase().includes("nitrogen"),color: "text-lime-600" },
-  { label: "Decomposer", iconSrc: assetUrl("icon-decomposer.png"), match: (fn: string) => fn.toLowerCase().includes("decomp") || fn.toLowerCase().includes("fire"), color: "text-orange-600" },
+  { label: "Moisture",   iconSrc: assetUrl("icon-moisture.png"),   match: (fn: string) => matchesCompostFunction("Moisture", fn),   color: "text-blue-600" },
+  { label: "Carbon",     iconSrc: assetUrl("icon-carbon.png"),     match: (fn: string) => matchesCompostFunction("Carbon", fn),     color: "text-amber-700" },
+  { label: "Decomposer", iconSrc: assetUrl("icon-decomposer.png"), match: (fn: string) => matchesCompostFunction("Decomposer", fn), color: "text-orange-600" },
+  { label: "Nitrogen",   iconSrc: assetUrl("icon-nitrogen.png"),   match: (fn: string) => matchesCompostFunction("Nitrogen", fn),   color: "text-lime-600" },
+  { label: "Airflow",    iconSrc: assetUrl("icon-airflow.png"),    match: (fn: string) => matchesCompostFunction("Airflow", fn),    color: "text-cyan-600" },
 ];
 
 interface OpponentPileModalProps {
@@ -69,7 +70,7 @@ export function OpponentPileModal({ player, onClose, hostControls }: OpponentPil
             <div>
               <h2 className="font-display font-bold text-xl">{player.name}'s Compost Pile</h2>
               {(player as CoverFields).botCovering === true && <p className="text-xs font-bold text-violet-700" data-testid="label-pile-bot-covering">{coverLabel(player.name)}</p>}
-              <p className="text-sm text-muted-foreground">{collected}/5 categories · tap a card to enlarge</p>
+              <p className="text-sm text-muted-foreground">{collected}/5 functions · tap a card to enlarge</p>
               {hostControls}
             </div>
             <button

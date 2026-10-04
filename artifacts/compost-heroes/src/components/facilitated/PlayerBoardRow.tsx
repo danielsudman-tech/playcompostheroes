@@ -1,16 +1,17 @@
 import { isCovered, coverLabel, type CoverFields } from "@/lib/botCover";
-import type { PlayerState, ActiveModifier, Card } from "@workspace/api-client-react";
+import type { PlayerState, Card } from "@workspace/api-client-react";
 import { cn } from "@/lib/utils";
+import { matchesCompostFunction } from "@/lib/compostFunctions";
 import { assetUrl } from "@/lib/assetUrl";
 import { GameCard } from "@/components/GameCard";
-import { Crosshair, AlertTriangle, Sparkles, User, Layers, ZoomIn, ArrowLeftRight } from "lucide-react";
+import { Crosshair, AlertTriangle, User, Layers, ZoomIn, ArrowLeftRight } from "lucide-react";
 
 export const PILE_CATEGORIES = [
-  { key: "moisture",   label: "Moisture",   iconSrc: assetUrl("icon-moisture.png"),   color: "text-blue-500",   border: "border-blue-500/30",   bg: "bg-blue-500/10",   match: (fn: string) => fn.toLowerCase().includes("moisture") },
-  { key: "carbon",     label: "Carbon",     iconSrc: assetUrl("icon-carbon.png"),     color: "text-amber-500",  border: "border-amber-500/30",  bg: "bg-amber-500/10",  match: (fn: string) => fn.toLowerCase().includes("carbon") },
-  { key: "decomposer", label: "Decomposer", iconSrc: assetUrl("icon-decomposer.png"), color: "text-orange-500", border: "border-orange-500/30", bg: "bg-orange-500/10", match: (fn: string) => fn.toLowerCase().includes("decomp") || fn.toLowerCase().includes("fire") },
-  { key: "nitrogen",   label: "Nitrogen",   iconSrc: assetUrl("icon-nitrogen.png"),   color: "text-lime-500",   border: "border-lime-500/30",   bg: "bg-lime-500/10",   match: (fn: string) => fn.toLowerCase().includes("nitrogen") },
-  { key: "airflow",    label: "Airflow",    iconSrc: assetUrl("icon-airflow.png"),    color: "text-cyan-500",   border: "border-cyan-500/30",   bg: "bg-cyan-500/10",   match: (fn: string) => fn.toLowerCase().includes("air") },
+  { key: "moisture",   label: "Moisture",   iconSrc: assetUrl("icon-moisture.png"),   color: "text-blue-500",   border: "border-blue-500/30",   bg: "bg-blue-500/10",   match: (fn: string) => matchesCompostFunction("Moisture", fn) },
+  { key: "carbon",     label: "Carbon",     iconSrc: assetUrl("icon-carbon.png"),     color: "text-amber-500",  border: "border-amber-500/30",  bg: "bg-amber-500/10",  match: (fn: string) => matchesCompostFunction("Carbon", fn) },
+  { key: "decomposer", label: "Decomposer", iconSrc: assetUrl("icon-decomposer.png"), color: "text-orange-500", border: "border-orange-500/30", bg: "bg-orange-500/10", match: (fn: string) => matchesCompostFunction("Decomposer", fn) },
+  { key: "nitrogen",   label: "Nitrogen",   iconSrc: assetUrl("icon-nitrogen.png"),   color: "text-lime-500",   border: "border-lime-500/30",   bg: "bg-lime-500/10",   match: (fn: string) => matchesCompostFunction("Nitrogen", fn) },
+  { key: "airflow",    label: "Airflow",    iconSrc: assetUrl("icon-airflow.png"),    color: "text-cyan-500",   border: "border-cyan-500/30",   bg: "bg-cyan-500/10",   match: (fn: string) => matchesCompostFunction("Airflow", fn) },
 ];
 
 export function getEffectiveFn(card: Card): string {
@@ -21,7 +22,7 @@ export function collectedCategoryCount(pile: Card[]): number {
   return PILE_CATEGORIES.filter((cat) => pile.some((c) => c != null && cat.match(getEffectiveFn(c)))).length;
 }
 
-/** Returns true if this card can be moved to a different layer slot right now. */
+/** Returns true if this card can be moved to a different function slot right now. */
 function isMovable(card: Card, pile: Card[]): boolean {
   const validFns: string[] = (card as any).alternateFunctions ?? [];
   if (validFns.length <= 1) return false;
@@ -35,7 +36,6 @@ interface PlayerBoardRowProps {
   isMe: boolean;
   showHandBacks?: boolean;
   isTurn: boolean;
-  modifiers: ActiveModifier[];
   targetingActive: boolean;
   isEligibleTarget: boolean;
   onTarget: () => void;
@@ -52,7 +52,6 @@ export function PlayerBoardRow({
   isMe,
   showHandBacks = false,
   isTurn,
-  modifiers,
   targetingActive,
   isEligibleTarget,
   onTarget,
@@ -127,18 +126,13 @@ export function PlayerBoardRow({
               ))}
             </div>
           )}
-          {(player.skipsNextTurn || modifiers.length > 0) && (
+          {player.skipsNextTurn && (
              <div className="flex flex-wrap gap-1">
                {player.skipsNextTurn && (
                  <span className="inline-flex items-center gap-1 text-[9px] font-bold text-destructive bg-destructive/10 rounded px-1.5 py-0.5">
                    <AlertTriangle className="w-3 h-3" /> Skips turn
                  </span>
                )}
-               {modifiers.map((m, i) => (
-                 <span key={i} title={m.effect} className="inline-flex items-center gap-1 text-[9px] font-bold text-primary bg-primary/10 rounded px-1.5 py-0.5 truncate max-w-[140px]">
-                   <Sparkles className="w-3 h-3 shrink-0" /> <span className="truncate">{m.cardName}</span>
-                 </span>
-               ))}
              </div>
           )}
         </div>
@@ -191,7 +185,7 @@ export function PlayerBoardRow({
                        e.stopPropagation();
                        onMoveLayer!(topCard.id);
                      }}
-                     title="Move to a different layer"
+                     title="Move to a different function slot"
                      className="absolute bottom-1 right-1 z-30 flex items-center gap-1 px-1.5 py-0.5 rounded-lg bg-primary text-primary-foreground text-[9px] font-bold shadow-lg hover:bg-primary/90 active:scale-95 transition-transform"
                    >
                      <ArrowLeftRight className="w-3 h-3 shrink-0" />

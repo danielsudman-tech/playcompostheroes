@@ -125,17 +125,17 @@ export default function EventGathering() {
                   <p className="text-sm text-[#4b654e] leading-relaxed" data-testid="text-own-table-result">
                     {finished
                       ? winner
-                        ? winner.id === ownPlayer?.id ? "You gathered all five compost components. What a way to finish." : `${winner.name} collected the five distinct compost components. Every card at this table helped make the pile.`
+                        ? winner.id === ownPlayer?.id ? "You collected all 5 compost functions!" : `${winner.name} collected all 5 compost functions.`
                         : game.endedByHost ? "Your host closed the round. The group will come back together shortly." : "The round is complete. Thanks for playing your part."
                       : "Your table is still in play. Head back whenever you're ready."}
                   </p>
                   {ownPlayer ? <div className="mt-6">
                     <div className="flex justify-between items-baseline gap-3 mb-3">
-                      <h3 className="font-display text-xl">Your compost mix</h3>
+                      <h3 className="font-display text-xl">Your compost functions</h3>
                       <span className="font-display text-xl text-[#426c4a]" data-testid="text-own-components-count">{collected.length}<span className="text-sm text-[#71826a]"> / 5</span></span>
                     </div>
-                    <p className="text-xs text-[#71826a] mb-4">Five different components make a complete pile — not five cards.</p>
-                    <ul className="grid grid-cols-2 sm:grid-cols-3 gap-2" aria-label="Your distinct compost components">
+                    <p className="text-xs text-[#71826a] mb-4">Collect a Hero for each of the 5 functions.</p>
+                    <ul className="grid grid-cols-2 sm:grid-cols-3 gap-2" aria-label="Your compost functions">
                       {PILE_CATEGORIES.map(category => {
                         const has = collected.some(item => item.key === category.key);
                         return <li key={category.key} data-testid={`status-own-component-${category.key}`} className={`flex items-center gap-2 rounded-xl border px-3 py-2.5 text-xs font-extrabold ${has ? "bg-[#e8efdf] border-[#b7cba9] text-[#385b42]" : "bg-[#faf8ef] border-[#e4e5d9] text-[#8c9886]"}`}>

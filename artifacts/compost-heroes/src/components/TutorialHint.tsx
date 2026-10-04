@@ -3,7 +3,9 @@ import { BookOpen, ChevronDown, ChevronUp } from "lucide-react";
 import { cn } from "@/lib/utils";
 import type { GameState } from "@workspace/api-client-react";
 
-const FUNCTIONS = ["Airflow", "Carbon", "Decomposer", "Moisture", "Nitrogen"];
+import { COMPOST_FUNCTION_ORDER, toCompostFunction } from "@/lib/compostFunctions";
+
+const FUNCTIONS: string[] = [...COMPOST_FUNCTION_ORDER];
 
 function getHint(
   gameState: GameState,
@@ -17,8 +19,8 @@ function getHint(
     switch (pd.type) {
       case "choose_function":
         return {
-          title: "Choose a Function Category",
-          body: "This hero can fill more than one function category. Pick the one you need most — you need one hero from each of the 5 categories to win.",
+          title: "Choose a Function Slot",
+          body: "This hero can fill more than one function. Pick the one you need most. You need one hero for each of the 5 functions to win.",
         };
       case "choose_card_from_hand":
         return {
@@ -33,7 +35,7 @@ function getHint(
       case "choose_hero_from_discard":
         return {
           title: "Rescue a Hero",
-          body: "Pick any Hero card from the discard pile to place directly into your Compost Pile. This is a great way to fill a missing category!",
+          body: "Pick any Hero card from the discard pile to place directly into your Compost Pile. This is a great way to fill a missing function!",
         };
       case "choose_opponent_for_steal":
         return {
@@ -43,7 +45,7 @@ function getHint(
       case "choose_steal_card":
         return {
           title: "Steal a Hero",
-          body: "Choose a hero card to steal from their Compost Pile and add to yours. Pick one from a category you're missing.",
+          body: "Choose a hero card to steal from their Compost Pile and add to yours. Pick one from a function you're missing.",
         };
       case "choose_card_from_compost":
         return {
@@ -60,7 +62,7 @@ function getHint(
       case "choose_swap_my_card_breezy":
         return {
           title: "Breezy Bandit Swap",
-          body: "The Breezy Bandit swaps heroes between compost piles. Choose which card(s) to exchange. You might gain a category you need — or lose one!",
+          body: "The Breezy Bandit swaps heroes between compost piles. Choose which card(s) to exchange. You might gain a function you need, or lose one!",
         };
       case "choose_rainstorm_play":
         return {
@@ -91,7 +93,7 @@ function getHint(
       case "choose_worm_party_card":
         return {
           title: "Worm Party!",
-          body: "Pick a card from those revealed to play for free. Choose the one that helps you complete your 5-category collection.",
+          body: "Pick a card from those revealed to play for free. Choose the one that helps you complete your 5 functions.",
         };
       case "choose_rot_regrow_take":
         return {
@@ -107,7 +109,7 @@ function getHint(
       case "choose_move_function":
         return {
           title: "Move a Hero's Function",
-          body: "Choose which function category to reassign this hero to. Use this to fill a gap in your Compost Pile.",
+          body: "Choose which function slot to move this hero to. Use this to fill a gap in your Compost Pile.",
         };
       default:
         return {
@@ -129,13 +131,13 @@ function getHint(
       return {
         title: `${currentPlayer.name}'s Turn`,
         body: "Waiting for them to draw a card. Watch their compost pile — they might grab something you need!",
-        tip: "Keep track of what categories opponents have. If they're close to winning, you may need to play a defensive card.",
+        tip: "Keep track of which functions opponents have. If they're close to winning, you may need to play a defensive card.",
       };
     }
     return {
       title: `${currentPlayer.name} is Playing`,
       body: "Waiting for them to play cards and end their turn.",
-      tip: "Use this time to plan your next move. What category are you still missing?",
+      tip: "Use this time to plan your next move. Which function are you still missing?",
     };
   }
 
@@ -156,7 +158,7 @@ function getHint(
     const actionPlayed = gameState.actionPlayedThisTurn;
     const myPlayer = gameState.players.find(p => p.id === localPlayerId);
     const myFunctions = new Set(
-      (myPlayer?.compostPile ?? []).map(c => c.chosenFunction ?? c.function)
+      (myPlayer?.compostPile ?? []).map(c => { const f = c.chosenFunction ?? c.function; return toCompostFunction(f) ?? f; })
     );
     const missing = FUNCTIONS.filter(f => !myFunctions.has(f));
 
@@ -166,7 +168,7 @@ function getHint(
         body: "You've played a Hero and an Action this turn. Click End Turn to pass to the next player.",
         tip: missing.length > 0
           ? `You still need: ${missing.join(", ")}.`
-          : "You have all 5 categories — you should have won already!",
+          : "You have all 5 functions. You should have won already!",
       };
     }
     if (heroPlayed) {
@@ -187,14 +189,14 @@ function getHint(
       title: "Play Cards from Your Hand",
       body: "Tap a card in your hand to play it. Hero cards go to your Compost Pile (1 per turn). Action cards trigger special effects (1 per turn). Or click End Turn to skip.",
       tip: missing.length > 0
-        ? `You need one hero from each of the 5 categories. Still missing: ${missing.join(", ")}.`
-        : "You have all 5 categories — you win once you confirm!",
+        ? `You need one hero for each of the 5 functions. Still missing: ${missing.join(", ")}.`
+        : "You have all 5 functions. You win once you confirm!",
     };
   }
 
   return {
     title: "Compost Heroes",
-    body: "Collect one Hero from each of the 5 function categories — Airflow, Carbon, Decomposer, Moisture, and Nitrogen — to win!",
+    body: "Collect 1 Hero for each of the 5 compost functions to win: Moisture, Carbon, Decomposer, Nitrogen and Airflow.",
   };
 }
 

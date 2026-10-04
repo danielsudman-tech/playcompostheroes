@@ -579,7 +579,7 @@ export default function FacilitatorDashboard() {
                 </span>
                 {gameState.players.map((p) => (
                   <span key={p.id}>
-                    <strong className="text-foreground">{p.name}</strong>: {collectedCategoryCount(p.compostPile)}/5 layers
+                    <strong className="text-foreground">{p.name}</strong>: {collectedCategoryCount(p.compostPile)}/5 functions
                   </span>
                 ))}
               </div>
@@ -592,7 +592,6 @@ export default function FacilitatorDashboard() {
               const isTurn = !isWaitingRoom && idx === gameState.currentPlayerIndex;
               const waitingOnThem = !!decision && decision.playerId === player.id;
               const collected = collectedCategoryCount(player.compostPile);
-              const modifiers = gameState.activeModifiers.filter((m) => m.appliedByPlayerId === player.id);
               return (
                 <motion.div
                   key={player.id}
@@ -655,16 +654,6 @@ export default function FacilitatorDashboard() {
                       {collected === 4 ? "1 away!" : `${collected}/5`}
                     </span>
                   </div>
-
-                  {modifiers.length > 0 && (
-                    <div className="flex flex-wrap gap-1">
-                      {modifiers.map((m, i) => (
-                        <span key={i} title={m.effect} className="text-[9px] font-bold text-primary bg-primary/10 border border-primary/25 rounded-full px-1.5 py-px max-w-[10rem] truncate">
-                          ✨ {m.cardName}
-                        </span>
-                      ))}
-                    </div>
-                  )}
 
                   {/* Active-session participant controls */}
                   {(hostIsSpectator || idx !== 0) && !(player as any).isBot && !isWaitingRoom && gameState.phase !== "game_over" && (

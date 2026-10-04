@@ -135,10 +135,10 @@ export const triviaQuestions = [
   {
     id: "manure-and-nitrogen",
     cardId: "brown_bomber",
-    question: "What can herbivore manure do to nitrogen levels?",
+    question: "What can manure from animals like chickens do to nitrogen levels?",
     choices: ["Raise them quickly", "Remove all nitrogen", "Make nitrogen into air pockets"],
     correctChoice: 0,
-    sourceFact: "Manure from herbivores like chickens can rapidly spike nitrogen levels.",
+    sourceFact: "Manure from animals like chickens can rapidly spike nitrogen levels.",
     explanation: "The card facts note that manure from animals such as chickens can add nitrogen quickly.",
   },
   {

@@ -8,6 +8,7 @@ import { useParams, useLocation } from "wouter";
 import { motion, AnimatePresence } from "framer-motion";
 import confetti from "canvas-confetti";
 import { assetUrl } from "@/lib/assetUrl";
+import { ONGOING_BOARD_LABEL, ONGOING_HERO_COPY, ONGOING_ACTION_COPY, QUICK_RULES, cardFunctions } from "@/lib/compostFunctions";
 import { turnButtonView, handCardLabel, drawAndCloseDrawer } from "@/lib/tableTurn";
 import { isMissingGameError } from "@/lib/gameRouteStatus";
 import compostHeroesLogo from "@assets/Compost_Heroes_Logo_no_background_1773537933517.png";
@@ -934,6 +935,14 @@ export default function FacilitatedGame() {
                 </div>
               )}
 
+              {gameState.ongoingActionCard && (
+                <div className="flex items-center gap-2 rounded-xl border border-primary/30 bg-primary/10 px-3 py-1.5 text-xs font-bold text-primary" data-testid="board-ongoing-shared">
+                  <Sparkles className="w-3.5 h-3.5 shrink-0" />
+                  <span className="uppercase tracking-wider">{ONGOING_BOARD_LABEL}:</span>
+                  <span className="text-foreground truncate">{gameState.ongoingActionCard.name}</span>
+                </div>
+              )}
+
               {/* MATRIX HEADERS */}
               <div className="flex gap-[var(--board-gap)] px-3">
                 <div className="w-[var(--board-info)] shrink-0" /> {/* Info spacer */}
@@ -953,7 +962,6 @@ export default function FacilitatedGame() {
                   isMe={p.id === localPlayerId}
                   showHandBacks={p.id !== localPlayerId}
                   isTurn={p.id === currentPlayer.id}
-                  modifiers={gameState.activeModifiers.filter((m) => m.appliedByPlayerId === p.id)}
                   targetingActive={isInlineTargeting}
                   isEligibleTarget={eligibleTargetIds.has(p.id)}
                   onTarget={() => handleTargetOpponent(p)}
@@ -975,7 +983,6 @@ export default function FacilitatedGame() {
                   isMe
                   showHandBacks={false}
                   isTurn={myRowPlayer.id === currentPlayer.id}
-                  modifiers={gameState.activeModifiers.filter((m) => m.appliedByPlayerId === myRowPlayer.id)}
                   targetingActive={isInlineTargeting}
                   isEligibleTarget={eligibleTargetIds.has(myRowPlayer.id)}
                   onTarget={() => handleTargetOpponent(myRowPlayer)}
@@ -1300,10 +1307,9 @@ export default function FacilitatedGame() {
               <button onClick={() => setShowRules(false)} className="text-muted-foreground hover:text-foreground"><X className="w-4 h-4" /></button>
             </div>
             <div className="p-5 flex flex-col gap-3 text-sm text-muted-foreground">
-              <div><strong className="text-foreground">1. Draw</strong> — take the top card from the draw pile.</div>
-              <div><strong className="text-foreground">2. Play</strong> — play up to 1 hero (first) and 1 action card, or end your turn.</div>
-              <div><strong className="text-foreground">Immediate</strong> effects resolve right away; <strong className="text-foreground">Ongoing</strong> cards stay in play until replaced.</div>
-              <div className="pt-2 border-t border-border/60 mt-1"><strong className="text-foreground text-primary">Win Condition:</strong> collect 1 hero from each of the 5 compost categories in your matrix row.</div>
+              {QUICK_RULES.map((r) => (
+                <div key={r.lead}><strong className="text-foreground">{r.lead}</strong>: {r.text}</div>
+              ))}
             </div>
           </motion.div>
         )}
@@ -1373,10 +1379,12 @@ export default function FacilitatedGame() {
                   </h2>
                   <div className="flex items-center gap-2 mb-4">
                     <span className="text-xs font-bold uppercase tracking-wider px-2 py-0.5 rounded-full bg-primary/10 text-primary">
-                      {confirmCard.effectType === "instant" ? "⚡ Instant" : confirmCard.effectType === "ongoing" ? "⏳ Ongoing" : confirmCard.type}
+                      {confirmCard.effectType === "instant" ? "Instant" : confirmCard.effectType === "ongoing" ? "Ongoing" : confirmCard.type}
                     </span>
                     {confirmCard.function && (
-                      <span className="text-xs text-muted-foreground font-medium">{confirmCard.function}</span>
+                      <span className="text-xs text-muted-foreground font-medium" data-testid="text-confirm-functions">
+                        {cardFunctions(confirmCard).join(" / ")}
+                      </span>
                     )}
                   </div>
 
@@ -1385,10 +1393,14 @@ export default function FacilitatedGame() {
                   </p>
 
                   {confirmCard.effectType === "instant" && (
-                    <p className="text-sm text-muted-foreground">This card takes effect immediately and goes to the discard pile.</p>
+                    <p className="text-sm text-muted-foreground">{confirmCard.type === "hero"
+                      ? "This hero’s effect happens immediately. The hero stays in your compost pile."
+                      : "This card takes effect immediately and goes to the discard pile."}</p>
                   )}
                   {confirmCard.effectType === "ongoing" && (
-                    <p className="text-sm text-muted-foreground">This card stays in play and its effect lasts until activated or removed.</p>
+                    <p className="text-sm text-muted-foreground" data-testid="text-confirm-ongoing">
+                      {confirmCard.type === "hero" ? ONGOING_HERO_COPY : ONGOING_ACTION_COPY}
+                    </p>
                   )}
                   {confirmCard.type === "hero" && (
                     <p className="text-sm text-muted-foreground">Playing this hero card adds it to your compost pile. You can only play one hero per turn.</p>

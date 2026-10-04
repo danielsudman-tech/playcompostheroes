@@ -278,7 +278,7 @@ const ALL_CARDS: Card[] = [
     effectType: "instant",
     cardText: "If you have 1 Carbon card in your compost pile, draw 1 card.",
     factText:
-      "Manure from herbivores like chickens can rapidly spike nitrogen levels.",
+      "Manure from animals like chickens can rapidly spike nitrogen levels.",
     function: "Nitrogen",
     imageKey: null,
   },
