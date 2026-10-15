@@ -5,6 +5,37 @@
  * Compost Heroes Game API
  * OpenAPI spec version: 0.1.0
  */
+export interface GameEngagementMetrics {
+  mode: string;
+  createdGames: number;
+  startedGames: number;
+  timedStarts: number;
+  trackedHumanStarts: number;
+  firstTurnGames: number;
+  completedGames: number;
+  hostEndedGames: number;
+  trackedCompletions: number;
+  durationSamples: number;
+  /** @nullable */
+  averageDurationSeconds: number | null;
+  /** @nullable */
+  humanSeats: number | null;
+  /** @nullable */
+  botSeats: number | null;
+  legacyGames: number;
+}
+
+export interface GameEngagementReport {
+  totals: GameEngagementMetrics;
+  byMode: GameEngagementMetrics[];
+  timingNote: string;
+}
+
+export interface AdminAnalytics {
+  gameEngagement: GameEngagementReport;
+  [key: string]: unknown;
+}
+
 export interface EventStreamTicketInput {
   userToken: string;
 }

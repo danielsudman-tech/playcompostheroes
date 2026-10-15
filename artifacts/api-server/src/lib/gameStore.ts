@@ -9,6 +9,7 @@ import {
 } from "./databaseSafeguards.js";
 import { GameStoreCache } from "./gameStoreCache.js";
 import { syncTurnClock } from "./turnClock.js";
+import { STORE_GAME_WITH_ANALYTICS_SQL } from "./gameAnalytics.js";
 
 export type PgQueryResult = { rows: any[]; rowCount?: number | null };
 export type PgQueryable = { query: (...args: any[]) => Promise<PgQueryResult> };
@@ -178,12 +179,8 @@ export async function storeGame(state: GameState, client: PgQueryable = pool): P
     snapshot.endedAt = Date.now();
   }
   await client.query(
-    `INSERT INTO compost_games (game_id, state, updated_at)
-     VALUES ($1, $2, NOW())
-     ON CONFLICT (game_id) DO UPDATE
-       SET state = EXCLUDED.state,
-           updated_at = NOW()`,
-    [snapshot.gameId, JSON.stringify(snapshot)]
+    STORE_GAME_WITH_ANALYTICS_SQL,
+    [snapshot.gameId, JSON.stringify(snapshot), process.env.NODE_ENV === "test"]
   );
   // A supplied client may be inside a transaction that this function does not
   // own. Drop the old snapshot rather than exposing an uncommitted write.
@@ -766,10 +763,7 @@ export async function reorderWaitingPlayers(
         );
       }
     }
-    await client.query(
-      `UPDATE compost_games SET state = $2, updated_at = NOW() WHERE game_id = $1`,
-      [gameId, JSON.stringify(nextState)]
-    );
+    await storeGame(nextState, client);
     commitAttempted = true;
     await client.query("COMMIT");
     committed = true;
@@ -922,14 +916,8 @@ export async function transferWaitingPlayer(
         [eventMembership.eventId, sourceGameId, playerIndex],
       );
     }
-    await client.query(
-      `UPDATE compost_games SET state = $2, updated_at = NOW() WHERE game_id = $1`,
-      [sourceGameId, JSON.stringify(nextSource)]
-    );
-    await client.query(
-      `UPDATE compost_games SET state = $2, updated_at = NOW() WHERE game_id = $1`,
-      [targetGameId, JSON.stringify(nextTarget)]
-    );
+    await storeGame(nextSource, client);
+    await storeGame(nextTarget, client);
     commitAttempted = true;
     await client.query("COMMIT");
     committed = true;
@@ -1138,8 +1126,7 @@ export async function removeEventWaitingPlayer(
       `UPDATE compost_event_seats SET player_index=player_index-1 WHERE event_id=$1 AND game_id=$2 AND player_index>$3`,
       [eventId, gameId, removedIndex],
     );
-    await client.query(`UPDATE compost_games SET state=$2,updated_at=NOW() WHERE game_id=$1`,
-      [gameId, JSON.stringify(nextState)]);
+    await storeGame(nextState, client);
     commitAttempted = true;
     await client.query("COMMIT");
     committed = true;
@@ -1292,10 +1279,7 @@ export async function kickFacilitatedPlayer(
         );
       }
     }
-    await client.query(
-      `UPDATE compost_games SET state = $2, updated_at = NOW() WHERE game_id = $1`,
-      [gameId, JSON.stringify(nextState)]
-    );
+    await storeGame(nextState, client);
     commitAttempted = true;
     await client.query("COMMIT");
     committed = true;

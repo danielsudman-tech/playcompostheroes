@@ -329,7 +329,7 @@ function playLegion(state: GameState, legion: Card): GameState {
   let savedState = "";
   const fakeClient = {
     query: async (sql: string, values?: unknown[]) => {
-      if (sql.startsWith("INSERT INTO compost_games")) {
+      if (sql.includes("INSERT INTO compost_games")) {
         savedState = String(values?.[1]);
         return { rows: [] };
       }

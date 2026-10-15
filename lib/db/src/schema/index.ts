@@ -1,5 +1,6 @@
 import { pgTable, text, timestamp, integer, boolean, uniqueIndex, index } from "drizzle-orm/pg-core";
 import { sql } from "drizzle-orm";
+export * from "./gameAnalytics";
 
 export const compostUsers = pgTable("compost_users", {
   id: text("id").primaryKey().default(sql`gen_random_uuid()::text`),

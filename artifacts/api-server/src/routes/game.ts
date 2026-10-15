@@ -7,6 +7,7 @@ import { revokeSeatTokens, withClientTransaction } from "../lib/gameStore.js";
 import { addSystemUpdate } from "../lib/systemUpdates.js";
 import { pool } from "@workspace/db";
 import { logEvent } from "../lib/analyticsStore.js";
+import { markFirstHumanTurn } from "../lib/gameAnalytics.js";
 import {
   activateOngoing,
   addBotToRoom,
@@ -159,7 +160,7 @@ const HIDDEN_CARD = {
 
 export function serializeState(state: GameState, viewerIndex?: number) {
   const isOnline = state.mode === "online" || state.mode === "facilitated";
-  const { deck, turnTimerActorKey: _timerActorKey, turnSequence: _turnSequence, botUpdateSequence: _botSequence, systemUpdateSequence: _systemSequence, ...rest } = state;
+  const { deck, analyticsFirstTurnCompletedAt: _analyticsFirstTurn, turnTimerActorKey: _timerActorKey, turnSequence: _turnSequence, botUpdateSequence: _botSequence, systemUpdateSequence: _systemSequence, ...rest } = state;
   const viewerId = viewerIndex !== undefined && viewerIndex >= 0
     ? state.players[viewerIndex]?.id
     : undefined;
@@ -1235,14 +1236,8 @@ router.post("/games/:gameId/action", async (req, res) => {
     // otherwise: keep the last announcement visible until the next effect
   }
 
+  markFirstHumanTurn(state, stateAfterBots, playerId);
   await storeGame(stateAfterBots, client);
-  if (stateAfterBots.phase === "game_over" && state.phase !== "game_over") {
-    await logEvent("game_completed", {
-      gameId,
-      intValue: stateAfterBots.players.length,
-      metadata: { winner: (stateAfterBots as any).winner ?? null, mode: stateAfterBots.mode },
-    }, client);
-  }
   broadcast(gameId, stateAfterBots, client);
 
   const viewerIndex =

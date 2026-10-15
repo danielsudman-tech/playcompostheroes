@@ -20,6 +20,7 @@ import {
   getCachedGameState,
   invalidateGameCaches, isEventGameReadyToStart, readTokenSlotConsistently,
   onGameBroadcast, updateGameStateCache, withGameMutationLocks, withClientTransaction,
+  storeGame,
   type PgClient, type PgQueryable,
 } from "../lib/gameStore.js";
 import {
@@ -334,10 +335,7 @@ router.post("/facilitator/events", async (req, res): Promise<void> => {
       state.eventId = eventId;
       state.turnTimerSeconds = body.turnTimerSeconds ?? 0;
       const token = randomBytes(32).toString("base64url");
-      await client.query(
-        `INSERT INTO compost_games (game_id, state, updated_at) VALUES ($1,$2,NOW())`,
-        [gameId, JSON.stringify(state)],
-      );
+      await storeGame(state, client);
       await client.query(
         `INSERT INTO compost_game_tokens (game_id, token, player_index) VALUES ($1,$2,-1)`,
         [gameId, token],
@@ -499,8 +497,7 @@ router.patch("/facilitator/events/:eventId", async (req, res): Promise<void> => 
           turnDeadlineKey: null, turnTimerRemainingMs: null,
         });
         if (body.turnTimerSeconds !== undefined) {
-          await client.query(`UPDATE compost_games SET state=$2, updated_at=NOW() WHERE game_id=$1`,
-            [next.gameId, JSON.stringify(next)]);
+          await storeGame(next, client);
         }
         changed.push(next);
       }
@@ -554,7 +551,7 @@ async function changeTable(client: PgClient, gameId: string, action: string, tex
     }
     if (next !== state) {
       next = syncTurnClock(next);
-      await client.query(`UPDATE compost_games SET state = $2, updated_at = NOW() WHERE game_id = $1`, [gameId, JSON.stringify(next)]);
+      await storeGame(next, client);
       updateGameStateCache(next);
       return { gameId, success: true, error: null, nextState: next };
     }
@@ -833,7 +830,7 @@ router.post("/events/:code/join", async (req, res): Promise<void> => {
     }
     const player = joined.state.players[joined.state.players.length - 1];
     const token = randomBytes(32).toString("base64url");
-    await client.query(`UPDATE compost_games SET state=$2,updated_at=NOW() WHERE game_id=$1`, [table.game_id, JSON.stringify(joined.state)]);
+    await storeGame(joined.state, client);
     await client.query(`INSERT INTO compost_game_tokens(game_id,token,player_index) VALUES($1,$2,$3)`,
       [table.game_id, token, joined.state.players.length - 1]);
     await client.query(

@@ -8,6 +8,53 @@
 import * as zod from "zod";
 
 /**
+ * @summary Deduplicated admin game lifecycle analytics
+ */
+export const GetAdminAnalyticsHeader = zod.object({
+  "x-admin-key": zod.string(),
+});
+
+export const GetAdminAnalyticsResponse = zod.object({
+  gameEngagement: zod.object({
+    totals: zod.object({
+      mode: zod.string(),
+      createdGames: zod.number(),
+      startedGames: zod.number(),
+      timedStarts: zod.number(),
+      trackedHumanStarts: zod.number(),
+      firstTurnGames: zod.number(),
+      completedGames: zod.number(),
+      hostEndedGames: zod.number(),
+      trackedCompletions: zod.number(),
+      durationSamples: zod.number(),
+      averageDurationSeconds: zod.number().nullable(),
+      humanSeats: zod.number().nullable(),
+      botSeats: zod.number().nullable(),
+      legacyGames: zod.number(),
+    }),
+    byMode: zod.array(
+      zod.object({
+        mode: zod.string(),
+        createdGames: zod.number(),
+        startedGames: zod.number(),
+        timedStarts: zod.number(),
+        trackedHumanStarts: zod.number(),
+        firstTurnGames: zod.number(),
+        completedGames: zod.number(),
+        hostEndedGames: zod.number(),
+        trackedCompletions: zod.number(),
+        durationSamples: zod.number(),
+        averageDurationSeconds: zod.number().nullable(),
+        humanSeats: zod.number().nullable(),
+        botSeats: zod.number().nullable(),
+        legacyGames: zod.number(),
+      }),
+    ),
+    timingNote: zod.string(),
+  }),
+});
+
+/**
  * Returns whether the API can acquire a database connection and execute a bounded SELECT 1 probe.
  * @summary Database readiness check
  */

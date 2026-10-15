@@ -32,7 +32,9 @@ export async function logEvent(
         opts.userId ?? null,
         opts.gameId ?? null,
         opts.intValue ?? null,
-        opts.metadata ? JSON.stringify(opts.metadata) : null,
+        opts.metadata || process.env.NODE_ENV === "test"
+          ? JSON.stringify({ ...opts.metadata, ...(process.env.NODE_ENV === "test" ? { isTest: true } : {}) })
+          : null,
       ]
     );
   } catch (err) {

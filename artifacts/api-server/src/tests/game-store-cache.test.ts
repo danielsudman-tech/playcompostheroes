@@ -303,7 +303,7 @@ try {
         readStarted.resolve();
         return staleRows.promise;
       }
-      if (sql.startsWith("INSERT INTO compost_games")) return Promise.resolve({ rows: [] });
+      if (sql.includes("INSERT INTO compost_games")) return Promise.resolve({ rows: [] });
       throw new Error(`Unexpected write-race query: ${sql}`);
     };
     const delayedRead = getGame(gameId);

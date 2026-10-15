@@ -4,6 +4,8 @@ import { useLocation } from "wouter";
 import { Button } from "@/components/ui/button";
 import { useToast } from "@/hooks/use-toast";
 import { assetUrl } from "@/lib/assetUrl";
+import type { GameEngagementReport } from "@workspace/api-client-react";
+import { GameEngagementPanel } from "@/components/admin/GameEngagementPanel";
 import {
   Upload,
   CheckCircle,
@@ -82,6 +84,7 @@ interface AnalyticsData {
   gamesByPlayerCount: GameByPlayers[];
   recentEvents: RecentEvent[];
   topUsers: TopUser[];
+  gameEngagement?: GameEngagementReport;
 }
 
 // ── Admin auth helpers ─────────────────────────────────────────────────────────
@@ -768,6 +771,8 @@ function AnalyticsTab({ adminKey }: { adminKey: string }) {
         </div>
       </div>
 
+      <GameEngagementPanel report={data.gameEngagement} />
+
       {/* Activity charts */}
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
         <div className="bg-card border border-border rounded-xl p-4">
@@ -783,7 +788,8 @@ function AnalyticsTab({ adminKey }: { adminKey: string }) {
       {/* Events breakdown */}
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
         <div className="bg-card border border-border rounded-xl p-4">
-          <div className="text-sm font-bold text-foreground mb-3">Events (last 30 days)</div>
+          <div className="text-sm font-bold text-foreground mb-1">Event log (last 30 days)</div>
+          <p className="text-[11px] text-muted-foreground mb-3">Raw events, not distinct games. Use lifecycle totals above for starts and completions.</p>
           <div className="space-y-2">
             {eventsByType.length === 0 && <div className="text-xs text-muted-foreground italic">No events yet</div>}
             {eventsByType.map(e => (

@@ -1,4 +1,5 @@
 import { Router, type Request, type Response, type NextFunction } from "express";
+import { GAME_METRICS_CTE, readGameEngagement } from "../lib/gameAnalytics.js";
 import { createHash, timingSafeEqual } from "crypto";
 import { execFile } from "child_process";
 import { promisify } from "util";
@@ -294,6 +295,7 @@ router.get("/admin/analytics", async (_req, res) => {
       gamesByPlayerCount,
       recentEvents,
       topUsersByLogins,
+      gameEngagement,
     ] = await Promise.all([
       // Summary counts
       pool.query<{
@@ -303,14 +305,14 @@ router.get("/admin/analytics", async (_req, res) => {
         completed_games: string;
         active_games: string;
         online_games: string;
-      }>(`
+      }>(`${GAME_METRICS_CTE}
         SELECT
           (SELECT COUNT(*) FROM compost_users) AS total_users,
           (SELECT COUNT(*) FROM compost_analytics_events WHERE event_type = 'login') AS total_logins,
-          (SELECT COUNT(*) FROM compost_analytics_events WHERE event_type = 'game_created') AS total_games,
-          (SELECT COUNT(*) FROM compost_analytics_events WHERE event_type = 'game_completed') AS completed_games,
+          (SELECT COUNT(*) FROM game_metrics) AS total_games,
+          (SELECT COUNT(*) FROM game_metrics WHERE end_reason='won') AS completed_games,
           (SELECT COUNT(*) FROM compost_games WHERE state->>'phase' NOT IN ('game_over','waiting') AND updated_at > NOW() - INTERVAL '3 hours') AS active_games,
-          (SELECT COUNT(*) FROM compost_analytics_events WHERE event_type = 'game_created' AND metadata::jsonb->>'mode' = 'online') AS online_games
+          (SELECT COUNT(*) FROM game_metrics WHERE mode='online') AS online_games
       `),
 
       // Registrations last 30 days
@@ -338,19 +340,18 @@ router.get("/admin/analytics", async (_req, res) => {
       `),
 
       // Games by mode
-      pool.query<{ mode: string; count: string }>(`
-        SELECT metadata::jsonb->>'mode' AS mode, COUNT(*) AS count
-        FROM compost_analytics_events
-        WHERE event_type = 'game_created'
+      pool.query<{ mode: string; count: string }>(`${GAME_METRICS_CTE}
+        SELECT mode, COUNT(*) AS count
+        FROM game_metrics
         GROUP BY mode ORDER BY count DESC
       `),
 
       // Games by player count
-      pool.query<{ player_count: string; count: string }>(`
-        SELECT int_value AS player_count, COUNT(*) AS count
-        FROM compost_analytics_events
-        WHERE event_type = 'game_created' AND int_value IS NOT NULL
-        GROUP BY int_value ORDER BY int_value
+      pool.query<{ player_count: string; count: string }>(`${GAME_METRICS_CTE}
+        SELECT player_count, COUNT(*) AS count
+        FROM game_metrics
+        WHERE player_count IS NOT NULL
+        GROUP BY player_count ORDER BY player_count
       `),
 
       // Recent activity (last 50 events)
@@ -374,10 +375,12 @@ router.get("/admin/analytics", async (_req, res) => {
         ORDER BY login_count DESC
         LIMIT 20
       `),
+      readGameEngagement(pool),
     ]);
 
     const s = summary.rows[0];
     res.json({
+      gameEngagement,
       summary: {
         totalUsers: parseInt(s.total_users, 10),
         totalLogins: parseInt(s.total_logins, 10),
@@ -396,7 +399,7 @@ router.get("/admin/analytics", async (_req, res) => {
         gameId: r.game_id,
         userId: r.user_id,
         userName: r.user_name,
-        metadata: r.metadata ? JSON.parse(r.metadata) : null,
+        metadata: r.metadata ? (typeof r.metadata === "string" ? JSON.parse(r.metadata) : r.metadata) : null,
         createdAt: r.created_at,
       })),
       topUsers: topUsersByLogins.rows.map(r => ({

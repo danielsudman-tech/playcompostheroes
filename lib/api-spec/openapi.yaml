@@ -12,6 +12,26 @@ tags:
   - name: game
     description: Game session operations
 paths:
+  /admin/analytics:
+    get:
+      operationId: getAdminAnalytics
+      tags: [admin]
+      summary: Deduplicated admin game lifecycle analytics
+      parameters:
+        - in: header
+          name: x-admin-key
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Analytics with historical coverage limits
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AdminAnalytics"
+        "403":
+          description: Administrator authorization required
   /healthz:
     get:
       operationId: healthCheck
@@ -985,6 +1005,57 @@ components:
       type: http
       scheme: bearer
   schemas:
+    AdminAnalytics:
+      type: object
+      additionalProperties: true
+      required: [gameEngagement]
+      properties:
+        gameEngagement:
+          $ref: "#/components/schemas/GameEngagementReport"
+    GameEngagementReport:
+      type: object
+      required: [totals, byMode, timingNote]
+      properties:
+        totals:
+          $ref: "#/components/schemas/GameEngagementMetrics"
+        byMode:
+          type: array
+          items:
+            $ref: "#/components/schemas/GameEngagementMetrics"
+        timingNote:
+          type: string
+    GameEngagementMetrics:
+      type: object
+      required: [mode, createdGames, startedGames, timedStarts, trackedHumanStarts, firstTurnGames, completedGames, hostEndedGames, trackedCompletions, durationSamples, averageDurationSeconds, humanSeats, botSeats, legacyGames]
+      properties:
+        mode:
+          type: string
+        createdGames:
+          type: integer
+        startedGames:
+          type: integer
+        timedStarts:
+          type: integer
+        trackedHumanStarts:
+          type: integer
+        firstTurnGames:
+          type: integer
+        completedGames:
+          type: integer
+        hostEndedGames:
+          type: integer
+        trackedCompletions:
+          type: integer
+        durationSamples:
+          type: integer
+        averageDurationSeconds:
+          type: [integer, "null"]
+        humanSeats:
+          type: [integer, "null"]
+        botSeats:
+          type: [integer, "null"]
+        legacyGames:
+          type: integer
     EventStreamTicketInput:
       type: object
       properties:

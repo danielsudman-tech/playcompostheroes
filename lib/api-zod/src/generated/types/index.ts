@@ -8,6 +8,7 @@
 
 export * from "./acquisitionWaitDiagnostics";
 export * from "./activeModifier";
+export * from "./adminAnalytics";
 export * from "./adminHealthCheckParams";
 export * from "./adminHealthStatus";
 export * from "./adminHealthStatusStatus";
@@ -61,6 +62,8 @@ export * from "./gameAction";
 export * from "./gameActionData";
 export * from "./gameActionDecisionData";
 export * from "./gameActionType";
+export * from "./gameEngagementMetrics";
+export * from "./gameEngagementReport";
 export * from "./gamePlayerRemovalInput";
 export * from "./gamePlayerRemovalResult";
 export * from "./gameSeatClaimConflict";

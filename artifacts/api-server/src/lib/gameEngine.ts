@@ -135,6 +135,8 @@ export interface GameState {
   endedAt?: number;
   /** Epoch ms for real game activity (player actions, start, facilitator resolve). */
   lastMeaningfulActivityAt?: number;
+  /** Internal analytics milestone; never serialized to viewers. */
+  analyticsFirstTurnCompletedAt?: number;
 }
 
 export interface BotTurnUpdate {
@@ -2564,6 +2566,7 @@ export function createGameState(
 
   let state: GameState = {
     gameId,
+    createdAt: Date.now(),
     mode,
     phase: "draw",
     currentPlayerIndex: 0,
