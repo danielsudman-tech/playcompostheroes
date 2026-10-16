@@ -1,0 +1,42 @@
+APP HEALTH CHECK — REVIEW ONLY, DO NOT CHANGE ANYTHING
+
+Please do a full review of this app's security, privacy, architecture, reliability and performance. Do not edit code, data, settings or secrets, and do not publish. Write your findings as a report I can read without being a developer.
+
+1. SECURITY
+- Admin: how admin pages and admin API routes are protected. Can any admin route be reached without logging in? Check every route in the server.
+- Participant data: list every route that returns a participant's answers, contact info, results or PDF. For each, say what check stops a stranger from opening it. Flag any that rely only on knowing a session ID (for example GET /api/sessions/:id/opening-brief.pdf).
+- Private links (/resume, /brief, email correction): confirm tokens can't be guessed, reused across purposes, or kept working after they should expire.
+- Accounts: password storage, password reset flow, login rate limiting, session cookie settings.
+- Secrets: confirm no API keys, passwords or SESSION_SECRET appear in code, logs, or committed files. Check what happens if SESSION_SECRET is missing.
+- Input handling: anywhere user text goes into emails, PDFs, HTML or database queries without being cleaned up.
+- Rate limits on all public routes, including Snapshot submission and email sending (could someone use the app to spam emails?).
+- Dependencies: run npm audit (and the Python equivalent if Python is used) and list anything high or critical.
+
+2. PRIVACY
+- Where personal information is stored or sent: database, Google Sheets, Resend, alert emails, logs, and the uploads/, exports/, .tmp/ and attached_assets/ folders. Flag any participant data sitting in files.
+- Does anything in the app contradict the /privacy page? (For example: data shared somewhere not mentioned, or no real way to stop emails.)
+- Can an admin fully delete one person's data if they ask?
+
+3. ARCHITECTURE AND CODE HEALTH
+- Very large files (Home.tsx is over 100 KB): what risk this creates and a suggested way to split it up later.
+- Dead code, unused files, duplicate logic, and leftover scripts.
+- Whether replit.md and questions-reference.md still match the app (for example, the Snapshot now has 15 questions).
+- Test coverage: which important flows have tests and which don't (Snapshot completion, email delivery, PDF generation, scoring, private links, admin).
+
+4. RELIABILITY
+- What happens when Resend, Google Sheets or the database is down or slow? Do emails retry? Can a participant lose their Snapshot?
+- Background jobs (reminders, follow-ups, scheduled emails): could any send twice or never send?
+- Database backups: are they set up, and how would we restore?
+- Error logging: will I find out when something breaks in production?
+
+5. PERFORMANCE
+- Landing page load time and bundle size on a phone connection.
+- Slow database queries or missing indexes on tables that will grow (sessions, answers, events, deliveries).
+- Anything that could struggle if a postcard mailing brings 200+ camps in one day.
+
+REPORT FORMAT
+- Start with a short summary: overall health in 3–5 sentences.
+- Then a table of findings: Finding · Area · Severity (Critical / High / Medium / Low) · Why it matters in plain words · Suggested fix · Effort (small / medium / large).
+- Sort by severity. Mark anything you're unsure about as "needs checking" instead of guessing.
+- End with a "Fix first" list of the top 5 items.
+- Save the report as a file in docs/ and tell me its name. Make no other changes.
