@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { PlayAgainButton } from "@/components/PlayAgainButton";
 import { useLocation, useParams } from "wouter";
 import { ArrowLeft, Check, Clock3, Copy, ExternalLink, HelpCircle, Link2, Megaphone, Pause, Play, Radio, Send, Settings2, ShieldAlert, Trash2, Users, WifiOff } from "lucide-react";
 import { recoverHostToken } from "@workspace/api-client-react";
@@ -103,9 +104,10 @@ export default function EventControl() {
     if (!event || event.status === "completed" || (event.status === "ending" && action !== "end")) return;
     control.mutate({ action, text }, { onSuccess: (result) => { toast(feedback(result, action === "message" ? "Message" : action === "end" ? "End event" : action === "pause" ? "Pause" : action === "start" ? "Start ready tables" : "Resume", new Map(event?.tables.map(t => [t.gameId, t.label ?? t.name ?? `Table ${t.tableNumber}`]) ?? []))); setConfirm(null); if (action === "message") setMessage(""); }, onError: (err) => toast({ title: "Couldn't update event", description: err.message, variant: "destructive" }) });
   };
-  const sendTable = (table: EventTable, action: "message" | "pause" | "resume", text?: string) => {
-    if (!event || event.status === "ending" || event.status === "completed" || table.phase === "game_over") return;
-    tableControl.mutate({ gameId: table.gameId, action, text }, { onSuccess: (result) => { toast(feedback(result, `Table ${table.tableNumber ?? table.gameId}`)); setTarget(null); setTableMessage(""); }, onError: err => toast({ title: "Table wasn't updated", description: err.message, variant: "destructive" }) });
+  const sendTable = (table: EventTable, action: "message" | "pause" | "resume" | "restart", text?: string) => {
+    if (!event || event.status === "ending" || event.status === "completed" ||
+      (action === "restart" ? table.phase !== "game_over" : table.phase === "game_over")) return;
+    tableControl.mutate({ gameId: table.gameId, action, text }, { onSuccess: (result) => { toast(feedback(result, `Table ${table.tableNumber ?? table.gameId}`)); setTarget(null); setTableMessage(""); void refetch(); }, onError: err => toast({ title: "Table wasn't updated", description: err.message, variant: "destructive" }) });
   };
   const openTable = async (table: EventTable) => {
     setOpening(table.gameId);
@@ -196,6 +198,10 @@ export default function EventControl() {
             <div className="min-h-16 rounded-xl bg-[#f2f2e8] p-3 text-sm"><p className="font-bold">{table.winner ? `${table.winner} won` : table.pendingDecision ? `Waiting on a decision: ${table.pendingDecision}` : table.currentPlayerName ? `${table.currentPlayerName}'s turn` : table.phase === "waiting" ? "Waiting to begin" : table.phase === "game_over" ? "Game finished" : "Game in progress"}</p><p className="text-xs text-[#71826a] mt-1">{table.openQuestions ? `${table.openQuestions} open question${table.openQuestions > 1 ? "s" : ""}` : table.paused ? "Table paused" : table.phase === "waiting" ? "Guests can join with the event code" : "No open questions"}</p></div>
             {seats.length > 0 && <div className="flex flex-wrap gap-1.5">{seats.map((seat, i) => <span key={seat.playerId ?? i} title={`${seat.name ?? seat.playerName ?? "Guest"}: ${seat.ready ? "ready" : "not ready"}, ${seat.connected === false ? "disconnected" : "present"}`} className={`text-xs font-bold rounded-full px-2.5 py-1 ${seat.connected === false ? "bg-rose-100 text-rose-700" : seat.ready ? "bg-emerald-100 text-emerald-800" : "bg-[#ebeadc] text-[#6e7868]"}`}>{seat.connected === false && <WifiOff size={11} className="inline mr-1" />}{seat.name ?? seat.playerName ?? `Guest ${i + 1}`}</span>)}</div>}
             <div className="flex flex-wrap gap-2 mt-auto pt-1 border-t border-[#e5e8da]">
+              {table.phase === "game_over" && !eventClosing && <PlayAgainButton
+                pending={tableControl.isPending}
+                onConfirm={() => sendTable(table, "restart")}
+              />}
               <button className="event-button event-button-primary flex-1" onClick={() => openTable(table)} disabled={opening === table.gameId} data-testid={`button-view-table-${table.gameId}`}><ExternalLink size={14} /> View table</button>
               <button className="event-button event-button-outline" disabled={eventClosing || table.phase === "game_over"} onClick={() => { setTarget(table); setTableMessage(""); }} data-testid={`button-message-table-${table.gameId}`} aria-label={`Message table ${table.tableNumber ?? index + 1}`}><Megaphone size={15} /></button>
               <button className="event-button event-button-outline" disabled={eventClosing || table.phase === "game_over" || tableControl.isPending} onClick={() => sendTable(table, table.paused ? "resume" : "pause")} data-testid={`button-pause-table-${table.gameId}`}>{table.paused ? <Play size={15} /> : <Pause size={15} />}</button>

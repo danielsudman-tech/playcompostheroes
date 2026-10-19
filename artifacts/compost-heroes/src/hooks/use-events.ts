@@ -240,7 +240,7 @@ export function useEventControl(id: string) {
   return useMutation({ mutationFn: (data: { action: "start" | "message" | "pause" | "resume" | "end"; text?: string }): Promise<EventControlResult> => controlFacilitatorEvent(id, { action: data.action === "pause" ? "pause_all" : data.action === "resume" ? "resume_all" : data.action, text: data.text, userToken: userToken() }), onSuccess: () => { qc.invalidateQueries({ queryKey: facilitatorEventsKey() }); } });
 }
 export function useTableControl(id: string) {
-  return useMutation({ mutationFn: (data: { gameId: string; action: "message" | "pause" | "resume"; text?: string }): Promise<EventTableResult> => controlFacilitatorEventTable(id, data.gameId, { action: data.action, text: data.text, userToken: userToken() }) });
+  return useMutation({ mutationFn: (data: { gameId: string; action: "message" | "pause" | "resume" | "restart"; text?: string }): Promise<EventTableResult> => controlFacilitatorEventTable(id, data.gameId, { action: data.action, text: data.text, userToken: userToken() }) });
 }
 export function useJoinEvent(code: string) {
   const qc = useQueryClient();

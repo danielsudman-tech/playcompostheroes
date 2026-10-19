@@ -13,4 +13,5 @@ export const EventTableControlInputAction = {
   pause: "pause",
   resume: "resume",
   message: "message",
+  restart: "restart",
 } as const;

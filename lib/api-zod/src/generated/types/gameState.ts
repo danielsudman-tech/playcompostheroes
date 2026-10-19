@@ -8,6 +8,7 @@
 import type { ActiveModifier } from "./activeModifier";
 import type { Card } from "./card";
 import type { EffectAnnouncement } from "./effectAnnouncement";
+import type { GameRoundSummary } from "./gameRoundSummary";
 import type { GameStateBotTurnUpdatesItem } from "./gameStateBotTurnUpdatesItem";
 import type { GameStateHostMessage } from "./gameStateHostMessage";
 import type { GameStateMode } from "./gameStateMode";
@@ -18,6 +19,9 @@ import type { PlayerState } from "./playerState";
 import type { QuestionFlag } from "./questionFlag";
 
 export interface GameState {
+  roundNumber?: number;
+  roundStartedAt?: number;
+  roundHistory?: GameRoundSummary[];
   botTurnUpdates?: GameStateBotTurnUpdatesItem[];
   systemUpdates?: GameStateSystemUpdatesItem[];
   turnTimerSeconds?: number;

@@ -4,6 +4,7 @@ import { motion } from "framer-motion";
 import compostHeroesLogo from "@assets/Compost_Heroes_Logo_no_background_1773537933517.png";
 import {
   useGameState,
+  useGameAction,
   useGameSse,
   useClaimSlot,
   useNudgePlayer,
@@ -38,7 +39,9 @@ import {
 } from "@/components/ui/alert-dialog";
 import { useToast } from "@/hooks/use-toast";
 import { useCurrentUser } from "@/components/AppGate";
-import { getGameEventId } from "@/hooks/use-events";
+import { getGameEventId, useEvent } from "@/hooks/use-events";
+import { PlayAgainButton } from "@/components/PlayAgainButton";
+import { RoundHistory } from "@/components/RoundHistory";
 import { cn } from "@/lib/utils";
 import {
   Loader2,
@@ -105,6 +108,10 @@ export default function FacilitatorDashboard() {
   // Re-validate the stored token → playerIndex (host gate)
   const { claim, loading: claimLoading } = useClaimSlot(gameId || null, isFacilitated && !!storedToken);
   const token = claim?.token ?? storedToken;
+  const linkedEvent = useEvent(gameState?.eventId ?? "");
+  const replayMutation = useGameAction(gameId ?? "", token, {
+    onError: message => toast({ title: "Couldn't start another round", description: message, variant: "destructive" }),
+  });
   const hostIsSpectator = (gameState as any)?.hostIsSpectator === true;
   const isHost = claim ? claim.playerIndex === (hostIsSpectator ? -1 : 0) : null;
 
@@ -558,6 +565,7 @@ export default function FacilitatorDashboard() {
           )}
 
           {/* Post-session summary */}
+          <RoundHistory rounds={gameState.roundHistory} />
           {gameState.phase === "game_over" && (
             <div className="bg-card/95 backdrop-blur-md border-2 border-primary/30 rounded-2xl px-4 py-3 space-y-2" data-testid="session-summary">
               <span className="flex items-center gap-2 text-sm font-extrabold text-foreground">
@@ -566,11 +574,17 @@ export default function FacilitatorDashboard() {
                   ? `${gameState.players.find((p) => p.id === gameState.winner)?.name ?? "Someone"} won the game!`
                   : "Session ended by facilitator"}
               </span>
+              {(!gameState.eventId || (linkedEvent.data &&
+                !["ending", "completed"].includes(linkedEvent.data.status))) && <PlayAgainButton
+                pending={replayMutation.isPending}
+                roundNumber={gameState.roundNumber ?? 1}
+                onConfirm={() => replayMutation.mutate({ type: "reset_game", playerId: claim?.playerId ?? "host" })}
+              />}
               <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs text-muted-foreground">
                 <span className="flex items-center gap-1">
                   <Clock className="w-3 h-3" />
                   {(() => {
-                    const start = gameState.createdAt;
+                    const start = gameState.roundStartedAt ?? gameState.createdAt;
                     const end = gameState.endedAt ?? Date.now();
                     if (!start) return `${gameState.turnNumber} turns played`;
                     const mins = Math.max(1, Math.round((end - start) / 60000));

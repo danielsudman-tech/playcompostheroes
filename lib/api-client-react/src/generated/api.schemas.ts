@@ -150,6 +150,7 @@ export const EventTableControlInputAction = {
   pause: "pause",
   resume: "resume",
   message: "message",
+  restart: "restart",
 } as const;
 
 export interface EventTableControlInput {
@@ -348,6 +349,20 @@ export interface EventControlResult {
   eventId: string;
   action: string;
   results: EventTableResult[];
+}
+
+export type GameRoundSummaryStandingsItem = {
+  playerId: string;
+  name: string;
+  functionsFilled: number;
+};
+
+export interface GameRoundSummary {
+  roundNumber: number;
+  winnerName: string | null;
+  endedAt: number;
+  turns: number;
+  standings: GameRoundSummaryStandingsItem[];
 }
 
 export type GameStateMode = (typeof GameStateMode)[keyof typeof GameStateMode];
@@ -583,6 +598,9 @@ export type GameStateHostMessage = {
 } | null;
 
 export interface GameState {
+  roundNumber?: number;
+  roundStartedAt?: number;
+  roundHistory?: GameRoundSummary[];
   botTurnUpdates?: GameStateBotTurnUpdatesItem[];
   systemUpdates?: GameStateSystemUpdatesItem[];
   turnTimerSeconds?: number;

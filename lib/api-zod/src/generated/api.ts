@@ -195,6 +195,25 @@ export const getGameResponseLastEffectPrivateFactsItemCountMin = 0;
 export const getGameResponseLastEffectEventsItemFactCountMin = 0;
 
 export const GetGameResponse = zod.object({
+  roundNumber: zod.number().optional(),
+  roundStartedAt: zod.number().optional(),
+  roundHistory: zod
+    .array(
+      zod.object({
+        roundNumber: zod.number(),
+        winnerName: zod.string().nullable(),
+        endedAt: zod.number(),
+        turns: zod.number(),
+        standings: zod.array(
+          zod.object({
+            playerId: zod.string(),
+            name: zod.string(),
+            functionsFilled: zod.number(),
+          }),
+        ),
+      }),
+    )
+    .optional(),
   botTurnUpdates: zod
     .array(
       zod.object({
@@ -872,7 +891,7 @@ export const controlFacilitatorEventTableBodyTextMax = 300;
 
 export const ControlFacilitatorEventTableBody = zod.object({
   userToken: zod.string(),
-  action: zod.enum(["pause", "resume", "message"]),
+  action: zod.enum(["pause", "resume", "message", "restart"]),
   text: zod.string().max(controlFacilitatorEventTableBodyTextMax).optional(),
 });
 
@@ -1065,6 +1084,25 @@ export const sendHostMessageResponseLastEffectPrivateFactsItemCountMin = 0;
 export const sendHostMessageResponseLastEffectEventsItemFactCountMin = 0;
 
 export const SendHostMessageResponse = zod.object({
+  roundNumber: zod.number().optional(),
+  roundStartedAt: zod.number().optional(),
+  roundHistory: zod
+    .array(
+      zod.object({
+        roundNumber: zod.number(),
+        winnerName: zod.string().nullable(),
+        endedAt: zod.number(),
+        turns: zod.number(),
+        standings: zod.array(
+          zod.object({
+            playerId: zod.string(),
+            name: zod.string(),
+            functionsFilled: zod.number(),
+          }),
+        ),
+      }),
+    )
+    .optional(),
   botTurnUpdates: zod
     .array(
       zod.object({
@@ -1416,6 +1454,25 @@ export const resolveQuestionResponseLastEffectPrivateFactsItemCountMin = 0;
 export const resolveQuestionResponseLastEffectEventsItemFactCountMin = 0;
 
 export const ResolveQuestionResponse = zod.object({
+  roundNumber: zod.number().optional(),
+  roundStartedAt: zod.number().optional(),
+  roundHistory: zod
+    .array(
+      zod.object({
+        roundNumber: zod.number(),
+        winnerName: zod.string().nullable(),
+        endedAt: zod.number(),
+        turns: zod.number(),
+        standings: zod.array(
+          zod.object({
+            playerId: zod.string(),
+            name: zod.string(),
+            functionsFilled: zod.number(),
+          }),
+        ),
+      }),
+    )
+    .optional(),
   botTurnUpdates: zod
     .array(
       zod.object({
@@ -1750,6 +1807,25 @@ export const endSessionResponseLastEffectPrivateFactsItemCountMin = 0;
 export const endSessionResponseLastEffectEventsItemFactCountMin = 0;
 
 export const EndSessionResponse = zod.object({
+  roundNumber: zod.number().optional(),
+  roundStartedAt: zod.number().optional(),
+  roundHistory: zod
+    .array(
+      zod.object({
+        roundNumber: zod.number(),
+        winnerName: zod.string().nullable(),
+        endedAt: zod.number(),
+        turns: zod.number(),
+        standings: zod.array(
+          zod.object({
+            playerId: zod.string(),
+            name: zod.string(),
+            functionsFilled: zod.number(),
+          }),
+        ),
+      }),
+    )
+    .optional(),
   botTurnUpdates: zod
     .array(
       zod.object({
@@ -2085,6 +2161,25 @@ export const pauseGameResponseLastEffectPrivateFactsItemCountMin = 0;
 export const pauseGameResponseLastEffectEventsItemFactCountMin = 0;
 
 export const PauseGameResponse = zod.object({
+  roundNumber: zod.number().optional(),
+  roundStartedAt: zod.number().optional(),
+  roundHistory: zod
+    .array(
+      zod.object({
+        roundNumber: zod.number(),
+        winnerName: zod.string().nullable(),
+        endedAt: zod.number(),
+        turns: zod.number(),
+        standings: zod.array(
+          zod.object({
+            playerId: zod.string(),
+            name: zod.string(),
+            functionsFilled: zod.number(),
+          }),
+        ),
+      }),
+    )
+    .optional(),
   botTurnUpdates: zod
     .array(
       zod.object({
@@ -2419,6 +2514,25 @@ export const facilitatorResolveResponseLastEffectPrivateFactsItemCountMin = 0;
 export const facilitatorResolveResponseLastEffectEventsItemFactCountMin = 0;
 
 export const FacilitatorResolveResponse = zod.object({
+  roundNumber: zod.number().optional(),
+  roundStartedAt: zod.number().optional(),
+  roundHistory: zod
+    .array(
+      zod.object({
+        roundNumber: zod.number(),
+        winnerName: zod.string().nullable(),
+        endedAt: zod.number(),
+        turns: zod.number(),
+        standings: zod.array(
+          zod.object({
+            playerId: zod.string(),
+            name: zod.string(),
+            functionsFilled: zod.number(),
+          }),
+        ),
+      }),
+    )
+    .optional(),
   botTurnUpdates: zod
     .array(
       zod.object({
@@ -2781,6 +2895,25 @@ export const performActionResponseLastEffectPrivateFactsItemCountMin = 0;
 export const performActionResponseLastEffectEventsItemFactCountMin = 0;
 
 export const PerformActionResponse = zod.object({
+  roundNumber: zod.number().optional(),
+  roundStartedAt: zod.number().optional(),
+  roundHistory: zod
+    .array(
+      zod.object({
+        roundNumber: zod.number(),
+        winnerName: zod.string().nullable(),
+        endedAt: zod.number(),
+        turns: zod.number(),
+        standings: zod.array(
+          zod.object({
+            playerId: zod.string(),
+            name: zod.string(),
+            functionsFilled: zod.number(),
+          }),
+        ),
+      }),
+    )
+    .optional(),
   botTurnUpdates: zod
     .array(
       zod.object({
@@ -3121,6 +3254,25 @@ export const reorderWaitingPlayersResponseLastEffectPrivateFactsItemCountMin = 0
 export const reorderWaitingPlayersResponseLastEffectEventsItemFactCountMin = 0;
 
 export const ReorderWaitingPlayersResponse = zod.object({
+  roundNumber: zod.number().optional(),
+  roundStartedAt: zod.number().optional(),
+  roundHistory: zod
+    .array(
+      zod.object({
+        roundNumber: zod.number(),
+        winnerName: zod.string().nullable(),
+        endedAt: zod.number(),
+        turns: zod.number(),
+        standings: zod.array(
+          zod.object({
+            playerId: zod.string(),
+            name: zod.string(),
+            functionsFilled: zod.number(),
+          }),
+        ),
+      }),
+    )
+    .optional(),
   botTurnUpdates: zod
     .array(
       zod.object({

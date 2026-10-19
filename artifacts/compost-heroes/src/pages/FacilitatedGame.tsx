@@ -35,6 +35,8 @@ import { useGameUpdates } from "@/hooks/use-game-updates";
 import { viewerFingerprint } from "@/lib/gameCache";
 import { useTriviaSession } from "@/hooks/use-trivia-session";
 import { PostGameLinks } from "@/components/PostGameLinks";
+import { PlayAgainButton } from "@/components/PlayAgainButton";
+import { RoundHistory } from "@/components/RoundHistory";
 import { OnlineRoomEntry } from "@/components/OnlineRoomEntry";
 import { getDecisionStepInfo } from "@/lib/decisionSteps";
 import { countsForHotPile, getCardBaseId, isHotPileCard } from "@/lib/hotPile";
@@ -301,7 +303,7 @@ export default function FacilitatedGame() {
   const askMutation = useAskQuestion(gameId || null, localToken);
   const { updates: gameUpdates, log: logUpdate } = useGameUpdates({
     scope: {
-      gameId: gameId ?? "",
+      gameId: `${gameId ?? ""}:round:${gameState?.roundNumber ?? 1}`,
       seatId: isPassPlay ? localPlayerId : claim?.playerId ?? localPlayerId,
       viewerId: isRemote && localToken ? viewerFingerprint(localToken) : null,
     },
@@ -1329,6 +1331,7 @@ export default function FacilitatedGame() {
               <button onClick={() => setShowLog(false)} className="text-muted-foreground hover:text-foreground"><X className="w-4 h-4" /></button>
             </div>
             <div className="p-4 flex-1 overflow-y-auto flex flex-col gap-2 custom-scrollbar">
+              <RoundHistory rounds={gameState.roundHistory} />
               {gameUpdates.length > 0 ? (
                 <div className="flex flex-col gap-2" data-testid="recap-updates">
                   {gameUpdates.map((u) => (
@@ -1575,16 +1578,17 @@ export default function FacilitatedGame() {
               </div>
             </div>
             <div className="flex flex-col gap-3">
-              {!gameState.eventId && <Button
-                size="lg"
-                className="w-full text-lg font-bold h-14"
-                disabled={actionMutation.isPending}
-                onClick={() => {
-                  if (localPlayerId) actionMutation.mutate({ type: "reset_game" as any, playerId: localPlayerId });
-                }}
-              >
-                Play Again
-              </Button>}
+              {!eventClosing && (isPassPlay || (claim?.playerIndex === (hostIsSpectator ? -1 : 0) &&
+                currentUser?.id === gameState.facilitatorId)) ? <PlayAgainButton
+                  pending={actionMutation.isPending}
+                  roundNumber={gameState.roundNumber ?? 1}
+                  onConfirm={() => {
+                    if (localPlayerId) actionMutation.mutate({ type: "reset_game", playerId: localPlayerId });
+                  }}
+                /> : isRemote && !eventClosing ? <p className="text-sm text-muted-foreground" data-testid="waiting-for-replay">
+                  Waiting for the host to start another round.
+                </p> : null}
+              <RoundHistory rounds={gameState.roundHistory} />
               <Button size="lg" variant="outline" className="w-full text-lg font-bold h-14" onClick={() => setLocation(gameState.eventId && eventCode ? `/event/${eventCode}/results` : "/")} data-testid="button-postgame-return">
                 {gameState.eventId && eventCode ? "Return to Event" : "Return to Lobby"}
               </Button>

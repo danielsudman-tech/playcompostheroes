@@ -137,6 +137,12 @@ export interface GameState {
   lastMeaningfulActivityAt?: number;
   /** Internal analytics milestone; never serialized to viewers. */
   analyticsFirstTurnCompletedAt?: number;
+  /** Stable room, distinct replay rounds. History contains public standings only. */
+  roundNumber?: number;
+  roundStartedAt?: number;
+  roundHistory?: import("./gameReplay.js").GameRoundSummary[];
+  /** Internal lifecycle-ledger identity for this round; never a seat credential. */
+  analyticsRoundId?: string;
 }
 
 export interface BotTurnUpdate {

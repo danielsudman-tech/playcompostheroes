@@ -8,6 +8,7 @@ import { addSystemUpdate } from "../lib/systemUpdates.js";
 import { pool } from "@workspace/db";
 import { logEvent } from "../lib/analyticsStore.js";
 import { markFirstHumanTurn } from "../lib/gameAnalytics.js";
+import { restartFinishedGame } from "../lib/gameReplay.js";
 import {
   activateOngoing,
   addBotToRoom,
@@ -160,7 +161,7 @@ const HIDDEN_CARD = {
 
 export function serializeState(state: GameState, viewerIndex?: number) {
   const isOnline = state.mode === "online" || state.mode === "facilitated";
-  const { deck, analyticsFirstTurnCompletedAt: _analyticsFirstTurn, turnTimerActorKey: _timerActorKey, turnSequence: _turnSequence, botUpdateSequence: _botSequence, systemUpdateSequence: _systemSequence, ...rest } = state;
+  const { deck, analyticsRoundId: _analyticsRoundId, analyticsFirstTurnCompletedAt: _analyticsFirstTurn, turnTimerActorKey: _timerActorKey, turnSequence: _turnSequence, botUpdateSequence: _botSequence, systemUpdateSequence: _systemSequence, ...rest } = state;
   const viewerId = viewerIndex !== undefined && viewerIndex >= 0
     ? state.players[viewerIndex]?.id
     : undefined;
@@ -989,8 +990,8 @@ router.post("/games/:gameId/action", async (req, res) => {
   }
   const linkedEvent = await getEventForGame(gameId, client);
   if (linkedEvent && type === "reset_game" &&
-      (linkedEvent.status === "completed" || state.phase === "game_over")) {
-    res.status(409).json({ error: "Finished event tables cannot be reset" });
+      ["ending", "completed"].includes(linkedEvent.status)) {
+    res.status(409).json({ error: "This event is ending or has ended" });
     return;
   }
 
@@ -1088,51 +1089,24 @@ router.post("/games/:gameId/action", async (req, res) => {
         break;
       }
       case "reset_game": {
-        if (state.mode === "facilitated") {
+        if (state.mode === "facilitated" || state.mode === "online") {
           const user = await getRegisteredUser(req.body?.userToken, client);
           const seat = token ? await getPlayerIndexForToken(gameId, token, client) : null;
           const expectedHostIndex = state.hostIsSpectator === true ? -1 : 0;
-          if (seat !== expectedHostIndex || !isApprovedFacilitator(user) || user?.id !== state.facilitatorId) {
-            res.status(403).json({ error: "Facilitator approval is required to reset this session" });
+          if (seat !== expectedHostIndex || !user || user.id !== state.facilitatorId ||
+              (state.mode === "facilitated" && !isApprovedFacilitator(user))) {
+            res.status(403).json({ error: "Only the room host can start another round" });
             return;
           }
         }
-        const playerNames = state.players.map((p) => p.name);
-        const botIndices = state.players
-          .map((p, i) => ((p as any).isBot ? i : -1))
-          .filter((i) => i >= 0);
-        const botSkillLevels: Record<number, BotSkillLevel> = {};
-        state.players.forEach((p, i) => {
-          if ((p as any).isBot && (p as any).botSkillLevel) {
-            botSkillLevels[i] = (p as any).botSkillLevel;
-          }
-        });
-        // Reuse the same gameId so the URL and React Query cache stay valid
-        let newState = createGameState(gameId, playerNames, state.mode, botIndices, botSkillLevels);
-        // Player credentials and client state are bound to these IDs. A reset
-        // starts fresh gameplay but must keep each identity in the same seat.
-        newState.players = newState.players.map((player, index) => ({
-          ...player,
-          id: state.players[index].id,
-          botCovering: state.players[index].botCovering,
-          botCoverReason: state.players[index].botCoverReason,
-        }));
-        // Preserve facilitator/session metadata across resets so the room
-        // stays on its creator's dashboard.
-        newState.facilitatorId = state.facilitatorId;
-        newState.eventId = state.eventId;
-        newState.createdAt = state.createdAt;
-        newState.label = state.label;
-        newState.maxPlayers = state.maxPlayers;
-        newState.turnTimerSeconds = state.turnTimerSeconds;
-        newState.turnSequence = (state.turnSequence ?? 0) + 1;
-        newState.botUpdateSequence = state.botUpdateSequence;
-        newState.systemUpdateSequence = state.systemUpdateSequence;
-        if (state.hostIsSpectator === true) newState.hostIsSpectator = true;
-        newState = runBotTurnsIfNeeded(newState);
+        if (state.phase !== "game_over") {
+          res.status(409).json({ error: "Finish the current round before playing again" }); return;
+        }
+        const newState = restartFinishedGame(state);
         await storeGame(newState, client);
         broadcast(newState.gameId, newState, client);
-        res.json(serializeState(newState, state.hostIsSpectator === true ? -1 : 0));
+        const viewer = token ? await getPlayerIndexForToken(gameId, token, client) : undefined;
+        res.json(serializeState(newState, viewer ?? undefined));
         return;
       }
       default:

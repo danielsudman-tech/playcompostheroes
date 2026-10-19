@@ -66,6 +66,8 @@ export * from "./gameEngagementMetrics";
 export * from "./gameEngagementReport";
 export * from "./gamePlayerRemovalInput";
 export * from "./gamePlayerRemovalResult";
+export * from "./gameRoundSummary";
+export * from "./gameRoundSummaryStandingsItem";
 export * from "./gameSeatClaimConflict";
 export * from "./gameSeatClaimInput";
 export * from "./gameSeatClaimResult";

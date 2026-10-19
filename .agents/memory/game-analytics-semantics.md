@@ -3,11 +3,11 @@ name: Game analytics semantics
 description: Counting and historical-coverage decisions for shared-device game analytics.
 ---
 
-Count distinct game IDs, not raw lifecycle event rows. Creation is separate from starting a waiting room; a host ending a room is separate from a game won.
+Count distinct played-round lifecycle identities, not raw lifecycle event rows. Room totals and round totals are different. Creation is separate from starting a waiting room; a host ending a room is separate from a game won.
 
-**Why:** Historical completion events included duplicates, while bot and timer endings were missed by action-route-only logging. Resetting a room retains its game ID, so distinct-game totals are not a count of every replay.
+**Why:** Historical completion events included duplicates, while bot and timer endings were missed by action-route-only logging. The user approved counting replays separately while retaining the same room and seats. Earlier resets were not tracked as distinct rounds and cannot be reconstructed.
 
-**How to apply:** Capture lifecycle milestones with durable game persistence, reuse its held client and transaction, and make retries idempotent. Keep raw event-log reports clearly separate from canonical lifecycle totals.
+**How to apply:** Capture lifecycle milestones with durable game persistence, reuse its held client and transaction, and make retries idempotent. Each replay needs a fresh lifecycle identity and timing, without overwriting previous completion records. Keep raw event-log reports clearly separate from canonical lifecycle totals.
 
 Human engagement means a human finishing their own turn or winning during it. Drawing alone, bot progress, timer expiry, and host seat controls are not human engagement. Starting seat composition is not a count of unique people.
 

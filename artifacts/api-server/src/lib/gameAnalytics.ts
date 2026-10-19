@@ -31,12 +31,15 @@ WITH previous_game AS MATERIALIZED (
     (g.state->>'phase' IN ('draw','play') OR
       (g.state->>'phase'='game_over' AND
         (NULLIF(g.state->>'winner','') IS NOT NULL OR p.state->>'phase' IN ('draw','play')))) AS has_started,
-    (p.state IS NULL OR p.state->>'phase'='waiting') AS start_time_known
+    (p.state IS NULL OR p.state->>'phase'='waiting' OR
+      g.state->>'analyticsRoundId' IS DISTINCT FROM p.state->>'analyticsRoundId') AS start_time_known
   FROM written_game g LEFT JOIN previous_game p ON TRUE
 )
 INSERT INTO compost_game_analytics AS a
   (game_id,mode,created_at,started,started_at,first_turn_at,ended_at,end_reason,player_count,human_count,bot_count,legacy,is_test)
-SELECT game_id, state->>'mode', created_at, COALESCE(has_started,FALSE),
+SELECT COALESCE(state->>'analyticsRoundId',game_id), state->>'mode',
+  COALESCE(to_timestamp((state->>'roundStartedAt')::double precision/1000),created_at),
+  COALESCE(has_started,FALSE),
   CASE WHEN has_started AND start_time_known THEN
     CASE WHEN previous_state IS NULL THEN
       COALESCE(to_timestamp((state->>'createdAt')::double precision/1000),NOW())

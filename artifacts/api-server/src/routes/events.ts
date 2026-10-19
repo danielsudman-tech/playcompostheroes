@@ -15,6 +15,7 @@ import {
   addPlayerToRoom, createWaitingRoom, launchGame, type GameState,
 } from "../lib/gameEngine.js";
 import { WIN_FUNCTIONS } from "../lib/cards.js";
+import { restartFinishedGame } from "../lib/gameReplay.js";
 import {
   broadcastToGame, createGameId, getEventForGame, getGame,
   getCachedGameState,
@@ -224,13 +225,13 @@ onGameBroadcast((gameId) => {
      ), status_update AS (
        UPDATE compost_events e
           SET status = CASE
-            WHEN p.table_count > 0 AND p.all_completed THEN 'completed'
+            WHEN p.table_count > 0 AND p.all_completed AND e.status = 'ending' THEN 'completed'
             WHEN p.any_active AND e.status = 'upcoming' THEN 'active'
             ELSE e.status
           END
          FROM phases p
         WHERE e.id = p.event_id
-          AND ((p.table_count > 0 AND p.all_completed AND e.status <> 'completed')
+          AND ((p.table_count > 0 AND p.all_completed AND e.status = 'ending')
             OR (p.any_active AND e.status = 'upcoming'))
        RETURNING e.id
      )
@@ -534,6 +535,9 @@ async function changeTable(client: PgClient, gameId: string, action: string, tex
       const launched = launchGame(state);
       if (launched.error) return { gameId, success: false, error: launched.error };
       next = { ...launched.state, lastMeaningfulActivityAt: Date.now() } as GameState;
+    } else if (action === "restart") {
+      if (state.phase !== "game_over") return { gameId, success: false, error: "Finish the current round before playing again" };
+      next = restartFinishedGame(state);
     } else if (action === "pause" || action === "pause_all") {
       if (state.phase === "game_over") return { gameId, success: true, error: null };
       next = { ...state, paused: true };
@@ -616,7 +620,7 @@ router.post("/facilitator/events/:eventId/tables/:gameId/control", async (req, r
   const body = req.body as { userToken?: string; action?: string; text?: string };
   const parsedBody = ControlFacilitatorEventTableBody.safeParse(body);
   if (!parsedBody.success) { res.status(400).json({ error: parsedBody.error.message }); return; }
-  if (!["pause", "resume", "message"].includes(body.action ?? "")) { res.status(400).json({ error: "Invalid table action" }); return; }
+  if (!["pause", "resume", "message", "restart"].includes(body.action ?? "")) { res.status(400).json({ error: "Invalid table action" }); return; }
   if (body.action === "message" && !body.text?.trim()) { res.status(400).json({ error: "Message text is required" }); return; }
   const eventId = req.params.eventId;
   const gameId = req.params.gameId;

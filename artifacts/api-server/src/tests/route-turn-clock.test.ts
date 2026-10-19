@@ -45,8 +45,9 @@ try {
   assert.equal(results[1].status, 409, "late action loses to the overdue durable deadline");
   const persisted = (await pool.query(`SELECT state FROM compost_games WHERE game_id=$1`, [gameId])).rows[0].state;
   assert.equal(persisted.turnNumber, 2);
+  await storeGame({ ...persisted, phase: "game_over", winner: persisted.players[0].id });
   const reset = await request(`/games/${gameId}/action`, {
-    type: "reset_game", token, playerId: "player_0", turnDeadlineKey: persisted.turnDeadlineKey,
+    type: "reset_game", token, userToken, playerId: "player_0", turnDeadlineKey: persisted.turnDeadlineKey,
   });
   assert.equal(reset.status, 200);
   assert.equal(reset.data.turnTimerSeconds, 30, "reset retains the host timer setting");

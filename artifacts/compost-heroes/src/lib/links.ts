@@ -1,6 +1,6 @@
 /** Verified destinations for guests who want to continue after a game. */
 export const PHYSICAL_GAME_URL = "https://www.compostheroes.org/purchase";
-export const COMPOST_ASSESSMENT_URL = "https://www.compostheroes.org/assessment";
+export const COMPOST_ASSESSMENT_URL = "https://start.compostheroes.org/";
 export const GREEN_CAMPS_URL = "https://www.greencamps.org/compost-heroes";
 
 export const POST_GAME_LINKS = [

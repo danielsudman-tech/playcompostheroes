@@ -1098,7 +1098,7 @@ components:
       type: object
       properties:
         userToken: { type: string }
-        action: { type: string, enum: [pause, resume, message] }
+        action: { type: string, enum: [pause, resume, message, restart] }
         text: { type: string, maxLength: 300 }
       required: [userToken, action]
     EventJoinInput:
@@ -1756,9 +1756,31 @@ components:
           type: boolean
       required: [id, playerId, playerName, text, ts, resolved]
 
+    GameRoundSummary:
+      type: object
+      properties:
+        roundNumber: { type: integer }
+        winnerName: { type: string, nullable: true }
+        endedAt: { type: number }
+        turns: { type: integer }
+        standings:
+          type: array
+          items:
+            type: object
+            properties:
+              playerId: { type: string }
+              name: { type: string }
+              functionsFilled: { type: integer }
+            required: [playerId, name, functionsFilled]
+      required: [roundNumber, winnerName, endedAt, turns, standings]
     GameState:
       type: object
       properties:
+        roundNumber: { type: integer }
+        roundStartedAt: { type: number }
+        roundHistory:
+          type: array
+          items: { $ref: "#/components/schemas/GameRoundSummary" }
         botTurnUpdates:
           type: array
           items:

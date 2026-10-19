@@ -11,3 +11,4 @@
 - [Printed-card game language](game-language.md) — collect functions in function slots; preserve the distinct real layer used by card rules.
 - [Game analytics semantics](game-analytics-semantics.md) — distinct games, human engagement, and known timing; legacy event totals need deduplication.
 - [Shared workspace installs](shared-workspace-installs.md) — adding artifact dependencies can invalidate running Vite services even when their source is unchanged.
+- [Replay round boundaries](replay-rounds.md) — host-only replays retain seats and public standings; an event stays open until the host ends it.
