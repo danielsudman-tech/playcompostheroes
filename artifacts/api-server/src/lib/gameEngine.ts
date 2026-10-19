@@ -83,6 +83,8 @@ export type GamePhase =
   | "game_over";
 
 export interface GameState {
+  /** Optional post-round coordination, never waiting-room readiness. */
+  replayReadyPlayerIds?: string[];
   gameId: string;
   eventId?: string;
   mode: "facilitator" | "standalone" | "online" | "facilitated";

@@ -195,6 +195,16 @@ export const getGameResponseLastEffectPrivateFactsItemCountMin = 0;
 export const getGameResponseLastEffectEventsItemFactCountMin = 0;
 
 export const GetGameResponse = zod.object({
+  replayReadyPlayerIds: zod
+    .array(zod.string())
+    .optional()
+    .describe(
+      "Seats ready for another round; independent of waiting-room readiness.",
+    ),
+  connectedPlayerIds: zod
+    .array(zod.string())
+    .optional()
+    .describe("Seats with a current authenticated table stream."),
   roundNumber: zod.number().optional(),
   roundStartedAt: zod.number().optional(),
   roundHistory: zod
@@ -721,6 +731,9 @@ export const GetFacilitatorEventResponse = zod
               playerName: zod.string(),
               ready: zod.boolean(),
               connected: zod.boolean(),
+              replayReady: zod.boolean().optional(),
+              isBot: zod.boolean().optional(),
+              botCovering: zod.boolean().optional(),
               lastSeenAt: zod
                 .number()
                 .nullable()
@@ -824,6 +837,9 @@ export const UpdateFacilitatorEventResponse = zod
               playerName: zod.string(),
               ready: zod.boolean(),
               connected: zod.boolean(),
+              replayReady: zod.boolean().optional(),
+              isBot: zod.boolean().optional(),
+              botCovering: zod.boolean().optional(),
               lastSeenAt: zod
                 .number()
                 .nullable()
@@ -1084,6 +1100,16 @@ export const sendHostMessageResponseLastEffectPrivateFactsItemCountMin = 0;
 export const sendHostMessageResponseLastEffectEventsItemFactCountMin = 0;
 
 export const SendHostMessageResponse = zod.object({
+  replayReadyPlayerIds: zod
+    .array(zod.string())
+    .optional()
+    .describe(
+      "Seats ready for another round; independent of waiting-room readiness.",
+    ),
+  connectedPlayerIds: zod
+    .array(zod.string())
+    .optional()
+    .describe("Seats with a current authenticated table stream."),
   roundNumber: zod.number().optional(),
   roundStartedAt: zod.number().optional(),
   roundHistory: zod
@@ -1454,6 +1480,16 @@ export const resolveQuestionResponseLastEffectPrivateFactsItemCountMin = 0;
 export const resolveQuestionResponseLastEffectEventsItemFactCountMin = 0;
 
 export const ResolveQuestionResponse = zod.object({
+  replayReadyPlayerIds: zod
+    .array(zod.string())
+    .optional()
+    .describe(
+      "Seats ready for another round; independent of waiting-room readiness.",
+    ),
+  connectedPlayerIds: zod
+    .array(zod.string())
+    .optional()
+    .describe("Seats with a current authenticated table stream."),
   roundNumber: zod.number().optional(),
   roundStartedAt: zod.number().optional(),
   roundHistory: zod
@@ -1807,6 +1843,16 @@ export const endSessionResponseLastEffectPrivateFactsItemCountMin = 0;
 export const endSessionResponseLastEffectEventsItemFactCountMin = 0;
 
 export const EndSessionResponse = zod.object({
+  replayReadyPlayerIds: zod
+    .array(zod.string())
+    .optional()
+    .describe(
+      "Seats ready for another round; independent of waiting-room readiness.",
+    ),
+  connectedPlayerIds: zod
+    .array(zod.string())
+    .optional()
+    .describe("Seats with a current authenticated table stream."),
   roundNumber: zod.number().optional(),
   roundStartedAt: zod.number().optional(),
   roundHistory: zod
@@ -2161,6 +2207,16 @@ export const pauseGameResponseLastEffectPrivateFactsItemCountMin = 0;
 export const pauseGameResponseLastEffectEventsItemFactCountMin = 0;
 
 export const PauseGameResponse = zod.object({
+  replayReadyPlayerIds: zod
+    .array(zod.string())
+    .optional()
+    .describe(
+      "Seats ready for another round; independent of waiting-room readiness.",
+    ),
+  connectedPlayerIds: zod
+    .array(zod.string())
+    .optional()
+    .describe("Seats with a current authenticated table stream."),
   roundNumber: zod.number().optional(),
   roundStartedAt: zod.number().optional(),
   roundHistory: zod
@@ -2514,6 +2570,16 @@ export const facilitatorResolveResponseLastEffectPrivateFactsItemCountMin = 0;
 export const facilitatorResolveResponseLastEffectEventsItemFactCountMin = 0;
 
 export const FacilitatorResolveResponse = zod.object({
+  replayReadyPlayerIds: zod
+    .array(zod.string())
+    .optional()
+    .describe(
+      "Seats ready for another round; independent of waiting-room readiness.",
+    ),
+  connectedPlayerIds: zod
+    .array(zod.string())
+    .optional()
+    .describe("Seats with a current authenticated table stream."),
   roundNumber: zod.number().optional(),
   roundStartedAt: zod.number().optional(),
   roundHistory: zod
@@ -2871,12 +2937,20 @@ export const PerformActionBody = zod.object({
     "activate_ongoing",
     "move_card_layer",
     "reset_game",
+    "set_replay_ready",
     "set_turn_timer",
     "take_back_seat",
     "cover_player",
     "remove_player",
   ]),
   playerId: zod.string(),
+  ready: zod.boolean().optional().describe("Required for set_replay_ready."),
+  roundNumber: zod
+    .number()
+    .optional()
+    .describe(
+      "Required for set_replay_ready; rejects stale requests from earlier rounds.",
+    ),
   token: zod.string().nullish(),
   userToken: zod
     .string()
@@ -2895,6 +2969,16 @@ export const performActionResponseLastEffectPrivateFactsItemCountMin = 0;
 export const performActionResponseLastEffectEventsItemFactCountMin = 0;
 
 export const PerformActionResponse = zod.object({
+  replayReadyPlayerIds: zod
+    .array(zod.string())
+    .optional()
+    .describe(
+      "Seats ready for another round; independent of waiting-room readiness.",
+    ),
+  connectedPlayerIds: zod
+    .array(zod.string())
+    .optional()
+    .describe("Seats with a current authenticated table stream."),
   roundNumber: zod.number().optional(),
   roundStartedAt: zod.number().optional(),
   roundHistory: zod
@@ -3254,6 +3338,16 @@ export const reorderWaitingPlayersResponseLastEffectPrivateFactsItemCountMin = 0
 export const reorderWaitingPlayersResponseLastEffectEventsItemFactCountMin = 0;
 
 export const ReorderWaitingPlayersResponse = zod.object({
+  replayReadyPlayerIds: zod
+    .array(zod.string())
+    .optional()
+    .describe(
+      "Seats ready for another round; independent of waiting-room readiness.",
+    ),
+  connectedPlayerIds: zod
+    .array(zod.string())
+    .optional()
+    .describe("Seats with a current authenticated table stream."),
   roundNumber: zod.number().optional(),
   roundStartedAt: zod.number().optional(),
   roundHistory: zod

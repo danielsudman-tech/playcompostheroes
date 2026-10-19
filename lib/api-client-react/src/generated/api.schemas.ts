@@ -204,6 +204,9 @@ export interface EventSeatSummary {
   playerName: string;
   ready: boolean;
   connected: boolean;
+  replayReady?: boolean;
+  isBot?: boolean;
+  botCovering?: boolean;
   /**
    * Guest heartbeat time as Unix epoch milliseconds; null when never seen.
    * @nullable
@@ -598,6 +601,10 @@ export type GameStateHostMessage = {
 } | null;
 
 export interface GameState {
+  /** Seats ready for another round; independent of waiting-room readiness. */
+  replayReadyPlayerIds?: string[];
+  /** Seats with a current authenticated table stream. */
+  connectedPlayerIds?: string[];
   roundNumber?: number;
   roundStartedAt?: number;
   roundHistory?: GameRoundSummary[];
@@ -845,6 +852,7 @@ export const GameActionType = {
   activate_ongoing: "activate_ongoing",
   move_card_layer: "move_card_layer",
   reset_game: "reset_game",
+  set_replay_ready: "set_replay_ready",
   set_turn_timer: "set_turn_timer",
   take_back_seat: "take_back_seat",
   cover_player: "cover_player",
@@ -860,6 +868,10 @@ export interface GameAction {
   turnDeadlineKey?: string | null;
   type: GameActionType;
   playerId: string;
+  /** Required for set_replay_ready. */
+  ready?: boolean;
+  /** Required for set_replay_ready; rejects stale requests from earlier rounds. */
+  roundNumber?: number;
   token?: string | null;
   /** Required for facilitated reset actions. */
   userToken?: string;

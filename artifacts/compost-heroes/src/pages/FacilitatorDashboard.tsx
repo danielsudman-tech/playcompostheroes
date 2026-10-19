@@ -41,6 +41,7 @@ import { useToast } from "@/hooks/use-toast";
 import { useCurrentUser } from "@/components/AppGate";
 import { getGameEventId, useEvent } from "@/hooks/use-events";
 import { PlayAgainButton } from "@/components/PlayAgainButton";
+import { ReplayReadiness, replaySeats } from "@/components/ReplayReadiness";
 import { RoundHistory } from "@/components/RoundHistory";
 import { cn } from "@/lib/utils";
 import {
@@ -575,11 +576,14 @@ export default function FacilitatorDashboard() {
                   : "Session ended by facilitator"}
               </span>
               {(!gameState.eventId || (linkedEvent.data &&
-                !["ending", "completed"].includes(linkedEvent.data.status))) && <PlayAgainButton
+                !["ending", "completed"].includes(linkedEvent.data.status))) && <>
+              <ReplayReadiness seats={replaySeats(gameState)} />
+              <PlayAgainButton
                 pending={replayMutation.isPending}
                 roundNumber={gameState.roundNumber ?? 1}
+                seats={replaySeats(gameState)}
                 onConfirm={() => replayMutation.mutate({ type: "reset_game", playerId: claim?.playerId ?? "host" })}
-              />}
+              /></>}
               <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs text-muted-foreground">
                 <span className="flex items-center gap-1">
                   <Clock className="w-3 h-3" />

@@ -14,6 +14,10 @@ export interface GameAction {
   turnDeadlineKey?: string | null;
   type: GameActionType;
   playerId: string;
+  /** Required for set_replay_ready. */
+  ready?: boolean;
+  /** Required for set_replay_ready; rejects stale requests from earlier rounds. */
+  roundNumber?: number;
   token?: string | null;
   /** Required for facilitated reset actions. */
   userToken?: string;

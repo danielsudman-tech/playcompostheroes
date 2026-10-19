@@ -11,6 +11,9 @@ export interface EventSeatSummary {
   playerName: string;
   ready: boolean;
   connected: boolean;
+  replayReady?: boolean;
+  isBot?: boolean;
+  botCovering?: boolean;
   /**
    * Guest heartbeat time as Unix epoch milliseconds; null when never seen.
    * @nullable

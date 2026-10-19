@@ -38,6 +38,7 @@ export function restartFinishedGame(state: GameState, now = Date.now()): GameSta
   }));
   next = {
     ...next,
+    replayReadyPlayerIds: [],
     facilitatorId: state.facilitatorId,
     eventId: state.eventId,
     createdAt: state.createdAt,

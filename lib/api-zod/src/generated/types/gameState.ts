@@ -19,6 +19,10 @@ import type { PlayerState } from "./playerState";
 import type { QuestionFlag } from "./questionFlag";
 
 export interface GameState {
+  /** Seats ready for another round; independent of waiting-room readiness. */
+  replayReadyPlayerIds?: string[];
+  /** Seats with a current authenticated table stream. */
+  connectedPlayerIds?: string[];
   roundNumber?: number;
   roundStartedAt?: number;
   roundHistory?: GameRoundSummary[];

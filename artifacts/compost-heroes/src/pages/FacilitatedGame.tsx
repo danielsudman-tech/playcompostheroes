@@ -36,6 +36,7 @@ import { viewerFingerprint } from "@/lib/gameCache";
 import { useTriviaSession } from "@/hooks/use-trivia-session";
 import { PostGameLinks } from "@/components/PostGameLinks";
 import { PlayAgainButton } from "@/components/PlayAgainButton";
+import { ReplayReadiness, replaySeats } from "@/components/ReplayReadiness";
 import { RoundHistory } from "@/components/RoundHistory";
 import { OnlineRoomEntry } from "@/components/OnlineRoomEntry";
 import { getDecisionStepInfo } from "@/lib/decisionSteps";
@@ -1578,10 +1579,26 @@ export default function FacilitatedGame() {
               </div>
             </div>
             <div className="flex flex-col gap-3">
+              {isRemote && !eventClosing && <>
+                <ReplayReadiness seats={replaySeats(gameState)} />
+                {claim && claim.playerIndex >= 0 && <Button
+                  variant="outline"
+                  disabled={actionMutation.isPending}
+                  data-testid="button-replay-ready"
+                  aria-pressed={(gameState.replayReadyPlayerIds ?? []).includes(claim.playerId)}
+                  onClick={() => actionMutation.mutate({
+                    type: "set_replay_ready", playerId: claim.playerId,
+                    ready: !(gameState.replayReadyPlayerIds ?? []).includes(claim.playerId),
+                    roundNumber: gameState.roundNumber ?? 1,
+                  })}
+                >{actionMutation.isPending ? "Saving…" : (gameState.replayReadyPlayerIds ?? []).includes(claim.playerId)
+                  ? "Not ready yet" : "I'm ready for another round"}</Button>}
+              </>}
               {!eventClosing && (isPassPlay || (claim?.playerIndex === (hostIsSpectator ? -1 : 0) &&
                 currentUser?.id === gameState.facilitatorId)) ? <PlayAgainButton
                   pending={actionMutation.isPending}
                   roundNumber={gameState.roundNumber ?? 1}
+                  seats={isRemote ? replaySeats(gameState) : undefined}
                   onConfirm={() => {
                     if (localPlayerId) actionMutation.mutate({ type: "reset_game", playerId: localPlayerId });
                   }}

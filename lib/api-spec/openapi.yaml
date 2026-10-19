@@ -1145,6 +1145,9 @@ components:
         playerName: { type: string }
         ready: { type: boolean }
         connected: { type: boolean }
+        replayReady: { type: boolean }
+        isBot: { type: boolean }
+        botCovering: { type: boolean }
         lastSeenAt: { type: ["number", "null"], description: Guest heartbeat time as Unix epoch milliseconds; null when never seen. }
       required: [playerId, playerName, ready, connected, lastSeenAt]
     EventTableSummary:
@@ -1776,6 +1779,14 @@ components:
     GameState:
       type: object
       properties:
+        replayReadyPlayerIds:
+          type: array
+          items: { type: string }
+          description: Seats ready for another round; independent of waiting-room readiness.
+        connectedPlayerIds:
+          type: array
+          items: { type: string }
+          description: Seats with a current authenticated table stream.
         roundNumber: { type: integer }
         roundStartedAt: { type: number }
         roundHistory:
@@ -1950,12 +1961,19 @@ components:
             - activate_ongoing
             - move_card_layer
             - reset_game
+            - set_replay_ready
             - set_turn_timer
             - take_back_seat
             - cover_player
             - remove_player
         playerId:
           type: string
+        ready:
+          type: boolean
+          description: Required for set_replay_ready.
+        roundNumber:
+          type: integer
+          description: Required for set_replay_ready; rejects stale requests from earlier rounds.
         token:
           type: string
           nullable: true

@@ -14,3 +14,9 @@ Finishing every table does not close an event; the host explicitly ends it.
 **Why:** Automatic completion would immediately prevent Play again at the last table to finish.
 
 **How to apply:** Keep naturally finished tables restartable while the event is open. Never reopen an already closed event merely to enable replay.
+
+Post-round readiness is an optional coordination signal, not a vote or restart permission. A host may proceed before everyone is ready. Show disconnection and bot coverage separately rather than undoing a participant's explicit check-in on disconnect.
+
+**Why:** The requested workshop ready check helps hosts coordinate breaks; it must not prevent a host from dealing or let guests restart.
+
+**How to apply:** Keep post-round check-ins independent from event waiting-room readiness and require a fresh check-in for each finished round.

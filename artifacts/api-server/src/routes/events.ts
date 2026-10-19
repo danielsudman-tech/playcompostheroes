@@ -19,6 +19,7 @@ import { restartFinishedGame } from "../lib/gameReplay.js";
 import {
   broadcastToGame, createGameId, getEventForGame, getGame,
   getCachedGameState,
+  getConnectedPlayerIds,
   invalidateGameCaches, isEventGameReadyToStart, readTokenSlotConsistently,
   onGameBroadcast, updateGameStateCache, withGameMutationLocks, withClientTransaction,
   storeGame,
@@ -139,7 +140,11 @@ async function buildDetail(eventId: string, includeTokens = false, client: PgQue
         playerId: player.id,
         playerName: player.name,
         ready: seat?.ready === true,
-        connected: !!seat?.last_seen_at && Date.now() - new Date(seat.last_seen_at).getTime() <= 45_000,
+        replayReady: (state.replayReadyPlayerIds ?? []).includes(player.id),
+        isBot: player.isBot,
+        botCovering: player.botCovering === true,
+        connected: state.phase === "game_over" ? getConnectedPlayerIds(state.gameId).includes(player.id)
+          : !!seat?.last_seen_at && Date.now() - new Date(seat.last_seen_at).getTime() <= 45_000,
         lastSeenAt: seat?.last_seen_at == null ? null : new Date(seat.last_seen_at).getTime(),
       };
     }).filter((p) => guestById.has(p.playerId));

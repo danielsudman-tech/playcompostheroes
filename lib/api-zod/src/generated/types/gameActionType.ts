@@ -17,6 +17,7 @@ export const GameActionType = {
   activate_ongoing: "activate_ongoing",
   move_card_layer: "move_card_layer",
   reset_game: "reset_game",
+  set_replay_ready: "set_replay_ready",
   set_turn_timer: "set_turn_timer",
   take_back_seat: "take_back_seat",
   cover_player: "cover_player",

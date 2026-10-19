@@ -42,6 +42,7 @@ import {
   createSpectatorHostToken,
   gameHasPassword,
   getGame,
+  getConnectedPlayerIds,
   getEventForGame,
   getGamesByFacilitator,
   getGameIdForToken,
@@ -209,6 +210,8 @@ export function serializeState(state: GameState, viewerIndex?: number) {
 
   return {
     ...rest,
+    replayReadyPlayerIds: state.replayReadyPlayerIds ?? [],
+    connectedPlayerIds: getConnectedPlayerIds(state.gameId),
     botTurnUpdates: state.botTurnUpdates ?? [],
     systemUpdates: state.systemUpdates ?? [],
     ...(state.eventId ? { triviaEnabled: getEventTriviaEnabled(state.eventId) } : {}),
@@ -582,6 +585,12 @@ router.get("/games/:gameId/events", async (req, res) => {
     closed = true;
     clearInterval(ping);
     removeSseClient(gameId, token, res);
+    // Read under the same lock as replay so a late disconnect cannot publish
+    // an obsolete game_over snapshot after fresh hands have been dealt.
+    void withGameMutationLocks([gameId], async client => {
+      const current = await getGame(gameId, client);
+      if (current?.phase === "game_over") broadcast(gameId, current, client);
+    }).catch(error => console.error("[table presence] Failed to publish disconnect", error));
   });
 
   // Resolve the state, credential and stream seat atomically with seat mutations.
@@ -606,6 +615,7 @@ router.get("/games/:gameId/events", async (req, res) => {
     res.flushHeaders();
     addSseClient(gameId, token, res, viewerIndex, state.players[viewerIndex]?.id);
     sseWrite(`data: ${JSON.stringify(serializeState(state, viewerIndex))}\n\n`);
+    if (state.phase === "game_over") broadcast(gameId, state, client);
     ping = setInterval(() => {
       try { sseWrite(": ping\n\n"); } catch { clearInterval(ping); }
     }, 15000);
@@ -909,6 +919,32 @@ router.post("/games/:gameId/action", async (req, res) => {
     decisionData?: Record<string, unknown>;
     token?: string;
   };
+  // Coordination is allowed after finishing, including for a human whose seat
+  // is temporarily bot-covered. It never grants permission to restart.
+  if (type === "set_replay_ready") {
+    const seat = token ? await getPlayerIndexForToken(gameId, token, client) : null;
+    const player = seat != null && seat >= 0 ? state.players[seat] : undefined;
+    if (!["online", "facilitated"].includes(state.mode) || !player ||
+        player.id !== playerId || (player.isBot && !player.botCovering)) {
+      res.status(403).json({ error: "A valid participant seat token is required" }); return;
+    }
+    const event = await getEventForGame(gameId, client);
+    if (state.phase !== "game_over" || (event && ["ending", "completed"].includes(event.status))) {
+      res.status(409).json({ error: "Readiness is only available after a round in an open room" }); return;
+    }
+    if (typeof req.body.ready !== "boolean" || !Number.isInteger(req.body.roundNumber)) {
+      res.status(400).json({ error: "ready and roundNumber are required" }); return;
+    }
+    if (req.body.roundNumber !== (state.roundNumber ?? 1)) {
+      res.status(409).json({ error: "The round has changed" }); return;
+    }
+    const ready = new Set(state.replayReadyPlayerIds ?? []);
+    if (req.body.ready) ready.add(player.id); else ready.delete(player.id);
+    const next = { ...state, replayReadyPlayerIds: [...ready] };
+    await storeGame(next, client);
+    broadcast(gameId, next, client);
+    res.json(serializeState(next, seat!)); return;
+  }
   if (type === "set_turn_timer") {
     const index = token ? await getPlayerIndexForToken(gameId, token, client) : null;
     const user = await getRegisteredUser(req.body?.userToken, client);

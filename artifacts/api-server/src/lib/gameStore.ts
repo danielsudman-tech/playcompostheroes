@@ -1325,6 +1325,12 @@ export function removeSseClient(gameId: string, token: string, res?: Response): 
   if (!res || clients?.get(token)?.res === res) clients?.delete(token);
 }
 
+export function getConnectedPlayerIds(gameId: string): string[] {
+  return [...new Set([...(sseClientsByToken.get(gameId)?.values() ?? [])]
+    .filter(connection => !connection.revoked && connection.playerId)
+    .map(connection => connection.playerId!))];
+}
+
 export function sendKickedEvent(gameId: string, token: string): void {
   const clients = sseClientsByToken.get(gameId);
   if (!clients) return;

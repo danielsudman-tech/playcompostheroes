@@ -465,7 +465,7 @@ export function useGameAction(gameId: string, token?: string | null, callbacks?:
     onMutate: () => ({ key: gameStateKey(gameId, token) }),
     onSuccess: (data, _vars, ctx) => {
       queryClient.setQueryData(ctx?.key ?? gameStateKey(gameId, token), data);
-      if (callbacks?.onSuccess && data.log.length > 0) {
+      if (_vars.type !== "set_replay_ready" && callbacks?.onSuccess && data.log.length > 0) {
         const lastEntry = data.log[data.log.length - 1];
         callbacks.onSuccess(lastEntry);
       }

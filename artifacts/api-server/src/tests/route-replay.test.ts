@@ -9,6 +9,7 @@ import { launchGame, type GameState } from "../lib/gameEngine.js";
 import {
   addSseClient, broadcastToGame, createSpectatorHostToken, getGame,
   invalidateGameCaches, storeGame, withGameMutationLocks,
+  removeSseClient, getConnectedPlayerIds,
 } from "../lib/gameStore.js";
 import { restartFinishedGame } from "../lib/gameReplay.js";
 import { serializeState } from "../routes/game.js";
@@ -24,7 +25,7 @@ const retainFixtures = process.argv.includes("--browser-fixture");
 let succeeded = false;
 async function request(path: string, body?: object) {
   const response = await fetch(`${base}${path}`, {
-    method: body ? "POST" : "GET", headers: { "Content-Type": "application/json" },
+    method: body ? "POST" : "GET", headers: { "Content-Type": "application/json", Authorization: `Bearer ${userToken}` },
     body: body ? JSON.stringify(body) : undefined, signal: AbortSignal.timeout(10_000),
   });
   return { status: response.status, data: await response.json() as any };
@@ -79,8 +80,37 @@ try {
   const hostFrames = watch(gameId, token, 0, initial.players[0].id);
   const guestFrames = watch(gameId, guestToken, 1, initial.players[1].id);
   const resetBody = { type: "reset_game", token, userToken, playerId: initial.players[0].id };
+  const readyBody = { type: "set_replay_ready", token: guestToken,
+    playerId: initial.players[1].id, ready: true, roundNumber: 1 };
+  const readyPath = `/games/${gameId}/action`;
+  assert.equal((await request(readyPath, readyBody)).status, 409, "no readiness while waiting");
   assert.equal((await request(`/games/${gameId}/action`, resetBody)).status, 409, "cannot discard an unfinished round");
   const completed = await finish(gameId);
+  assert.equal((await request(readyPath, { ...readyBody, token: "invalid" })).status, 403);
+  assert.equal((await request(readyPath, { ...readyBody, playerId: initial.players[0].id })).status, 403);
+  assert.equal((await request(readyPath, { ...readyBody, ready: "true" })).status, 400);
+  assert.equal((await request(readyPath, { ...readyBody, roundNumber: 0 })).status, 409);
+  const readyResult = await request(readyPath, readyBody);
+  assert.equal(readyResult.status, 200, JSON.stringify(readyResult.data));
+  assert.deepEqual(readyResult.data.replayReadyPlayerIds, [readyBody.playerId]);
+  assert.deepEqual(hostFrames.at(-1).replayReadyPlayerIds, [readyBody.playerId]);
+  assert.deepEqual(guestFrames.at(-1).replayReadyPlayerIds, [readyBody.playerId]);
+  assert.deepEqual((await request(`/games/${gameId}?token=${guestToken}`)).data.replayReadyPlayerIds, [readyBody.playerId],
+    "reconnect/reload rehydrates readiness");
+  removeSseClient(gameId, guestToken);
+  assert.equal(getConnectedPlayerIds(gameId).includes(readyBody.playerId), false);
+  assert.deepEqual((await request(`/games/${gameId}?token=${token}`)).data.replayReadyPlayerIds, [readyBody.playerId],
+    "disconnect does not erase the participant's explicit choice");
+  watch(gameId, guestToken, 1, readyBody.playerId);
+  assert.equal(getConnectedPlayerIds(gameId).includes(readyBody.playerId), true);
+  const concurrentReady = await Promise.all([
+    request(readyPath, readyBody),
+    request(readyPath, { ...readyBody, token, playerId: initial.players[0].id }),
+  ]);
+  assert.ok(concurrentReady.every(result => result.status === 200));
+  assert.equal((await getGame(gameId))!.replayReadyPlayerIds?.length, 2, "concurrent ready updates do not overwrite seats");
+  assert.equal((await request(readyPath, { ...readyBody, ready: false })).status, 200);
+  assert.deepEqual(hostFrames.at(-1).replayReadyPlayerIds, [initial.players[0].id]);
   const priorLedger = (await pool.query(`SELECT * FROM compost_game_analytics WHERE game_id=$1`, [gameId])).rows[0];
   assert.equal((await request(`/games/${gameId}/action`, {
     type: "reset_game", token: guestToken, userToken: guestUserToken, playerId: initial.players[1].id,
@@ -90,6 +120,8 @@ try {
   assert.equal(reset.status, 200, JSON.stringify(reset.data));
   assert.equal(reset.data.gameId, gameId);
   assert.equal(reset.data.roundNumber, 2);
+  assert.deepEqual(reset.data.replayReadyPlayerIds, [], "new round clears readiness");
+  assert.equal((await request(readyPath, readyBody)).status, 409, "cannot ready during a round");
   assert.equal(reset.data.roundHistory.length, 1);
   assert.equal(reset.data.roundHistory[0].winnerName, "Host");
   assert.deepEqual(reset.data.players.map((p: any) => p.id), completed.players.map(p => p.id));
@@ -129,20 +161,46 @@ try {
   assert.equal(event.status, 201, JSON.stringify(event.data));
   const eventId = event.data.eventId, eventGame = event.data.tables[0].gameId;
   events.push(eventId); games.push(eventGame);
+  const eventSeats: any[] = [];
   for (const name of ["Guest One", "Guest Two"]) {
     const seat = await request(`/events/${event.data.code}/join`, { name });
     assert.equal(seat.status, 201, JSON.stringify(seat.data));
+    eventSeats.push(seat.data);
   }
+  await pool.query(`UPDATE compost_event_seats SET ready=true WHERE game_id=$1`, [eventGame]);
   await pool.query(`UPDATE compost_events SET status='active' WHERE id=$1`, [eventId]);
   await finish(eventGame);
   const hostToken = await createSpectatorHostToken(eventGame);
+  const eventState = (await getGame(eventGame))!;
+  const eventReady = { type: "set_replay_ready", playerId: eventState.players[0].id,
+    token: eventSeats[0].token, ready: true, roundNumber: 1 };
+  assert.deepEqual(serializeState(eventState, -1).replayReadyPlayerIds, [],
+    "waiting-room ready flags never become replay readiness");
+  assert.equal((await request(`/games/${eventGame}/action`, { ...eventReady, token: hostToken })).status, 403,
+    "spectator host is not a participant");
+  assert.equal((await request(`/games/${eventGame}/action`, eventReady)).status, 200);
+  await withGameMutationLocks([eventGame], async client => {
+    const covered = (await getGame(eventGame, client))!;
+    covered.players[0] = { ...covered.players[0], isBot: true, botCovering: true, botCoverReason: "host" };
+    await storeGame(covered, client);
+  });
+  assert.equal((await request(`/games/${eventGame}/action`, { ...eventReady, ready: false })).status, 200,
+    "covered humans may still toggle their own readiness");
+  assert.equal((await request(`/games/${eventGame}/action`, eventReady)).status, 200);
+  const eventDetail = await request(`/facilitator/events/${eventId}?userToken=${userToken}`);
+  assert.equal(eventDetail.status, 200, JSON.stringify(eventDetail.data));
+  assert.equal(eventDetail.data.tables[0].players[0].replayReady, true);
+  assert.equal(eventDetail.data.tables[0].players[0].botCovering, true);
+  assert.equal(eventDetail.data.tables[0].players[0].connected, false);
   const eventBody = { type: "reset_game", playerId: "host", token: hostToken, userToken };
   const eventReplay = await request(`/games/${eventGame}/action`, eventBody);
   assert.equal(eventReplay.status, 200, JSON.stringify(eventReplay.data));
   assert.equal(eventReplay.data.roundNumber, 2);
+  assert.deepEqual(eventReplay.data.replayReadyPlayerIds, []);
   assert.equal(eventReplay.data.eventId, eventId);
   assert.equal(eventReplay.data.players.every((p: any) => p.hand.every((c: any) => c.id === "back")), true, "spectator never sees hands");
   await finish(eventGame);
+  assert.equal((await request(`/games/${eventGame}/action`, eventReady)).status, 409, "stale round readiness is rejected");
   const tablePath = `/facilitator/events/${eventId}/tables/${eventGame}/control`;
   assert.equal((await request(tablePath, { userToken: guestUserToken, action: "restart" })).status, 403);
   const dashboardReplay = await request(tablePath, { userToken, action: "restart" });
@@ -153,17 +211,19 @@ try {
   for (const status of ["ending", "completed"]) {
     await pool.query(`UPDATE compost_events SET status=$2 WHERE id=$1`, [eventId, status]);
     assert.equal((await request(`/games/${eventGame}/action`, eventBody)).status, 409);
+    assert.equal((await request(`/games/${eventGame}/action`, { ...eventReady, roundNumber: 3 })).status, 409);
     assert.equal((await request(tablePath, { userToken, action: "restart" })).status, 409);
   }
   assert.equal((await getGame(eventGame))!.roundHistory?.length, 2);
   if (retainFixtures) {
-    await finish(gameId);
+    const fixtureState = await finish(gameId);
     await writeFile("/tmp/play-again-fixture.json", JSON.stringify({
       userToken, guestUserToken, hostId, guestId, gameId, token, guestToken, eventId,
+      roundNumber: fixtureState.roundNumber ?? 1,
     }));
   }
   succeeded = true;
-  console.log("route-replay: host authorization, regular/event replay, closed events, race protection, privacy, retained standings and separate round analytics passed");
+  console.log("route-replay: readiness toggles, concurrent clients, rehydration, covered seats, round isolation, host authorization, regular/event replay, closed events, privacy and round analytics passed");
 } finally {
   for (const id of games) { disarmTurnTimer(id); invalidateGameCaches(id); }
   if (!retainFixtures || !succeeded) {

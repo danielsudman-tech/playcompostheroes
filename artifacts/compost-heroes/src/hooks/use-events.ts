@@ -16,7 +16,7 @@ import {
   type EventDetail, type EventSummary, type PublicEvent, type EventControlResult, type EventTableResult, type EventInput, type EventUpdate,
 } from "@workspace/api-client-react";
 
-export interface EventSeat { playerId?: string; name?: string; playerName?: string; ready?: boolean; connected?: boolean; present?: boolean; lastSeenAt?: number | null }
+export interface EventSeat { playerId?: string; name?: string; playerName?: string; ready?: boolean; replayReady?: boolean; isBot?: boolean; botCovering?: boolean; connected?: boolean; present?: boolean; lastSeenAt?: number | null }
 export interface EventTable {
   gameId: string; tableNumber?: number; label?: string; name?: string; phase?: string; paused?: boolean;
   seats?: EventSeat[]; players?: EventSeat[]; playerCount?: number; readyCount?: number; maxPlayers?: number;
