@@ -33,3 +33,9 @@ mtime_ms = 1790830200086
 storage_uri = "gcs://replit-rams-assets-riker/rams/assets/repl:3f7f0763-f997-4313-8244-efe50696cc1e/a677f6f1-54ad-4314-9bd5-f7a999a81cb7/b028d6af-bd13-409b-b769-b3f4338de3c4"
 storage_version_token = "1790830231211021"
 content_type = "text/html"
+
+[[outputs]]
+id = "qoigZ47EKPX6rY2OsG_G8"
+uri = "file://.local/outputs/Compost-Heroes---Open-Play.pptx"
+type = "slides"
+title = "Compost Heroes · Open Play.pptx"
