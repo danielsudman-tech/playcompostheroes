@@ -1,0 +1,28 @@
+kind = "slides"
+previewPath = "/compost-heroes-open-play-event/"
+title = "Compost Heroes · Open Play"
+description = "Green Camps event deck: why Compost Heroes matters, how to play online, guided group play and next steps to host, buy, take the Snapshot or support Green Camps."
+version = "1.0.0"
+id = "artifacts/compost-heroes-open-play-event"
+router = "path"
+
+[[services]]
+name = "web"
+paths = [ "/compost-heroes-open-play-event/" ]
+localPort = 21300
+
+[services.development]
+run = "pnpm --filter @workspace/compost-heroes-open-play-event run dev"
+
+[services.production]
+build = [ "pnpm", "--filter", "@workspace/compost-heroes-open-play-event", "run", "build" ]
+serve = "static"
+publicDir = "artifacts/compost-heroes-open-play-event/dist/public"
+
+[[services.production.rewrites]]
+from = "/*"
+to = "/index.html"
+
+[services.env]
+PORT = "21300"
+BASE_PATH = "/compost-heroes-open-play-event/"

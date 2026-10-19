@@ -1,0 +1,208 @@
+format: "replit.sdm"
+version: 1
+size:
+  width: 1920
+  height: 1080
+background:
+  kind: "solid"
+  color:
+    kind: "token"
+    token: "background"
+theme:
+  colors:
+    background: "#F8F6F1"
+    surface: "#FCFAF8"
+    foreground: "#3D3129"
+    muted: "#847062"
+    accent: "#50A63F"
+    secondary: "#B27334"
+  fonts:
+    display: "Outfit"
+    body: "Nunito"
+assets:
+  logo:
+    src: "images/open-play-logo.png"
+elements:
+  -
+    id: "panel"
+    type: "shape"
+    frame:
+      x: 1020
+      y: 100
+      width: 790
+      height: 820
+    geometry:
+      kind: "preset"
+      preset: "roundRect"
+      cornerRadius: 24
+    fill:
+      kind: "solid"
+      color:
+        kind: "token"
+        token: "surface"
+  -
+    id: "openPlayLogo"
+    type: "image"
+    frame:
+      x: 1035
+      y: 120
+      width: 760
+      height: 780
+    assetId: "logo"
+    fit: "contain"
+  -
+    id: "introBar"
+    type: "shape"
+    frame:
+      x: 120
+      y: 215
+      width: 100
+      height: 9
+    geometry:
+      kind: "preset"
+      preset: "rect"
+    fill:
+      kind: "solid"
+      color:
+        kind: "token"
+        token: "accent"
+  -
+    id: "eyebrow"
+    type: "text"
+    frame:
+      x: 120
+      y: 156
+      width: 690
+      height: 50
+    body:
+      paragraphs:
+        -
+          runs:
+            -
+              text: "A GREEN CAMPS PROJECT"
+          defaultRunStyle:
+            font:
+              kind: "token"
+              token: "body"
+            sizePt: 19
+            weight: 700
+            color:
+              kind: "token"
+              token: "accent"
+          lineHeight: 1.25
+  -
+    id: "coverTitle"
+    type: "text"
+    frame:
+      x: 120
+      y: 220
+      width: 880
+      height: 250
+    body:
+      paragraphs:
+        -
+          runs:
+            -
+              text: "Play. Connect. Compost."
+          defaultRunStyle:
+            font:
+              kind: "token"
+              token: "display"
+            sizePt: 56
+            weight: 700
+            color:
+              kind: "token"
+              token: "foreground"
+          lineHeight: 1.09
+  -
+    id: "coverSub"
+    type: "text"
+    frame:
+      x: 120
+      y: 500
+      width: 880
+      height: 175
+    body:
+      paragraphs:
+        -
+          runs:
+            -
+              text: "A Compost Heroes Open Play experience · A project of Green Camps"
+          defaultRunStyle:
+            font:
+              kind: "token"
+              token: "body"
+            sizePt: 22
+            weight: 700
+            color:
+              kind: "token"
+              token: "secondary"
+          lineHeight: 1.25
+  -
+    id: "coverPrompt"
+    type: "text"
+    frame:
+      x: 120
+      y: 710
+      width: 850
+      height: 275
+    body:
+      paragraphs:
+        -
+          runs:
+            -
+              text: "Welcome! Share your name and camp or organization in the chat."
+          bullet:
+            kind: "character"
+            character: "•"
+          defaultRunStyle:
+            font:
+              kind: "token"
+              token: "body"
+            sizePt: 20
+            color:
+              kind: "token"
+              token: "foreground"
+          lineHeight: 1.22
+          spaceAfterPt: 8
+        -
+          runs:
+            -
+              text: "What helps your team turn a good idea into action?"
+          bullet:
+            kind: "character"
+            character: "•"
+          defaultRunStyle:
+            font:
+              kind: "token"
+              token: "body"
+            sizePt: 20
+            color:
+              kind: "token"
+              token: "foreground"
+          lineHeight: 1.22
+          spaceAfterPt: 8
+  -
+    id: "coverFoot"
+    type: "text"
+    frame:
+      x: 120
+      y: 995
+      width: 750
+      height: 45
+    body:
+      paragraphs:
+        -
+          runs:
+            -
+              text: "GREEN CAMPS   ×   COMPOST HEROES"
+          defaultRunStyle:
+            font:
+              kind: "token"
+              token: "body"
+            sizePt: 16
+            weight: 700
+            color:
+              kind: "token"
+              token: "muted"
+          lineHeight: 1.25

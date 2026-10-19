@@ -1,0 +1,110 @@
+[
+  {
+    "id": "welcome",
+    "position": 1,
+    "kind": "sdm",
+    "filepath": "src/data/slides/welcome.sdm.yaml",
+    "title": "Play. Connect. Compost.",
+    "description": "Welcome participants to the Green Camps Open Play session.",
+    "speakerNotes": ""
+  },
+  {
+    "id": "green-camps",
+    "position": 2,
+    "kind": "sdm",
+    "filepath": "src/data/slides/green-camps.sdm.yaml",
+    "title": "Green Camps: turn sustainability goals into action",
+    "description": "Introduce Green Camps through its practical camp sustainability journey",
+    "speakerNotes": ""
+  },
+  {
+    "id": "engagement",
+    "position": 3,
+    "kind": "sdm",
+    "filepath": "src/data/slides/engagement.sdm.yaml",
+    "title": "A game can start a bigger conversation",
+    "description": "Why Compost Heroes works as an engagement and reflection tool",
+    "speakerNotes": ""
+  },
+  {
+    "id": "five-functions",
+    "position": 4,
+    "kind": "sdm",
+    "filepath": "src/data/slides/five-functions.sdm.yaml",
+    "title": "Your goal: cover all five functions",
+    "description": "Explain the win condition with real Hero card art",
+    "speakerNotes": ""
+  },
+  {
+    "id": "table",
+    "position": 5,
+    "kind": "sdm",
+    "filepath": "src/data/slides/table.sdm.yaml",
+    "title": "Get to know your table",
+    "description": "Identify the main card zones on the game board",
+    "speakerNotes": ""
+  },
+  {
+    "id": "turn",
+    "position": 6,
+    "kind": "sdm",
+    "filepath": "src/data/slides/turn.sdm.yaml",
+    "title": "Your turn, in four steps",
+    "description": "Teach the default turn order and hand-limit behavior",
+    "speakerNotes": ""
+  },
+  {
+    "id": "cards",
+    "position": 7,
+    "kind": "sdm",
+    "filepath": "src/data/slides/cards.sdm.yaml",
+    "title": "Let the cards guide your strategy",
+    "description": "Introduce Hero and Action cards and guided effects",
+    "speakerNotes": ""
+  },
+  {
+    "id": "example",
+    "position": 8,
+    "kind": "sdm",
+    "filepath": "src/data/slides/example.sdm.yaml",
+    "title": "Watch one turn before we play",
+    "description": "Show an example of filling a missing function during a turn",
+    "speakerNotes": ""
+  },
+  {
+    "id": "join",
+    "position": 9,
+    "kind": "sdm",
+    "filepath": "src/data/slides/join.sdm.yaml",
+    "title": "Join your assigned table",
+    "description": "Explain how participants enter today’s game safely",
+    "speakerNotes": ""
+  },
+  {
+    "id": "play",
+    "position": 10,
+    "kind": "sdm",
+    "filepath": "src/data/slides/play.sdm.yaml",
+    "title": "Let’s play",
+    "description": "Leave a clear holding slide visible during breakout rooms",
+    "speakerNotes": ""
+  },
+  {
+    "id": "reflect",
+    "position": 11,
+    "kind": "sdm",
+    "filepath": "src/data/slides/reflect.sdm.yaml",
+    "title": "What did the game reveal?",
+    "description": "Use discussion questions to connect gameplay with real sustainability work",
+    "speakerNotes": ""
+  },
+  {
+    "id": "take-action",
+    "position": 12,
+    "kind": "sdm",
+    "filepath": "src/data/slides/take-action.sdm.yaml",
+    "title": "Turn today’s play into one next step",
+    "description": "Try the game at camp, take the Sustainability Snapshot, and explore Compost Heroes resources",
+    "speakerNotes": ""
+  }
+]

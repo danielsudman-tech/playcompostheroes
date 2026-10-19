@@ -1,0 +1,290 @@
+format: "replit.sdm"
+version: 1
+size:
+  width: 1920
+  height: 1080
+background:
+  kind: "solid"
+  color:
+    kind: "token"
+    token: "background"
+theme:
+  colors:
+    background: "#F8F6F1"
+    surface: "#FCFAF8"
+    foreground: "#3D3129"
+    muted: "#847062"
+    accent: "#50A63F"
+    secondary: "#B27334"
+  fonts:
+    display: "Outfit"
+    body: "Nunito"
+elements:
+  -
+    id: "headerBar"
+    type: "shape"
+    frame:
+      x: 120
+      y: 87
+      width: 100
+      height: 8
+    geometry:
+      kind: "preset"
+      preset: "rect"
+    fill:
+      kind: "solid"
+      color:
+        kind: "token"
+        token: "accent"
+  -
+    id: "chapter"
+    type: "text"
+    frame:
+      x: 240
+      y: 67
+      width: 850
+      height: 45
+    body:
+      paragraphs:
+        -
+          runs:
+            -
+              text: "COMPOST HEROES  /  OPEN PLAY"
+          defaultRunStyle:
+            font:
+              kind: "token"
+              token: "body"
+            sizePt: 16
+            weight: 700
+            color:
+              kind: "token"
+              token: "muted"
+          lineHeight: 1.25
+  -
+    id: "heading"
+    type: "text"
+    frame:
+      x: 120
+      y: 130
+      width: 1680
+      height: 140
+    body:
+      paragraphs:
+        -
+          runs:
+            -
+              text: "Turn today’s play into one next step"
+          defaultRunStyle:
+            font:
+              kind: "token"
+              token: "display"
+            sizePt: 42
+            weight: 700
+            color:
+              kind: "token"
+              token: "foreground"
+          lineHeight: 1.09
+  -
+    id: "footer"
+    type: "text"
+    frame:
+      x: 120
+      y: 1004
+      width: 440
+      height: 44
+    body:
+      paragraphs:
+        -
+          runs:
+            -
+              text: "A GREEN CAMPS PROJECT"
+          defaultRunStyle:
+            font:
+              kind: "token"
+              token: "body"
+            sizePt: 16
+            weight: 700
+            color:
+              kind: "token"
+              token: "muted"
+          lineHeight: 1.25
+  -
+    id: "page"
+    type: "text"
+    frame:
+      x: 1660
+      y: 1004
+      width: 150
+      height: 44
+    body:
+      paragraphs:
+        -
+          runs:
+            -
+              text: "12 / 12"
+          defaultRunStyle:
+            font:
+              kind: "token"
+              token: "body"
+            sizePt: 16
+            weight: 400
+            color:
+              kind: "token"
+              token: "muted"
+          lineHeight: 1.25
+  -
+    id: "closingSteps"
+    type: "text"
+    frame:
+      x: 120
+      y: 310
+      width: 1120
+      height: 570
+    body:
+      paragraphs:
+        -
+          runs:
+            -
+              text: "TRY IT: invite a staff team or camper group to play and debrief."
+          bullet:
+            kind: "character"
+            character: "•"
+          defaultRunStyle:
+            font:
+              kind: "token"
+              token: "body"
+            sizePt: 21
+            color:
+              kind: "token"
+              token: "foreground"
+          lineHeight: 1.22
+          spaceAfterPt: 10
+        -
+          runs:
+            -
+              text: "START YOUR CAMP’S JOURNEY: take the free Sustainability Snapshot."
+          bullet:
+            kind: "character"
+            character: "•"
+          defaultRunStyle:
+            font:
+              kind: "token"
+              token: "body"
+            sizePt: 21
+            color:
+              kind: "token"
+              token: "foreground"
+          lineHeight: 1.22
+          spaceAfterPt: 10
+        -
+          runs:
+            -
+              text: "assessment.greencamps.org · About 10 minutes · Personalized recommendations."
+          bullet:
+            kind: "character"
+            character: "•"
+          defaultRunStyle:
+            font:
+              kind: "token"
+              token: "body"
+            sizePt: 21
+            color:
+              kind: "token"
+              token: "foreground"
+          lineHeight: 1.22
+          spaceAfterPt: 10
+        -
+          runs:
+            -
+              text: "KEEP EXPLORING: compostheroes.org for decks, how-to-play information, and resources."
+          bullet:
+            kind: "character"
+            character: "•"
+          defaultRunStyle:
+            font:
+              kind: "token"
+              token: "body"
+            sizePt: 21
+            color:
+              kind: "token"
+              token: "foreground"
+          lineHeight: 1.22
+          spaceAfterPt: 10
+  -
+    id: "qrPanel"
+    type: "shape"
+    frame:
+      x: 1340
+      y: 290
+      width: 460
+      height: 650
+    geometry:
+      kind: "preset"
+      preset: "roundRect"
+      cornerRadius: 24
+    fill:
+      kind: "solid"
+      color:
+        kind: "token"
+        token: "surface"
+  -
+    id: "snapshotQR"
+    type: "image"
+    frame:
+      x: 1370
+      y: 320
+      width: 400
+      height: 400
+    assetId: "snapshot"
+    fit: "contain"
+  -
+    id: "greenCampsBrand"
+    type: "image"
+    frame:
+      x: 1370
+      y: 762
+      width: 185
+      height: 130
+    assetId: "greenCamps"
+    fit: "contain"
+  -
+    id: "compostBrand"
+    type: "image"
+    frame:
+      x: 1570
+      y: 750
+      width: 200
+      height: 165
+    assetId: "logo"
+    fit: "contain"
+  -
+    id: "closingQuestion"
+    type: "text"
+    frame:
+      x: 120
+      y: 910
+      width: 1140
+      height: 90
+    body:
+      paragraphs:
+        -
+          runs:
+            -
+              text: "What is one action you will take after today?"
+          defaultRunStyle:
+            font:
+              kind: "token"
+              token: "display"
+            sizePt: 24
+            weight: 700
+            color:
+              kind: "token"
+              token: "secondary"
+          lineHeight: 1.09
+assets:
+  snapshot:
+    src: "images/snapshot-qr.png"
+  greenCamps:
+    src: "images/green-camps-logo.png"
+  logo:
+    src: "images/open-play-logo.png"

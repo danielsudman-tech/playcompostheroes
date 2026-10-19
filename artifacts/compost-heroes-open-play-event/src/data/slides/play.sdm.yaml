@@ -1,0 +1,215 @@
+format: "replit.sdm"
+version: 1
+size:
+  width: 1920
+  height: 1080
+background:
+  kind: "solid"
+  color:
+    kind: "token"
+    token: "background"
+theme:
+  colors:
+    background: "#F8F6F1"
+    surface: "#FCFAF8"
+    foreground: "#3D3129"
+    muted: "#847062"
+    accent: "#50A63F"
+    secondary: "#B27334"
+  fonts:
+    display: "Outfit"
+    body: "Nunito"
+assets:
+  logo:
+    src: "images/open-play-logo.png"
+elements:
+  -
+    id: "playPanel"
+    type: "shape"
+    frame:
+      x: 1000
+      y: 105
+      width: 815
+      height: 828
+    geometry:
+      kind: "preset"
+      preset: "roundRect"
+      cornerRadius: 24
+    fill:
+      kind: "solid"
+      color:
+        kind: "token"
+        token: "surface"
+  -
+    id: "playLogo"
+    type: "image"
+    frame:
+      x: 1032
+      y: 160
+      width: 750
+      height: 740
+    assetId: "logo"
+    fit: "contain"
+  -
+    id: "playBar"
+    type: "shape"
+    frame:
+      x: 120
+      y: 130
+      width: 105
+      height: 9
+    geometry:
+      kind: "preset"
+      preset: "rect"
+    fill:
+      kind: "solid"
+      color:
+        kind: "token"
+        token: "accent"
+  -
+    id: "playTitle"
+    type: "text"
+    frame:
+      x: 120
+      y: 180
+      width: 850
+      height: 170
+    body:
+      paragraphs:
+        -
+          runs:
+            -
+              text: "Let’s play"
+          defaultRunStyle:
+            font:
+              kind: "token"
+              token: "display"
+            sizePt: 60
+            weight: 700
+            color:
+              kind: "token"
+              token: "foreground"
+          lineHeight: 1.09
+  -
+    id: "playSteps"
+    type: "text"
+    frame:
+      x: 120
+      y: 385
+      width: 810
+      height: 550
+    body:
+      paragraphs:
+        -
+          runs:
+            -
+              text: "Introduce yourselves at your table."
+          bullet:
+            kind: "character"
+            character: "•"
+          defaultRunStyle:
+            font:
+              kind: "token"
+              token: "body"
+            sizePt: 20
+            color:
+              kind: "token"
+              token: "foreground"
+          lineHeight: 1.22
+          spaceAfterPt: 5
+        -
+          runs:
+            -
+              text: "Read your cards and talk through questions together."
+          bullet:
+            kind: "character"
+            character: "•"
+          defaultRunStyle:
+            font:
+              kind: "token"
+              token: "body"
+            sizePt: 20
+            color:
+              kind: "token"
+              token: "foreground"
+          lineHeight: 1.22
+          spaceAfterPt: 5
+        -
+          runs:
+            -
+              text: "Try a turn—you do not need to memorize every card."
+          bullet:
+            kind: "character"
+            character: "•"
+          defaultRunStyle:
+            font:
+              kind: "token"
+              token: "body"
+            sizePt: 20
+            color:
+              kind: "token"
+              token: "foreground"
+          lineHeight: 1.22
+          spaceAfterPt: 5
+        -
+          runs:
+            -
+              text: "Need help? Use Zoom’s Ask for Help in your breakout room."
+          bullet:
+            kind: "character"
+            character: "•"
+          defaultRunStyle:
+            font:
+              kind: "token"
+              token: "body"
+            sizePt: 20
+            color:
+              kind: "token"
+              token: "foreground"
+          lineHeight: 1.22
+          spaceAfterPt: 5
+        -
+          runs:
+            -
+              text: "Watch for your host’s message to return for the debrief."
+          bullet:
+            kind: "character"
+            character: "•"
+          defaultRunStyle:
+            font:
+              kind: "token"
+              token: "body"
+            sizePt: 20
+            color:
+              kind: "token"
+              token: "foreground"
+          lineHeight: 1.22
+          spaceAfterPt: 5
+  -
+    id: "playFooter"
+    type: "text"
+    frame:
+      x: 120
+      y: 950
+      width: 1680
+      height: 80
+    body:
+      paragraphs:
+        -
+          runs:
+            -
+              text: "play.compostheroes.org"
+              action:
+                kind: "openUrl"
+                url: "https://play.compostheroes.org/"
+                target: "newWindow"
+          defaultRunStyle:
+            font:
+              kind: "token"
+              token: "body"
+            sizePt: 30
+            weight: 700
+            color:
+              kind: "token"
+              token: "accent"
+          lineHeight: 1.25

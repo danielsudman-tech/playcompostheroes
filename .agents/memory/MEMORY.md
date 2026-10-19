@@ -10,3 +10,4 @@
 - [Long browser waits](long-browser-waits.md) — avoid a single >45-second wait in workshop browser checks; it can reset saved contexts.
 - [Printed-card game language](game-language.md) — collect functions in function slots; preserve the distinct real layer used by card rules.
 - [Game analytics semantics](game-analytics-semantics.md) — distinct games, human engagement, and known timing; legacy event totals need deduplication.
+- [Shared workspace installs](shared-workspace-installs.md) — adding artifact dependencies can invalidate running Vite services even when their source is unchanged.

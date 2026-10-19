@@ -1,0 +1,242 @@
+format: "replit.sdm"
+version: 1
+size:
+  width: 1920
+  height: 1080
+background:
+  kind: "solid"
+  color:
+    kind: "token"
+    token: "background"
+theme:
+  colors:
+    background: "#F8F6F1"
+    surface: "#FCFAF8"
+    foreground: "#3D3129"
+    muted: "#847062"
+    accent: "#50A63F"
+    secondary: "#B27334"
+  fonts:
+    display: "Outfit"
+    body: "Nunito"
+assets:
+  art:
+    src: "images/previous-hero-art.jpeg"
+elements:
+  -
+    id: "headerBar"
+    type: "shape"
+    frame:
+      x: 120
+      y: 87
+      width: 100
+      height: 8
+    geometry:
+      kind: "preset"
+      preset: "rect"
+    fill:
+      kind: "solid"
+      color:
+        kind: "token"
+        token: "accent"
+  -
+    id: "chapter"
+    type: "text"
+    frame:
+      x: 240
+      y: 67
+      width: 850
+      height: 45
+    body:
+      paragraphs:
+        -
+          runs:
+            -
+              text: "COMPOST HEROES  /  OPEN PLAY"
+          defaultRunStyle:
+            font:
+              kind: "token"
+              token: "body"
+            sizePt: 16
+            weight: 700
+            color:
+              kind: "token"
+              token: "muted"
+          lineHeight: 1.25
+  -
+    id: "heading"
+    type: "text"
+    frame:
+      x: 120
+      y: 130
+      width: 1680
+      height: 200
+    body:
+      paragraphs:
+        -
+          runs:
+            -
+              text: "A game can start a bigger conversation"
+          defaultRunStyle:
+            font:
+              kind: "token"
+              token: "display"
+            sizePt: 42
+            weight: 700
+            color:
+              kind: "token"
+              token: "foreground"
+          lineHeight: 1.09
+  -
+    id: "footer"
+    type: "text"
+    frame:
+      x: 120
+      y: 1004
+      width: 440
+      height: 44
+    body:
+      paragraphs:
+        -
+          runs:
+            -
+              text: "A GREEN CAMPS PROJECT"
+          defaultRunStyle:
+            font:
+              kind: "token"
+              token: "body"
+            sizePt: 16
+            weight: 700
+            color:
+              kind: "token"
+              token: "muted"
+          lineHeight: 1.25
+  -
+    id: "page"
+    type: "text"
+    frame:
+      x: 1660
+      y: 1004
+      width: 150
+      height: 44
+    body:
+      paragraphs:
+        -
+          runs:
+            -
+              text: "03 / 12"
+          defaultRunStyle:
+            font:
+              kind: "token"
+              token: "body"
+            sizePt: 16
+            weight: 400
+            color:
+              kind: "token"
+              token: "muted"
+          lineHeight: 1.25
+  -
+    id: "why"
+    type: "text"
+    frame:
+      x: 120
+      y: 345
+      width: 810
+      height: 620
+    body:
+      paragraphs:
+        -
+          runs:
+            -
+              text: "Compost Heroes is a playful way to explore composting and food waste."
+          bullet:
+            kind: "character"
+            character: "•"
+          defaultRunStyle:
+            font:
+              kind: "token"
+              token: "body"
+            sizePt: 21
+            color:
+              kind: "token"
+              token: "foreground"
+          lineHeight: 1.22
+          spaceAfterPt: 10
+        -
+          runs:
+            -
+              text: "Friendly competition gives people a reason to participate."
+          bullet:
+            kind: "character"
+            character: "•"
+          defaultRunStyle:
+            font:
+              kind: "token"
+              token: "body"
+            sizePt: 21
+            color:
+              kind: "token"
+              token: "foreground"
+          lineHeight: 1.22
+          spaceAfterPt: 10
+        -
+          runs:
+            -
+              text: "Choices create opportunities to talk about balance, trade-offs, and change."
+          bullet:
+            kind: "character"
+            character: "•"
+          defaultRunStyle:
+            font:
+              kind: "token"
+              token: "body"
+            sizePt: 21
+            color:
+              kind: "token"
+              token: "foreground"
+          lineHeight: 1.22
+          spaceAfterPt: 10
+        -
+          runs:
+            -
+              text: "The debrief connects the experience to your camp or team."
+          bullet:
+            kind: "character"
+            character: "•"
+          defaultRunStyle:
+            font:
+              kind: "token"
+              token: "body"
+            sizePt: 21
+            color:
+              kind: "token"
+              token: "foreground"
+          lineHeight: 1.22
+          spaceAfterPt: 10
+  -
+    id: "artPanel"
+    type: "shape"
+    frame:
+      x: 960
+      y: 270
+      width: 840
+      height: 620
+    geometry:
+      kind: "preset"
+      preset: "roundRect"
+      cornerRadius: 24
+    fill:
+      kind: "solid"
+      color:
+        kind: "token"
+        token: "surface"
+  -
+    id: "oldArt"
+    type: "image"
+    frame:
+      x: 982
+      y: 310
+      width: 798
+      height: 520
+    assetId: "art"
+    fit: "contain"
