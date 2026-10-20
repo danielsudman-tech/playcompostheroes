@@ -1558,7 +1558,7 @@ export default function FacilitatedGame() {
             <div className="absolute top-0 left-0 w-full h-2 bg-gradient-to-r from-primary via-yellow-400 to-primary" />
             <h2 className="text-5xl font-display font-bold text-foreground mb-2">Game Over!</h2>
             <div className="text-2xl font-medium text-muted-foreground mb-8">
-              {gameState.winner ? <>Winner: <span className="font-bold text-primary">{gameState.players.find((p) => p.id === gameState.winner)?.name}</span></> : "This round was ended by the host."}
+              {gameState.winner ? <>Winner: <span className="font-bold text-primary">{gameState.roundHistory?.find(round => round.roundNumber === (gameState.roundNumber ?? 1))?.winnerName ?? gameState.players.find((p) => p.id === gameState.winner)?.name}</span></> : "This round was ended by the host."}
             </div>
             <div className="bg-muted rounded-2xl p-6 mb-8">
               <p className="text-sm text-muted-foreground mb-4 font-medium uppercase tracking-wider">Final Standings</p>

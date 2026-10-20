@@ -174,7 +174,8 @@ async function buildDetail(eventId: string, includeTokens = false, client: PgQue
           .filter((fn) => WIN_FUNCTIONS.includes(fn as (typeof WIN_FUNCTIONS)[number])),
       ).size)),
       currentTurnPlayerName: state.players[state.currentPlayerIndex]?.name ?? null,
-      winner: state.winner ? state.players.find((p) => p.id === state.winner)?.name ?? null : null,
+      winner: state.roundHistory?.find(round => round.roundNumber === (state.roundNumber ?? 1))?.winnerName
+        ?? (state.winner ? state.players.find((p) => p.id === state.winner)?.name ?? null : null),
       pendingDecisionOwner,
       questions,
       lastMeaningfulActivityAt: activityAt == null ? null : Number(activityAt),
@@ -542,6 +543,7 @@ async function changeTable(client: PgClient, gameId: string, action: string, tex
       next = { ...launched.state, lastMeaningfulActivityAt: Date.now() } as GameState;
     } else if (action === "restart") {
       if (state.phase !== "game_over") return { gameId, success: false, error: "Finish the current round before playing again" };
+      if (state.players.length < 2) return { gameId, success: false, error: "At least two players are needed to start another round" };
       next = restartFinishedGame(state);
     } else if (action === "pause" || action === "pause_all") {
       if (state.phase === "game_over") return { gameId, success: true, error: null };

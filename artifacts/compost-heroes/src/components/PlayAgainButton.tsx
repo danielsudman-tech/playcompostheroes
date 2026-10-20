@@ -7,12 +7,12 @@ import {
   AlertDialogCancel, AlertDialogAction,
 } from "@/components/ui/alert-dialog";
 
-export function PlayAgainButton({ pending, onConfirm, roundNumber, seats }: {
-  pending: boolean; onConfirm: () => void; roundNumber?: number; seats?: ReplaySeat[];
+export function PlayAgainButton({ pending, onConfirm, roundNumber, seats, disabled = false }: {
+  pending: boolean; onConfirm: () => void; roundNumber?: number; seats?: ReplaySeat[]; disabled?: boolean;
 }) {
   return <AlertDialog>
     <AlertDialogTrigger asChild>
-      <Button disabled={pending} data-testid="button-play-again">
+      <Button disabled={pending || disabled} data-testid="button-play-again">
         <RefreshCcw className="w-4 h-4 mr-2" />{pending ? "Starting round…" : "Play again"}
       </Button>
     </AlertDialogTrigger>
@@ -27,7 +27,7 @@ export function PlayAgainButton({ pending, onConfirm, roundNumber, seats }: {
       {seats && <ReplayReadiness seats={seats} />}
       <AlertDialogFooter>
         <AlertDialogCancel>Not yet</AlertDialogCancel>
-        <AlertDialogAction disabled={pending} onClick={onConfirm} data-testid="button-confirm-play-again">
+        <AlertDialogAction disabled={pending || disabled} onClick={onConfirm} data-testid="button-confirm-play-again">
           Start new round
         </AlertDialogAction>
       </AlertDialogFooter>

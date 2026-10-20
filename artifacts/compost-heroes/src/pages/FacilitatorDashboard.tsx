@@ -43,6 +43,7 @@ import { getGameEventId, useEvent } from "@/hooks/use-events";
 import { PlayAgainButton } from "@/components/PlayAgainButton";
 import { ReplayReadiness, replaySeats } from "@/components/ReplayReadiness";
 import { RoundHistory } from "@/components/RoundHistory";
+import { PlayerTransferControl, type TransferDestination } from "@/components/PlayerTransferControl";
 import { cn } from "@/lib/utils";
 import {
   Loader2,
@@ -59,7 +60,6 @@ import {
   ArrowLeft,
   ArrowUp,
   ArrowDown,
-  MoveRight,
   Crown,
   Megaphone,
   Send,
@@ -205,12 +205,15 @@ export default function FacilitatorDashboard() {
   const currentPlayer = gameState.players[gameState.currentPlayerIndex];
   const decisionOwner = decision ? gameState.players.find((p) => p.id === decision.playerId) : null;
   const isWaitingRoom = gameState.phase === "waiting";
+  const finishedRound = gameState.roundHistory?.find(round => round.roundNumber === (gameState.roundNumber ?? 1));
+  const finishedWinnerName = finishedRound?.winnerName
+    ?? gameState.players.find(player => player.id === gameState.winner)?.name;
   const displayedMaxPlayers = gameState.maxPlayers ?? 4;
 
   const statusText = (() => {
     if (isWaitingRoom) return "Waiting room — game not started yet";
     if (gameState.phase === "game_over")
-      return `Game over — ${gameState.players.find((p) => p.id === gameState.winner)?.name ?? "someone"} wins!`;
+      return `Game over — ${finishedWinnerName ?? "someone"} wins!`;
     if (paused) return "Game paused";
     if (decision) return `Waiting on ${decisionOwner?.name ?? "a player"}: ${decision.prompt}`;
     return `${currentPlayer?.name}'s turn — ${gameState.phase === "draw" ? "drawing a card" : "playing a card"}`;
@@ -231,7 +234,9 @@ export default function FacilitatorDashboard() {
         setKickTarget(null);
         toast({
           title: `${name} removed`,
-          description: isWaitingRoom ? "Their seat is now open." : "A bot has taken over their seat so the game can continue.",
+          description: isWaitingRoom || gameState.phase === "game_over"
+            ? "Their seat is now open. Finished results are preserved."
+            : "A bot has taken over their seat so the game can continue.",
         });
       },
       onError: (e) => toast({ title: "Could not remove player", description: (e as Error).message, variant: "destructive" }),
@@ -257,11 +262,24 @@ export default function FacilitatorDashboard() {
     });
   };
 
-  const availableTransferRooms = facilitatorRooms.filter((room) => {
-    const roomId = room.gameId ?? (room as any).id;
-    return roomId !== gameId && (!(room as any).phase || (room as any).phase === "waiting") &&
-      (!(room as any).mode || (room as any).mode === "facilitated");
-  });
+  const eventClosed = !!linkedEvent.data && ["ending", "completed"].includes(linkedEvent.data.status);
+  const rosterEditable = isFacilitated && ["waiting", "game_over"].includes(gameState.phase) &&
+    !eventClosed && (!gameState.eventId || !!linkedEvent.data);
+  const candidateRooms: TransferDestination[] = gameState.eventId
+    ? (linkedEvent.data?.tables ?? []).map(table => ({
+      gameId: table.gameId, label: `Table ${table.tableNumber ?? ""}`,
+      phase: table.phase, playerCount: table.playerCount ?? table.seats?.length ?? 0,
+      maxPlayers: table.maxPlayers ?? table.capacity ?? 4,
+    }))
+    : facilitatorRooms.filter(room => !(room as any).mode || (room as any).mode === "facilitated");
+  const availableTransferRooms = rosterEditable ? candidateRooms.filter(room =>
+    room.gameId !== gameId && ["waiting", "game_over"].includes(room.phase ?? "") &&
+    (room.playerCount ?? 0) < (room.maxPlayers ?? 4)) : [];
+  const transferPlayer = (player: { id: string; name: string }, targetGameId: string) =>
+    transferMutation.mutate({ playerId: player.id, targetGameId }, {
+      onSuccess: () => toast({ title: `${player.name} transferred`, description: "Their browser will move to the selected table. Finished standings are saved." }),
+      onError: error => toast({ title: "Transfer failed", description: (error as Error).message, variant: "destructive" }),
+    });
 
   return (
     <div className="min-h-screen bg-background game-table-pattern flex flex-col text-foreground">
@@ -480,41 +498,9 @@ export default function FacilitatorDashboard() {
                               data-testid={`button-reorder-down-${player.id}`}
                             ><ArrowDown className="w-4 h-4" /></Button>
                           </div>
-                          {availableTransferRooms.length > 0 && (
-                            <div className="flex items-center gap-1.5 w-full sm:w-auto sm:ml-auto">
-                              <select
-                                id={`transfer-room-${player.id}`}
-                                className="min-w-0 flex-1 sm:w-40 h-8 px-2 rounded-lg border border-border bg-background text-xs"
-                                defaultValue=""
-                                aria-label={`Transfer ${player.name} to another waiting room`}
-                                data-testid={`select-transfer-room-${player.id}`}
-                              >
-                                <option value="" disabled>Destination room…</option>
-                                {availableTransferRooms.map((room) => {
-                                  const roomId = room.gameId ?? (room as any).id;
-                                  return <option key={roomId} value={roomId}>{room.label || `Room ${roomId}`}</option>;
-                                })}
-                              </select>
-                              <Button
-                                size="sm"
-                                variant="outline"
-                                className="h-8 rounded-lg shrink-0"
-                                disabled={transferMutation.isPending}
-                                onClick={() => {
-                                  const select = document.getElementById(`transfer-room-${player.id}`) as HTMLSelectElement | null;
-                                  if (!select?.value) {
-                                    toast({ title: "Choose a destination room first", variant: "destructive" });
-                                    return;
-                                  }
-                                  transferMutation.mutate({ playerId: player.id, targetGameId: select.value }, {
-                                    onSuccess: () => toast({ title: `${player.name} transferred`, description: "They'll be moved to the selected room." }),
-                                    onError: (e) => toast({ title: "Transfer failed", description: (e as Error).message, variant: "destructive" }),
-                                  });
-                                }}
-                                data-testid={`button-transfer-${player.id}`}
-                              ><MoveRight className="w-3.5 h-3.5 mr-1" /> Transfer</Button>
-                            </div>
-                          )}
+                          <PlayerTransferControl player={player} rooms={availableTransferRooms}
+                            pending={transferMutation.isPending || kickMutation.isPending}
+                            onTransfer={target => transferPlayer(player, target)} />
                           {!(player as any).isBot && (
                             <Button
                               size="sm"
@@ -532,6 +518,37 @@ export default function FacilitatorDashboard() {
                   ))}
                 </div>
               )}
+            </section>
+          )}
+
+          {gameState.phase === "game_over" && rosterEditable && (
+            <section className="rounded-2xl border bg-card/90 p-4 space-y-3" data-testid="next-round-roster">
+              <h2 className="font-display font-bold">Prepare the next round</h2>
+              <p className="text-xs text-muted-foreground">
+                Transfer players to waiting or finished tables with open seats, or remove them.
+                Finished standings stay saved; old cards do not move. Ready checks reset when seats change.
+              </p>
+              {gameState.players.map((player, index) => (hostIsSpectator || index > 0) && (
+                <div key={player.id} className="flex flex-wrap items-center gap-2 rounded-xl border p-2.5"
+                  data-testid={`next-round-player-${player.id}`}>
+                  <span className="flex-1 font-semibold text-sm">{player.name}</span>
+                  {(!player.isBot || player.botCovering) && <PlayerTransferControl player={player}
+                    rooms={availableTransferRooms} pending={transferMutation.isPending || kickMutation.isPending}
+                    onTransfer={target => transferPlayer(player, target)} />}
+                  <Button size="sm" variant="outline" className="text-destructive"
+                    disabled={transferMutation.isPending || kickMutation.isPending}
+                    onClick={() => setKickTarget({ id: player.id, name: player.name })}
+                    data-testid={`button-remove-player-${player.id}`}>
+                    <UserX className="w-3.5 h-3.5 mr-1" /> Remove
+                  </Button>
+                </div>
+              ))}
+              {!availableTransferRooms.length && <p className="text-xs text-muted-foreground">
+                No other waiting or finished table currently has an open seat.
+              </p>}
+              {gameState.players.length < 2 && <p className="text-sm font-semibold text-amber-700">
+                At least two players are needed to start another round. Transfer players here from another table.
+              </p>}
             </section>
           )}
 
@@ -572,7 +589,7 @@ export default function FacilitatorDashboard() {
               <span className="flex items-center gap-2 text-sm font-extrabold text-foreground">
                 <Trophy className="w-4 h-4 text-amber-500" />
                 {gameState.winner
-                  ? `${gameState.players.find((p) => p.id === gameState.winner)?.name ?? "Someone"} won the game!`
+                  ? `${finishedWinnerName ?? "Someone"} won the game!`
                   : "Session ended by facilitator"}
               </span>
               {(!gameState.eventId || (linkedEvent.data &&
@@ -580,6 +597,7 @@ export default function FacilitatorDashboard() {
               <ReplayReadiness seats={replaySeats(gameState)} />
               <PlayAgainButton
                 pending={replayMutation.isPending}
+                disabled={gameState.players.length < 2}
                 roundNumber={gameState.roundNumber ?? 1}
                 seats={replaySeats(gameState)}
                 onConfirm={() => replayMutation.mutate({ type: "reset_game", playerId: claim?.playerId ?? "host" })}
@@ -595,9 +613,11 @@ export default function FacilitatorDashboard() {
                     return `${mins} min · ${gameState.turnNumber} turns`;
                   })()}
                 </span>
-                {gameState.players.map((p) => (
-                  <span key={p.id}>
-                    <strong className="text-foreground">{p.name}</strong>: {collectedCategoryCount(p.compostPile)}/5 functions
+                {(finishedRound?.standings ?? gameState.players.map(player => ({
+                  playerId: player.id, name: player.name, functionsFilled: collectedCategoryCount(player.compostPile),
+                }))).map((p) => (
+                  <span key={p.playerId}>
+                    <strong className="text-foreground">{p.name}</strong>: {p.functionsFilled}/5 functions
                   </span>
                 ))}
               </div>
@@ -743,7 +763,7 @@ export default function FacilitatorDashboard() {
           <AlertDialogHeader>
             <AlertDialogTitle>Remove {kickTarget?.name} from this table?</AlertDialogTitle>
             <AlertDialogDescription>
-              {isWaitingRoom
+              {isWaitingRoom || gameState.phase === "game_over"
                 ? "They will lose access to this room and their seat will be available for someone else."
                 : "They will immediately lose access to this game. A bot will take over their seat and keep their cards and pile so the game can continue."}
             </AlertDialogDescription>

@@ -8,3 +8,9 @@ Facilitated players do not need an account; Online players do. To screenshot/tes
 **How to apply:** any visual verification of `/game/:id/table` or `/game/:id/host`.
 
 Layout rule: the facilitated table is sized so 4 players fit a 900px-tall laptop window with zero scrolling — the local player's row is pinned above the hand footer; only opponent rows scroll. Keep this budget when adding board UI.
+
+Seed browser test storage once on the app origin, or guard initialization so it cannot overwrite existing values on navigation. Normalize event-code storage keys to lowercase.
+
+**Why:** An unconditional navigation init script restored an obsolete source seat after a successful transfer; an uppercase fixture key also made the tester inspect a different entry from the app. This produced a false app failure.
+
+**How to apply:** Test transfers, reloads and event returns with browser state allowed to evolve naturally. Resolve current player identities from destination claims rather than reusing original fixture IDs.

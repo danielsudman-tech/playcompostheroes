@@ -10,6 +10,7 @@ import {
 import { GameStoreCache } from "./gameStoreCache.js";
 import { syncTurnClock } from "./turnClock.js";
 import { STORE_GAME_WITH_ANALYTICS_SQL } from "./gameAnalytics.js";
+import { updateRoundRoster } from "./gameReplay.js";
 
 export type PgQueryResult = { rows: any[]; rowCount?: number | null };
 export type PgQueryable = { query: (...args: any[]) => Promise<PgQueryResult> };
@@ -818,7 +819,7 @@ export async function transferWaitingPlayer(
     }
     const source = rows.get(sourceGameId)!;
     const target = rows.get(targetGameId)!;
-    const validRoom = (g: GameState) => g.mode === "facilitated" && g.phase === "waiting";
+    const validRoom = (g: GameState) => g.mode === "facilitated" && ["waiting", "game_over"].includes(g.phase);
     if (!validRoom(source) || !validRoom(target) || source.facilitatorId !== target.facilitatorId ||
         sourceGameId === targetGameId || (target.maxPlayers ?? 4) <= target.players.length ||
         (source.hostIsSpectator !== true && source.players[0]?.id === playerId)) {
@@ -869,16 +870,25 @@ export async function transferWaitingPlayer(
       }
     }
     let movedPlayer = source.players[playerIndex];
-    if (target.players.some((p) => p.id === playerId)) {
-      const usedIds = new Set(target.players.map((p) => p.id));
+    const usedIds = new Set([
+      ...target.players.map(player => player.id),
+      ...(target.roundHistory ?? []).flatMap(round => round.standings.map(player => player.playerId)),
+    ]);
+    if (usedIds.has(playerId)) {
       let uniqueId = `player_${generateId()}_${generateId()}`;
       while (usedIds.has(uniqueId)) uniqueId = `player_${generateId()}_${generateId()}`;
       movedPlayer = { ...movedPlayer, id: uniqueId };
     }
+    // Old-round cards and effects must never move into another table.
+    movedPlayer = {
+      ...movedPlayer, hand: [], compostPile: [], skipsNextTurn: false,
+      maxHandSize: 5, drawsExtraCard: false, consecutiveMissedTurns: 0,
+      lastMissedTurnNumber: undefined,
+    };
     const sourcePlayers = source.players.filter((p) => p.id !== playerId);
     const targetPlayers = [...target.players, movedPlayer];
-    const nextSource = { ...source, players: sourcePlayers };
-    const nextTarget = { ...target, players: targetPlayers };
+    const nextSource = updateRoundRoster(source, sourcePlayers);
+    const nextTarget = updateRoundRoster(target, targetPlayers);
     const movedToken = movingRow.token as string;
     // Make source seats temporary before shifting down to avoid index collisions.
     for (const row of tokenRows.rows) {
@@ -1180,8 +1190,7 @@ export async function kickFacilitatedPlayer(
     const state = (typeof gameResult.rows[0].state === "string"
       ? JSON.parse(gameResult.rows[0].state)
       : gameResult.rows[0].state) as GameState;
-    if (state.mode !== "facilitated" || state.facilitatorId !== facilitatorId ||
-        state.phase === "game_over") {
+    if (state.mode !== "facilitated" || state.facilitatorId !== facilitatorId) {
       await client.query("ROLLBACK");
       return null;
     }
@@ -1202,7 +1211,7 @@ export async function kickFacilitatedPlayer(
     const removedIndex = state.players.findIndex((player) => player.id === playerId);
     const protectedHostIndex = state.hostIsSpectator === true ? -1 : 0;
     const target = state.players[removedIndex];
-    if (!target || removedIndex === protectedHostIndex || target.isBot) {
+    if (!target || removedIndex === protectedHostIndex || (target.isBot && state.phase !== "game_over")) {
       await client.query("ROLLBACK");
       return null;
     }
@@ -1212,13 +1221,10 @@ export async function kickFacilitatedPlayer(
     );
     const removedToken = (removedTokenRow?.token as string | undefined) ?? null;
     let nextState: GameState;
-    const active = state.phase !== "waiting";
+    const active = !["waiting", "game_over"].includes(state.phase);
 
     if (!active) {
-      nextState = {
-        ...state,
-        players: state.players.filter((player) => player.id !== playerId),
-      };
+      nextState = updateRoundRoster(state, state.players.filter((player) => player.id !== playerId));
       if (removedTokenRow) {
         await client.query(
           `DELETE FROM compost_game_tokens WHERE game_id = $1 AND token = $2`,

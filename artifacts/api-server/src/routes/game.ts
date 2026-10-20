@@ -1138,6 +1138,9 @@ router.post("/games/:gameId/action", async (req, res) => {
         if (state.phase !== "game_over") {
           res.status(409).json({ error: "Finish the current round before playing again" }); return;
         }
+        if (state.players.length < 2) {
+          res.status(409).json({ error: "At least two players are needed to start another round" }); return;
+        }
         const newState = restartFinishedGame(state);
         await storeGame(newState, client);
         broadcast(newState.gameId, newState, client);
@@ -1280,8 +1283,8 @@ router.post("/games/:gameId/waiting/reorder", async (req, res) => {
   res.json(serializeState(state, check.hostIndex));
 });
 
-// POST /api/games/:gameId/waiting/transfer — move a waiting participant to a
-// different waiting room owned by this same approved facilitator.
+// POST /api/games/:gameId/waiting/transfer — legacy path retained for compatible
+// transfers before play or between rounds, within one open event or host's rooms.
 router.post("/games/:gameId/waiting/transfer", async (req, res) => {
   const { gameId } = req.params as { gameId: string };
   const { token, playerId, targetGameId } = req.body as {
@@ -1304,7 +1307,7 @@ router.post("/games/:gameId/waiting/transfer", async (req, res) => {
     return;
   }
   if (!outcome.result) {
-    res.status(409).json({ error: "Player could not be transferred; verify both rooms are waiting sessions with available space" });
+    res.status(409).json({ error: "Both tables must be waiting or finished, in the same open event (or standalone rooms you host), with space at the destination" });
     return;
   }
   // Deliver the reconnect instruction before dropping the old event stream.
@@ -1362,11 +1365,7 @@ router.delete("/games/:gameId/players/:playerId", async (req, res) => {
         res.status(403).json({ error: "Facilitator approval is required" });
         return;
       }
-      if (state.phase === "game_over") {
-        res.status(409).json({ error: "Cannot kick players from an ended session" });
-        return;
-      }
-      if (target.isBot) {
+      if (target.isBot && state.phase !== "game_over") {
         res.status(400).json({ error: "Bots cannot be kicked" });
         return;
       }

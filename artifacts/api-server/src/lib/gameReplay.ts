@@ -1,5 +1,5 @@
 import { WIN_FUNCTIONS } from "./cards.js";
-import { createGameState, runBotTurnsIfNeeded, type GameState } from "./gameEngine.js";
+import { createGameState, runBotTurnsIfNeeded, type GameState, type PlayerState } from "./gameEngine.js";
 
 export interface GameRoundSummary {
   roundNumber: number;
@@ -9,10 +9,11 @@ export interface GameRoundSummary {
   standings: Array<{ playerId: string; name: string; functionsFilled: number }>;
 }
 
-/** Only public final standings survive a replay, never hands, decks or decisions. */
-export function restartFinishedGame(state: GameState, now = Date.now()): GameState {
-  if (state.phase !== "game_over") throw new Error("Finish the current round before playing again");
+/** Archive before editing seats, so a departing winner cannot erase results. */
+export function archiveFinishedRound(state: GameState, now = Date.now()): GameState {
+  if (state.phase !== "game_over") return state;
   const roundNumber = state.roundNumber ?? 1;
+  if (state.roundHistory?.some(round => round.roundNumber === roundNumber)) return state;
   const summary: GameRoundSummary = {
     roundNumber,
     winnerName: state.players.find(player => player.id === state.winner)?.name ?? null,
@@ -25,6 +26,24 @@ export function restartFinishedGame(state: GameState, now = Date.now()): GameSta
         player.compostPile.some(card => (card.chosenFunction ?? card.function) === fn)).length,
     })),
   };
+  return { ...state, roundHistory: [...(state.roundHistory ?? []), summary] };
+}
+
+export function updateRoundRoster(state: GameState, players: PlayerState[]): GameState {
+  return {
+    ...archiveFinishedRound(state),
+    players,
+    currentPlayerIndex: Math.min(state.currentPlayerIndex, Math.max(0, players.length - 1)),
+    replayReadyPlayerIds: [],
+    lastMeaningfulActivityAt: Date.now(),
+  };
+}
+
+/** Only public final standings survive a replay, never hands, decks or decisions. */
+export function restartFinishedGame(state: GameState, now = Date.now()): GameState {
+  if (state.phase !== "game_over") throw new Error("Finish the current round before playing again");
+  if (state.players.length < 2) throw new Error("At least two players are needed to start another round");
+  const roundNumber = state.roundNumber ?? 1;
   const bots = state.players.flatMap((player, index) => player.isBot ? [index] : []);
   const skills = Object.fromEntries(state.players.flatMap((player, index) =>
     player.botSkillLevel ? [[index, player.botSkillLevel]] : []));
@@ -52,7 +71,7 @@ export function restartFinishedGame(state: GameState, now = Date.now()): GameSta
     roundNumber: roundNumber + 1,
     roundStartedAt: now,
     analyticsRoundId: `${state.gameId}:round:${roundNumber + 1}`,
-    roundHistory: [...(state.roundHistory ?? []), summary],
+    roundHistory: archiveFinishedRound(state, now).roundHistory,
     lastMeaningfulActivityAt: now,
   };
   next = runBotTurnsIfNeeded(next);

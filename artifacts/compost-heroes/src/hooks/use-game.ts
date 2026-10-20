@@ -371,6 +371,8 @@ export function useKickPlayer(gameId: string | null, token: string | null) {
     onSuccess: () => {
       if (gameId) queryClient.invalidateQueries({ queryKey: getGetGameQueryKey(gameId) });
       queryClient.invalidateQueries({ queryKey: ["facilitator-rooms"] });
+      queryClient.invalidateQueries({ predicate: query =>
+        query.queryKey.some(key => typeof key === "string" && key.includes("/events")) });
     },
   });
 }
@@ -641,15 +643,20 @@ export function useTransferWaitingPlayer(gameId: string | null, token: string | 
       }
       return r.json() as Promise<{ success: true }>;
     },
-    onSuccess: () => {
+    onSuccess: (_result, { targetGameId }) => {
       if (gameId) queryClient.invalidateQueries({ queryKey: getGetGameQueryKey(gameId) });
+      queryClient.invalidateQueries({ queryKey: getGetGameQueryKey(targetGameId) });
       queryClient.invalidateQueries({ queryKey: ["facilitator-rooms"] });
+      queryClient.invalidateQueries({ predicate: query =>
+        query.queryKey.some(key => typeof key === "string" && key.includes("/events")) });
     },
   });
 }
 
 export interface FacilitatorRoomInfo {
   gameId: string;
+  phase?: string;
+  mode?: string;
   playerCount?: number;
   maxPlayers?: number;
   label?: string;

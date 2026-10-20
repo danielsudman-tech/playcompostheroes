@@ -9,6 +9,12 @@ Hosts may start another finished round in regular rooms and tables in open event
 
 **How to apply:** Distinguish room identity from played-round identity. Preserve prior results and count each new round separately. Reject non-host restarts, unfinished-round resets, and replays after an event starts ending.
 
+Hosts may remove or transfer players before play or between rounds. Transfers require both tables to be waiting or finished, with space at the destination, within the same open event or between the same host's standalone rooms.
+
+**Why:** The user approved reorganizing workshop groups between rounds, not interrupting active games or moving guests between unrelated events.
+
+**How to apply:** Save the original round's public standings before the first roster edit, and never overwrite or duplicate them during later edits or replay. Preserve the original winner even after that player leaves. Do not carry old hands or piles to the destination. Reset replay readiness after roster changes and require at least two players before restarting.
+
 Finishing every table does not close an event; the host explicitly ends it.
 
 **Why:** Automatic completion would immediately prevent Play again at the last table to finish.
